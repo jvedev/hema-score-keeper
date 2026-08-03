@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0d1117" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <title>HEMA Scorebox</title>
+  </head>
+  <body>
+    <div id="rotate-overlay" aria-live="polite">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        aria-hidden="true"
+      >
+        <rect x="7" y="2" width="10" height="20" rx="2" />
+        <path d="M3 12a9 9 0 1 0 3-6.7" stroke-dasharray="2 2" />
+      </svg>
+      <div>Rotate your device back to portrait to continue.</div>
+    </div>
+
+    <div id="start-overlay">
+      <h1>HEMA Scorebox</h1>
+      <p>
+        Tap start to lock the screen in portrait mode and keep the display awake
+        for the bout.
+      </p>
+      <button id="start-button" type="button">Start bout</button>
+    </div>
+
+    <fight-view id="fight-view"></fight-view>
+
+    <action-dialog
+      id="hit-dialog"
+      heading="Hit"
+      description="Select the target area, blade contact and applicable afterblow rules."
+    ></action-dialog>
+    <action-dialog
+      id="warning-dialog"
+      heading="Warning"
+      description="Select the infraction and the fighter who receives the warning."
+    ></action-dialog>
+    <action-dialog
+      id="forfeit-dialog"
+      heading="Match forfeited"
+      description="Record the reason and the fighter who forfeited the match."
+    ></action-dialog>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

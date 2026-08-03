@@ -1,0 +1,28 @@
+<button class="face" type="button" aria-label="Adjust match time">
+  <span class="digits" part="digits">00:00</span>
+  <span class="hint">Double-tap to adjust</span>
+</button>
+
+<div class="adjust" role="dialog" aria-modal="true" aria-labelledby="timer-title">
+  <div class="panel">
+    <h2 id="timer-title">Set time</h2>
+    <div class="columns">
+      <div class="column" data-unit="minutes">
+        <button class="up" type="button" aria-label="Add one minute">&#9650;</button>
+        <div class="value" data-role="minutes">00</div>
+        <button class="down" type="button" aria-label="Subtract one minute">&#9660;</button>
+        <div class="label">Minutes</div>
+      </div>
+      <div class="column" data-unit="seconds">
+        <button class="up" type="button" aria-label="Add one second">&#9650;</button>
+        <div class="value" data-role="seconds">00</div>
+        <button class="down" type="button" aria-label="Subtract one second">&#9660;</button>
+        <div class="label">Seconds</div>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="cancel" type="button">Cancel</button>
+      <button class="apply" type="button">Apply</button>
+    </div>
+  </div>
+</div>

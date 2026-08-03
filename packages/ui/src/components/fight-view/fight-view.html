@@ -1,0 +1,51 @@
+<main class="fight-view">
+  <header class="topbar">
+    <div>
+      <strong id="arena-name">Arena</strong>
+      <span class="status" id="wake-status">Screen awake</span>
+    </div>
+    <button id="swap-button" type="button">Swap colors</button>
+  </header>
+
+  <hema-timer id="timer" seconds="120"></hema-timer>
+
+  <section class="score-panel-row" aria-label="Fighter scores">
+    <fighter-score
+      id="fighter-left"
+      side="left"
+      name="Fighter A"
+      score="0"
+      background-color="var(--hema-left-background-color)"
+      text-color="var(--hema-left-text-color)"
+    ></fighter-score>
+    <fighter-score
+      id="fighter-right"
+      side="right"
+      name="Fighter B"
+      score="0"
+      background-color="var(--hema-right-background-color)"
+      text-color="var(--hema-right-text-color)"
+    ></fighter-score>
+  </section>
+
+  <button class="button-full hit" id="hit-button" type="button">Hit</button>
+  <button class="button-full warning" id="warning-button" type="button">
+    Warning
+  </button>
+  <button class="button-full paused" id="timeout-button" type="button">
+    Start
+  </button>
+
+  <div class="button-row">
+    <confirm-button
+      id="reset-button"
+      label="Reset"
+      confirm-label="Confirm reset?"
+    ></confirm-button>
+    <confirm-button
+      id="forfeit-button"
+      label="Forfeit"
+      confirm-label="Confirm forfeit?"
+    ></confirm-button>
+  </div>
+</main>

@@ -1,0 +1,15 @@
+:root {
+  --hema-bg: #0d1117;
+  --hema-surface: #161b22;
+  --hema-surface-raised: #1c232d;
+  --hema-line: #2a313c;
+  --hema-text: #f2f5f7;
+  --hema-text-dim: #8b949e;
+  --hema-warning: #f5a623;
+  --hema-danger: #e5484d;
+  --hema-left-color: #21c15b;
+  --hema-right-color: #2f7dfa;
+  --hema-radius: 6px;
+  --hema-font-display: "JetBrains Mono", ui-monospace, monospace;
+  --hema-font-ui: "Oswald", sans-serif;
+}

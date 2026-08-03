@@ -1,0 +1,30 @@
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+:host {
+  --bg: var(--hema-bg, #0d1117);
+  --surface: var(--hema-surface, #161b22);
+  --surface-raised: var(--hema-surface-raised, #1c232d);
+  --line: var(--hema-line, #2a313c);
+  --text: var(--hema-text, #f2f5f7);
+  --text-dim: var(--hema-text-dim, #8b949e);
+  --warning: var(--hema-warning, #f5a623);
+  --danger: var(--hema-danger, #e5484d);
+  --radius: var(--hema-radius, 6px);
+  --font-display: var(
+    --hema-font-display,
+    "JetBrains Mono",
+    ui-monospace,
+    monospace
+  );
+  --font-ui: var(--hema-font-ui, "Oswald", sans-serif);
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+
+button {
+  font: inherit;
+}

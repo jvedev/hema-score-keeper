@@ -1,0 +1,96 @@
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  background: var(--hema-bg);
+  color: var(--hema-text);
+  font-family: var(--hema-font-ui);
+  height: 100%;
+  margin: 0;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+button {
+  cursor: pointer;
+}
+
+#rotate-overlay,
+#start-overlay {
+  align-items: center;
+  background: var(--hema-bg);
+  color: var(--hema-text);
+  flex-direction: column;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  text-align: center;
+}
+
+#rotate-overlay {
+  display: none;
+  gap: 14px;
+  z-index: 999;
+}
+
+#rotate-overlay svg {
+  height: 64px;
+  width: 64px;
+}
+
+#start-overlay {
+  display: flex;
+  gap: 18px;
+  z-index: 1000;
+}
+
+#start-overlay.hidden {
+  display: none;
+}
+
+#start-overlay h1 {
+  font-family: var(--hema-font-display);
+  font-size: 22px;
+  letter-spacing: 0.12em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+#start-overlay p {
+  color: var(--hema-text-dim);
+  font-size: 14px;
+  margin: 0;
+  max-width: 320px;
+}
+
+#start-overlay button {
+  background: color-mix(
+    in srgb,
+    var(--hema-left-color) 20%,
+    var(--hema-surface)
+  );
+  border: 1px solid var(--hema-left-color);
+  border-radius: var(--hema-radius);
+  color: var(--hema-text);
+  font-family: var(--hema-font-ui);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  padding: 16px 32px;
+  text-transform: uppercase;
+}
+
+@media (orientation: landscape) {
+  #rotate-overlay {
+    display: flex;
+  }
+
+  fight-view {
+    display: none;
+  }
+}

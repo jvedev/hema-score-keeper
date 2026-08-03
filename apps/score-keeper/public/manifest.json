@@ -1,0 +1,16 @@
+{
+  "name": "HEMA Scorebox",
+  "short_name": "Scorebox",
+  "description": "Timer and scoring panel for a HEMA tournament bout",
+  "start_url": "/",
+  "scope": "/",
+  "id": "/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "portrait",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

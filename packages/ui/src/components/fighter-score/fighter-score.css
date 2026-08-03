@@ -1,0 +1,53 @@
+:host {
+  display: block;
+  flex: 1;
+}
+
+.panel {
+  background: var(--fighter-background-color, #999);
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: var(--radius);
+  color: var(--fighter-text-color, #fff);
+  cursor: pointer;
+  padding: 16px 10px;
+  text-align: center;
+  width: 100%;
+}
+
+.name,
+.score,
+.hint {
+  display: block;
+}
+
+.name {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.swatch {
+  background: currentColor;
+  border-radius: 50%;
+  display: inline-block;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: middle;
+  width: 10px;
+}
+
+.score {
+  font-family: var(--font-display);
+  font-size: 48px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hint {
+  color: color-mix(in srgb, currentColor 70%, transparent);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  margin-top: 4px;
+  text-transform: uppercase;
+}

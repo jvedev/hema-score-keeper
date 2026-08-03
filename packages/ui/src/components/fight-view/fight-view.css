@@ -1,0 +1,130 @@
+:host {
+  display: flex;
+  height: 100dvh;
+  margin: 0 auto;
+  max-width: 560px;
+  width: 100%;
+}
+
+.fight-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding:
+    env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.topbar {
+  align-items: center;
+  color: var(--text-dim);
+  display: flex;
+  font-size: 12px;
+  justify-content: space-between;
+  letter-spacing: 0.08em;
+  padding: 8px 12px;
+  text-transform: uppercase;
+}
+
+.status {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.topbar strong {
+  color: var(--text);
+  display: block;
+  font-size: 14px;
+  letter-spacing: 0.1em;
+  margin-bottom: 2px;
+}
+
+.status::before {
+  background: var(--text-dim);
+  border-radius: 50%;
+  content: "";
+  height: 7px;
+  width: 7px;
+}
+
+.status.on::before {
+  background: var(--hema-left-color, #21c15b);
+  box-shadow: 0 0 6px var(--hema-left-color, #21c15b);
+}
+
+.topbar button {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 6px 10px;
+  text-transform: uppercase;
+}
+
+.score-panel-row,
+.button-row {
+  display: flex;
+  gap: 6px;
+  padding: 0 6px;
+}
+
+.button-full {
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  margin: 0 6px;
+  padding: 16px;
+  text-transform: uppercase;
+}
+
+.button-full.hit {
+  background: color-mix(
+    in srgb,
+    var(--hema-hit-color, #2f7dfa) 28%,
+    var(--surface-raised)
+  );
+  border-color: var(--hema-hit-color, #2f7dfa);
+  flex: 1;
+  font-size: 24px;
+}
+
+.button-full.warning {
+  background: color-mix(
+    in srgb,
+    var(--warning) 22%,
+    var(--surface-raised)
+  );
+  border-color: var(--warning);
+}
+
+#timeout-button.running {
+  background: color-mix(in srgb, var(--danger) 18%, var(--surface-raised));
+  border-color: var(--danger);
+}
+
+#timeout-button.paused {
+  background: color-mix(
+    in srgb,
+    var(--hema-left-color, #21c15b) 18%,
+    var(--surface-raised)
+  );
+  border-color: var(--hema-left-color, #21c15b);
+}
+
+.button-row {
+  padding-bottom: 8px;
+}
+
+.button-row > * {
+  flex: 1;
+}

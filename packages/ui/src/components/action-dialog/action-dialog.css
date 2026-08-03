@@ -1,0 +1,54 @@
+:host {
+  display: none;
+  inset: 0;
+  position: fixed;
+  z-index: 700;
+}
+
+:host([open]) {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+}
+
+.backdrop {
+  background: rgb(0 0 0 / 78%);
+  inset: 0;
+  position: absolute;
+}
+
+.panel {
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 26px 22px;
+  position: relative;
+  text-align: center;
+  width: min(340px, 88vw);
+}
+
+h2 {
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  margin: 0 0 10px;
+  text-transform: uppercase;
+}
+
+p {
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+
+button {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  padding: 12px;
+  text-transform: uppercase;
+  width: 100%;
+}
