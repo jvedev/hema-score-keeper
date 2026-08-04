@@ -6,12 +6,12 @@ export const arenas: Readonly<Record<string, Arena>> = {
     name: "Arena 1",
     fighterStyles: {
       left: {
-        backgroundColor: "#f8e63a",
-        textColor: "#171306",
+        backgroundColor: "#3a8cf8",
+        textColor: "#e4e4e5",
       },
       right: {
-        backgroundColor: "#020621",
-        textColor: "#ffffff",
+        backgroundColor: "#ec0b29",
+        textColor: "#020621",
       },
     },
   },
