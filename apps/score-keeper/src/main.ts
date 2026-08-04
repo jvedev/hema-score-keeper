@@ -4,6 +4,10 @@ import { createRuleSetRepository } from "./data/create-rule-set-repository";
 import { MatchStore } from "./domain/match-store";
 import "./styles.css";
 
+interface ScreenOrientation {
+  lock(orientation: OrientationLockType): Promise<void>;
+}
+
 function requireElement<ElementType extends Element>(
   selector: string,
 ): ElementType {
