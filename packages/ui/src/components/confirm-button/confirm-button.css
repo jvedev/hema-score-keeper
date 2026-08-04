@@ -19,3 +19,12 @@ button.confirming {
   background: color-mix(in srgb, var(--danger) 30%, var(--surface-raised));
   border-color: var(--danger);
 }
+
+:host([variant="danger"]) button {
+  background: color-mix(in srgb, var(--danger) 22%, var(--surface-raised));
+  border-color: var(--danger);
+}
+
+:host([variant="danger"]) button.confirming {
+  background: color-mix(in srgb, var(--danger) 48%, var(--surface-raised));
+}

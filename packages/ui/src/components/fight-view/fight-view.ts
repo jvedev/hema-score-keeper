@@ -40,12 +40,22 @@ export class FightView extends BaseComponent {
     this.#timeoutButton = this.queryRoot("#timeout-button");
     this.#wakeStatus = this.queryRoot("#wake-status");
 
-    this.registerEvent(this.queryRoot("#hit-button"), "click", () =>
-      this.#requestView("hit-requested"),
-    );
-    this.registerEvent(this.queryRoot("#warning-button"), "click", () =>
-      this.#requestView("warning-requested"),
-    );
+    this.registerEvent(this.queryRoot("#hit-button"), "click", () => {
+      this.dispatchEvent(
+        new CustomEvent("hit-requested", {
+          bubbles: true,
+          detail: { elapsedTimeSeconds: this.#timer.elapsedSeconds },
+        }),
+      );
+    });
+    this.registerEvent(this.queryRoot("#warning-button"), "click", () => {
+      this.dispatchEvent(
+        new CustomEvent("warning-requested", {
+          bubbles: true,
+          detail: { elapsedTimeSeconds: this.#timer.elapsedSeconds },
+        }),
+      );
+    });
     this.registerEvent(this.#timeoutButton, "click", () => this.#toggleTimer());
     this.registerEvent(this.queryRoot("#reset-button"), "confirmed", () =>
       this.#resetFight(),
@@ -73,6 +83,11 @@ export class FightView extends BaseComponent {
     this.#rightFighterStyle = config.rightFighterStyle;
     this.#colorsSwapped = false;
     this.#applyFighterColors();
+  }
+
+  setMatchDuration(durationSeconds: number): void {
+    this.#timer.setAttribute("seconds", String(Math.max(0, durationSeconds)));
+    this.#resetFight();
   }
 
   #requestView(

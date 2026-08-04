@@ -1,5 +1,6 @@
 import "@hema/ui";
 import { createArenaRepository } from "./data/create-arena-repository";
+import { createRuleSetRepository } from "./data/create-rule-set-repository";
 import "./styles.css";
 
 function requireElement<ElementType extends Element>(
@@ -12,10 +13,10 @@ function requireElement<ElementType extends Element>(
 
 const fightView =
   requireElement<HTMLElementTagNameMap["fight-view"]>("#fight-view");
-const hitDialog =
-  requireElement<HTMLElementTagNameMap["action-dialog"]>("#hit-dialog");
-const warningDialog =
-  requireElement<HTMLElementTagNameMap["action-dialog"]>("#warning-dialog");
+const scoreView =
+  requireElement<HTMLElementTagNameMap["score-view"]>("#score-view");
+const warningView =
+  requireElement<HTMLElementTagNameMap["warning-view"]>("#warning-view");
 const forfeitDialog =
   requireElement<HTMLElementTagNameMap["action-dialog"]>("#forfeit-dialog");
 
@@ -23,10 +24,34 @@ const startOverlay = requireElement<HTMLElement>("#start-overlay");
 const startButton = requireElement<HTMLButtonElement>("#start-button");
 
 const arenaRepository = createArenaRepository();
+const ruleSetRepository = createRuleSetRepository();
 
-fightView.addEventListener("hit-requested", () => hitDialog.open());
-fightView.addEventListener("warning-requested", () => warningDialog.open());
+fightView.addEventListener(
+  "hit-requested",
+  (event) => {
+    if (!(event instanceof CustomEvent)) {
+      throw new Error("hit-requested must be a CustomEvent.");
+    }
+    scoreView.open(
+      (event as CustomEvent<{ elapsedTimeSeconds: number }>).detail
+        .elapsedTimeSeconds,
+    );
+  },
+);
+fightView.addEventListener("warning-requested", (event) => {
+  if (!(event instanceof CustomEvent)) {
+    throw new Error("warning-requested must be a CustomEvent.");
+  }
+  warningView.open(
+    (event as CustomEvent<{ elapsedTimeSeconds: number }>).detail
+      .elapsedTimeSeconds,
+  );
+});
 fightView.addEventListener("forfeit-requested", () => forfeitDialog.open());
+
+window.addEventListener("match-event", (event) => {
+  console.info("Match event:", event.detail);
+});
 
 async function loadArena(): Promise<void> {
   const arena = await arenaRepository.getArena("arena-1");
@@ -34,6 +59,33 @@ async function loadArena(): Promise<void> {
     name: arena.name,
     leftFighterStyle: arena.fighterStyles.left,
     rightFighterStyle: arena.fighterStyles.right,
+  });
+
+  const ruleSet = await ruleSetRepository.getRuleSet("rule-set-1");
+  fightView.setMatchDuration(ruleSet.matchParameters.maxDurationSeconds);
+  scoreView.configure({
+    scores: ruleSet.matchParameters.scores,
+    fighterA: {
+      name: "Fighter A",
+      score: 0,
+      ...arena.fighterStyles.left,
+    },
+    fighterB: {
+      name: "Fighter B",
+      score: 0,
+      ...arena.fighterStyles.right,
+    },
+  });
+  warningView.configure({
+    fighterA: {
+      name: "Fighter A",
+      ...arena.fighterStyles.left,
+    },
+    fighterB: {
+      name: "Fighter B",
+      ...arena.fighterStyles.right,
+    },
+    penalties: ruleSet.matchParameters.penalties,
   });
 }
 

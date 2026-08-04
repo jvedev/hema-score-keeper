@@ -1,0 +1,106 @@
+:host {
+  background: var(--bg);
+  display: none;
+  inset: 0;
+  overflow: auto;
+  position: fixed;
+  z-index: 700;
+}
+
+:host([open]) {
+  display: block;
+}
+
+.score-view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  padding:
+    max(14px, env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-right))
+    max(14px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
+  width: min(100%, 560px);
+}
+
+h1 {
+  font-size: 18px;
+  letter-spacing: 0.12em;
+  margin: 0;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.fighters,
+.selection-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.score-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.score-options button,
+.outcomes button,
+.cancel {
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  min-height: 48px;
+  padding: 10px;
+  text-transform: uppercase;
+}
+
+.score-options button.selected {
+  border-color: var(--text);
+  box-shadow: inset 0 0 0 2px var(--text);
+}
+
+.outcomes {
+  display: grid;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.outcomes.two-column {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.outcomes .no-score {
+  background: color-mix(in srgb, #21c15b 25%, var(--surface-raised));
+  border-color: #21c15b;
+}
+
+.outcomes .hit {
+  background: color-mix(in srgb, #2f7dfa 28%, var(--surface-raised));
+  border-color: #2f7dfa;
+}
+
+.outcomes .first-a {
+  background: var(--score-fighter-a-background);
+  color: var(--score-fighter-a-text);
+}
+
+.outcomes .first-b {
+  background: var(--score-fighter-b-background);
+  color: var(--score-fighter-b-text);
+}
+
+.outcomes .double {
+  background: color-mix(in srgb, var(--danger) 30%, var(--surface-raised));
+  border-color: var(--danger);
+  grid-column: 1 / -1;
+}
+
+.cancel {
+  width: 100%;
+}

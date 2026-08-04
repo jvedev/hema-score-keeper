@@ -24,6 +24,10 @@ export class HemaTimer extends BaseComponent {
     return this.#remainingSeconds;
   }
 
+  get elapsedSeconds(): number {
+    return this.#totalSeconds - this.#remainingSeconds;
+  }
+
   connectedCallback(): void {
     this.render(css, html);
     this.#readSeconds();
