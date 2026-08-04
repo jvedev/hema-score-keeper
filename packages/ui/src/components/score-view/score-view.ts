@@ -103,6 +103,9 @@ export class ScoreView extends BaseComponent {
       );
     element.setAttribute("name", config.name);
     element.setAttribute("score", String(config.score));
+    this.queryRoot<HTMLElement>(
+      `.score-options[data-fighter="${fighter}"]`,
+    ).setAttribute("aria-label", `${config.name} score`);
     this.style.setProperty(
       `--score-fighter-${fighter}-background`,
       config.backgroundColor,

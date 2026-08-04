@@ -81,6 +81,8 @@ async function loadArena(): Promise<void> {
   ]);
   fightView.configureArena({
     name: arena.name,
+    fighterAName: arena.selectedBout.fighterA.name,
+    fighterBName: arena.selectedBout.fighterB.name,
     leftFighterStyle: arena.fighterStyles.left,
     rightFighterStyle: arena.fighterStyles.right,
   });
@@ -88,23 +90,23 @@ async function loadArena(): Promise<void> {
   scoreView.configure({
     scores: ruleSet.matchParameters.scores,
     fighterA: {
-      name: "Fighter A",
+      name: arena.selectedBout.fighterA.name,
       score: 0,
       ...arena.fighterStyles.left,
     },
     fighterB: {
-      name: "Fighter B",
+      name: arena.selectedBout.fighterB.name,
       score: 0,
       ...arena.fighterStyles.right,
     },
   });
   warningView.configure({
     fighterA: {
-      name: "Fighter A",
+      name: arena.selectedBout.fighterA.name,
       ...arena.fighterStyles.left,
     },
     fighterB: {
-      name: "Fighter B",
+      name: arena.selectedBout.fighterB.name,
       ...arena.fighterStyles.right,
     },
     penalties: ruleSet.matchParameters.penalties,

@@ -41,7 +41,9 @@ VITE_API_BASE_URL=https://api.example.com
 ```
 
 De arena-adapter roept `GET /api/v1/arena/{arenaId}` aan. Het eerste gebruikte
-arena-ID is `arena-1`.
+arena-ID is `arena-1`. De arena-response bevat ook `selectedBout`, inclusief de
+IDs en namen van `fighterA` en `fighterB`; deze namen worden in alle
+wedstrijdweergaven gebruikt.
 
 De rule-set-adapter volgt hetzelfde patroon en roept
 `GET /api/v1/rule-set/{ruleSetId}` aan. De mock bevat voorlopig
