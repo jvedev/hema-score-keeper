@@ -5,6 +5,17 @@ import { ApiClient } from "./api-client";
 interface ArenaResponse {
   id: string;
   name: string;
+  fighters: Array<{
+    id: string;
+    name: string;
+  }>;
+  bouts: Array<{
+    id: string;
+    round: number;
+    fighterAId: string;
+    fighterBId: string;
+    status: "expected" | "in-progress" | "completed";
+  }>;
   fighterStyles: {
     left: {
       backgroundColor: string;
@@ -28,6 +39,8 @@ export class ArenaApi implements ArenaRepository {
     return {
       id: response.id,
       name: response.name,
+      fighters: response.fighters.map((fighter) => ({ ...fighter })),
+      bouts: response.bouts.map((bout) => ({ ...bout })),
       fighterStyles: {
         left: {
           backgroundColor: response.fighterStyles.left.backgroundColor,

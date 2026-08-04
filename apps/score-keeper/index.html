@@ -39,16 +39,8 @@
       <div>Rotate your device back to portrait to continue.</div>
     </div>
 
-    <div id="start-overlay">
-      <h1>HEMA Scorebox</h1>
-      <p>
-        Tap start to lock the screen in portrait mode and keep the display awake
-        for the bout.
-      </p>
-      <button id="start-button" type="button">Start bout</button>
-    </div>
-
-    <fight-view id="fight-view"></fight-view>
+    <select-bout-view id="select-bout-view"></select-bout-view>
+    <fight-view id="fight-view" hidden></fight-view>
 
     <score-view id="score-view"></score-view>
     <warning-view id="warning-view"></warning-view>

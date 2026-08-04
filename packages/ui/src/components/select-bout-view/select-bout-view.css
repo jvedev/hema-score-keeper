@@ -1,0 +1,94 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+.select-bout-view {
+  background: var(--hema-bg);
+  box-sizing: border-box;
+  color: var(--hema-text);
+  min-height: 100%;
+  padding: 32px 20px;
+}
+
+header,
+main {
+  margin: 0 auto;
+  max-width: 480px;
+}
+
+header {
+  border-bottom: 1px solid var(--hema-border);
+  margin-bottom: 28px;
+  padding-bottom: 24px;
+}
+
+header p,
+header h1,
+main h2 {
+  font-family: var(--hema-font-display);
+  text-transform: uppercase;
+}
+
+header p {
+  color: var(--hema-text-dim);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  margin: 0 0 8px;
+}
+
+header h1 {
+  font-size: 30px;
+  letter-spacing: 0.08em;
+  margin: 0 0 6px;
+}
+
+#fighter-count {
+  color: var(--hema-text-dim);
+  font-size: 14px;
+}
+
+main h2 {
+  font-size: 16px;
+  letter-spacing: 0.12em;
+  margin: 0 0 14px;
+}
+
+#bout-list {
+  display: grid;
+  gap: 10px;
+}
+
+.bout-button {
+  background: var(--hema-surface);
+  border: 1px solid var(--hema-border);
+  border-radius: var(--hema-radius);
+  color: var(--hema-text);
+  font-family: var(--hema-font-ui);
+  padding: 14px 16px;
+  text-align: left;
+  width: 100%;
+}
+
+.bout-button:hover,
+.bout-button:focus-visible {
+  border-color: var(--hema-left-color);
+  outline: none;
+}
+
+.bout-button span,
+.bout-button strong {
+  display: block;
+}
+
+.bout-button span {
+  color: var(--hema-text-dim);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+}
+
+.bout-button strong {
+  font-size: 16px;
+}
