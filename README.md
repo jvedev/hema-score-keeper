@@ -42,3 +42,8 @@ VITE_API_BASE_URL=https://api.example.com
 
 De arena-adapter roept `GET /api/v1/arena/{arenaId}` aan. Het eerste gebruikte
 arena-ID is `arena-1`.
+
+De rule-set-adapter volgt hetzelfde patroon en roept
+`GET /api/v1/rule-set/{ruleSetId}` aan. De mock bevat voorlopig
+`rule-set-1`; deze repository is nog niet aan de interface gekoppeld. Alle
+API-payloads gebruiken camelCase.

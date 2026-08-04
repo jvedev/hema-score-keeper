@@ -52,4 +52,45 @@ describe("fight-view", () => {
 
     element.remove();
   });
+
+  it("updates both displayed fighter scores", () => {
+    const element = document.createElement("fight-view");
+    document.body.appendChild(element);
+
+    element.setScores({ fighterAScore: 3, fighterBScore: 1 });
+
+    const fighterA =
+      element.shadowRoot?.querySelector<HTMLElementTagNameMap["fighter-score"]>(
+        "#fighter-left",
+      );
+    const fighterB =
+      element.shadowRoot?.querySelector<HTMLElementTagNameMap["fighter-score"]>(
+        "#fighter-right",
+      );
+    expect(fighterA?.score).toBe(3);
+    expect(fighterB?.score).toBe(1);
+
+    element.remove();
+  });
+
+  it("disables match actions when the match is inactive", () => {
+    const element = document.createElement("fight-view");
+    document.body.appendChild(element);
+
+    element.setMatchActive(false);
+
+    expect(
+      element.shadowRoot?.querySelector<HTMLButtonElement>("#hit-button")
+        ?.disabled,
+    ).toBe(true);
+    const forfeit =
+      element.shadowRoot?.querySelector<HTMLElementTagNameMap["confirm-button"]>(
+        "#forfeit-button",
+      );
+    expect(
+      forfeit?.shadowRoot?.querySelector<HTMLButtonElement>("button")?.disabled,
+    ).toBe(true);
+
+    element.remove();
+  });
 });

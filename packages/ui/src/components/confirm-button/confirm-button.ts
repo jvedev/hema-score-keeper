@@ -3,7 +3,7 @@ import html from "./confirm-button.html?raw";
 import { BaseComponent } from "../base-component/base-component";
 
 export class ConfirmButton extends BaseComponent {
-  static readonly observedAttributes = ["label", "confirm-label"];
+  static readonly observedAttributes = ["label", "confirm-label", "disabled"];
 
   #confirming = false;
   #timeoutId: number | undefined;
@@ -23,8 +23,8 @@ export class ConfirmButton extends BaseComponent {
     super.disconnectedCallback();
   }
 
-  attributeChangedCallback(): void {
-    if (this.#ready && !this.#confirming) this.#reset();
+  attributeChangedCallback(name: string): void {
+    if (this.#ready && (name === "disabled" || !this.#confirming)) this.#reset();
   }
 
   #handleClick(): void {
@@ -47,6 +47,7 @@ export class ConfirmButton extends BaseComponent {
     this.#timeoutId = undefined;
     this.#button.classList.remove("confirming");
     this.#button.textContent = this.getAttribute("label") ?? "Confirm";
+    this.#button.disabled = this.hasAttribute("disabled");
   }
 }
 
