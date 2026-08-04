@@ -4,6 +4,7 @@ import { BaseComponent } from "../base-component/base-component";
 import {
   dispatchMatchEvent,
   type FighterIdentifier,
+  type ScoreAdjustmentMatchEventDetail,
   type ScoreMatchEventDetail,
 } from "../../events/match-event";
 import "../fighter-score/fighter-score";
@@ -50,6 +51,8 @@ export class ScoreView extends BaseComponent {
   connectedCallback(): void {
     this.render(css, html);
     this.registerEvent(this.queryRoot(".cancel"), "click", () => this.close());
+    this.#registerScoreCorrection("a", "A");
+    this.#registerScoreCorrection("b", "B");
     this.#render();
   }
 
@@ -61,6 +64,15 @@ export class ScoreView extends BaseComponent {
     this.#config = {
       ...config,
       scores: [...config.scores],
+    };
+    if (this.isConnected) this.#render();
+  }
+
+  setScores(fighterAScore: number, fighterBScore: number): void {
+    this.#config = {
+      ...this.#config,
+      fighterA: { ...this.#config.fighterA, score: Math.max(0, fighterAScore) },
+      fighterB: { ...this.#config.fighterB, score: Math.max(0, fighterBScore) },
     };
     if (this.isConnected) this.#render();
   }
@@ -182,7 +194,7 @@ export class ScoreView extends BaseComponent {
   }
 
   #submit(type: MatchEventType, firstFighter?: FighterIdentifier): void {
-    const detail: ScoreMatchEventDetail = {
+    const base = {
       elapsedTimeSeconds: this.#elapsedTimeSeconds,
       fighterAScore: this.#numericScore("a"),
       fighterBScore: this.#numericScore("b"),
@@ -190,12 +202,51 @@ export class ScoreView extends BaseComponent {
         fighterA: { outcome: this.#outcome("a") },
         fighterB: { outcome: this.#outcome("b") },
       },
-      type,
-      ...(firstFighter ? { firstFighter } : {}),
     };
+    const detail: ScoreMatchEventDetail =
+      type === "afterblow"
+        ? {
+            ...base,
+            type,
+            firstFighter: this.#requiredFirstFighter(firstFighter),
+          }
+        : { ...base, type };
 
     dispatchMatchEvent(detail);
     this.close();
+  }
+
+  #registerScoreCorrection(
+    fighter: FighterId,
+    identifier: FighterIdentifier,
+  ): void {
+    const element =
+      this.queryRoot<HTMLElementTagNameMap["fighter-score"]>(
+        `#fighter-${fighter}`,
+      );
+    this.registerEvent<CustomEvent<{ score: number }>>(
+      element,
+      "score-change",
+      (event) => {
+        event.stopPropagation();
+        const detail: ScoreAdjustmentMatchEventDetail = {
+          elapsedTimeSeconds: this.#elapsedTimeSeconds,
+          type: "score-adjustment",
+          fighter: identifier,
+          score: event.detail.score,
+        };
+        dispatchMatchEvent(detail);
+      },
+    );
+  }
+
+  #requiredFirstFighter(
+    fighter: FighterIdentifier | undefined,
+  ): FighterIdentifier {
+    if (!fighter) {
+      throw new Error("An afterblow must identify the first fighter.");
+    }
+    return fighter;
   }
 
   #outcome(fighter: FighterId): "score" | "low-quality" | "no-score" {
@@ -212,5 +263,4 @@ declare global {
   interface HTMLElementTagNameMap {
     "score-view": ScoreView;
   }
-
 }

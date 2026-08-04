@@ -86,9 +86,9 @@ export class WarningView extends BaseComponent {
 
   #render(): void {
     const labels: Record<WizardStep, string> = {
-      fighter: "1 / 3 · Choose fighter",
-      penalty: "2 / 3 · Choose warning",
-      deduction: "3 / 3 · Choose penalty",
+      fighter: "1 / 3 ? Choose fighter",
+      penalty: "2 / 3 ? Choose warning",
+      deduction: "3 / 3 ? Choose penalty",
     };
     this.queryRoot(".step-label").textContent = labels[this.#step];
     this.queryRoot<HTMLButtonElement>(".back").hidden = this.#step === "fighter";

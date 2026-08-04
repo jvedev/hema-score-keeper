@@ -85,7 +85,7 @@ button {
   text-transform: uppercase;
 }
 
-@media (orientation: landscape) {
+@media (orientation: landscape) and (pointer: coarse) {
   #rotate-overlay {
     display: flex;
   }

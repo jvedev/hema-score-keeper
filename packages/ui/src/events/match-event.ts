@@ -5,16 +5,31 @@ export interface FighterMatchOutcome {
   outcome: FighterOutcome;
 }
 
-export interface ScoreMatchEventDetail {
+interface ScoreMatchEventBase {
   elapsedTimeSeconds: number;
   fighterAScore: number;
   fighterBScore: number;
-  fighterOutcomes: {
+  details: {
     fighterA: FighterMatchOutcome;
     fighterB: FighterMatchOutcome;
   };
-  type: "no-score" | "hit" | "afterblow" | "double";
-  details?: FighterIdentifier;
+}
+
+export type ScoreMatchEventDetail =
+  | (ScoreMatchEventBase & {
+      type: "afterblow";
+      firstFighter: FighterIdentifier;
+    })
+  | (ScoreMatchEventBase & {
+      type: "no-score" | "hit" | "double";
+      firstFighter?: never;
+    });
+
+export interface ScoreAdjustmentMatchEventDetail {
+  elapsedTimeSeconds: number;
+  type: "score-adjustment";
+  fighter: FighterIdentifier;
+  score: number;
 }
 
 export interface WarningMatchEventDetail {
@@ -34,6 +49,7 @@ export interface DisqualificationMatchEventDetail {
 
 export type MatchEventDetail =
   | ScoreMatchEventDetail
+  | ScoreAdjustmentMatchEventDetail
   | WarningMatchEventDetail
   | DisqualificationMatchEventDetail;
 

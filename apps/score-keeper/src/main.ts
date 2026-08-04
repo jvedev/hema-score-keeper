@@ -1,6 +1,7 @@
 import "@hema/ui";
 import { createArenaRepository } from "./data/create-arena-repository";
 import { createRuleSetRepository } from "./data/create-rule-set-repository";
+import { MatchStore } from "./domain/match-store";
 import "./styles.css";
 
 function requireElement<ElementType extends Element>(
@@ -25,19 +26,18 @@ const startButton = requireElement<HTMLButtonElement>("#start-button");
 
 const arenaRepository = createArenaRepository();
 const ruleSetRepository = createRuleSetRepository();
+let matchStore: MatchStore | undefined;
+fightView.setMatchActive(false);
 
-fightView.addEventListener(
-  "hit-requested",
-  (event) => {
-    if (!(event instanceof CustomEvent)) {
-      throw new Error("hit-requested must be a CustomEvent.");
-    }
-    scoreView.open(
-      (event as CustomEvent<{ elapsedTimeSeconds: number }>).detail
-        .elapsedTimeSeconds,
-    );
-  },
-);
+fightView.addEventListener("hit-requested", (event) => {
+  if (!(event instanceof CustomEvent)) {
+    throw new Error("hit-requested must be a CustomEvent.");
+  }
+  scoreView.open(
+    (event as CustomEvent<{ elapsedTimeSeconds: number }>).detail
+      .elapsedTimeSeconds,
+  );
+});
 fightView.addEventListener("warning-requested", (event) => {
   if (!(event instanceof CustomEvent)) {
     throw new Error("warning-requested must be a CustomEvent.");
@@ -47,21 +47,27 @@ fightView.addEventListener("warning-requested", (event) => {
       .elapsedTimeSeconds,
   );
 });
+fightView.addEventListener("match-reset-requested", () => {
+  if (!matchStore) throw new Error("Match store is not initialized.");
+  matchStore.reset();
+});
 fightView.addEventListener("forfeit-requested", () => forfeitDialog.open());
 
 window.addEventListener("match-event", (event) => {
-  console.info("Match event:", event.detail);
+  if (!matchStore) throw new Error("Match store is not initialized.");
+  matchStore.dispatch(event.detail);
 });
 
 async function loadArena(): Promise<void> {
-  const arena = await arenaRepository.getArena("arena-1");
+  const [arena, ruleSet] = await Promise.all([
+    arenaRepository.getArena("arena-1"),
+    ruleSetRepository.getRuleSet("rule-set-1"),
+  ]);
   fightView.configureArena({
     name: arena.name,
     leftFighterStyle: arena.fighterStyles.left,
     rightFighterStyle: arena.fighterStyles.right,
   });
-
-  const ruleSet = await ruleSetRepository.getRuleSet("rule-set-1");
   fightView.setMatchDuration(ruleSet.matchParameters.maxDurationSeconds);
   scoreView.configure({
     scores: ruleSet.matchParameters.scores,
@@ -86,6 +92,16 @@ async function loadArena(): Promise<void> {
       ...arena.fighterStyles.right,
     },
     penalties: ruleSet.matchParameters.penalties,
+  });
+
+  matchStore = new MatchStore(ruleSet.matchParameters);
+  matchStore.subscribe((state) => {
+    fightView.setScores(state);
+    fightView.setMatchActive(!state.disqualifiedFighter);
+    scoreView.setScores(state.fighterAScore, state.fighterBScore);
+  });
+  matchStore.subscribeToEvents((event) => {
+    console.info("Match event:", event);
   });
 }
 
