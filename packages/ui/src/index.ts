@@ -9,3 +9,4 @@ export * from "./components/action-dialog/action-dialog";
 export * from "./components/fight-view/fight-view";
 export * from "./components/score-view/score-view";
 export * from "./components/warning-view/warning-view";
+export * from "./components/select-bout-view/select-bout-view";

@@ -19,8 +19,7 @@ button {
   cursor: pointer;
 }
 
-#rotate-overlay,
-#start-overlay {
+#rotate-overlay {
   align-items: center;
   background: var(--hema-bg);
   color: var(--hema-text);
@@ -43,46 +42,9 @@ button {
   width: 64px;
 }
 
-#start-overlay {
-  display: flex;
-  gap: 18px;
-  z-index: 1000;
-}
-
-#start-overlay.hidden {
+select-bout-view[hidden],
+fight-view[hidden] {
   display: none;
-}
-
-#start-overlay h1 {
-  font-family: var(--hema-font-display);
-  font-size: 22px;
-  letter-spacing: 0.12em;
-  margin: 0;
-  text-transform: uppercase;
-}
-
-#start-overlay p {
-  color: var(--hema-text-dim);
-  font-size: 14px;
-  margin: 0;
-  max-width: 320px;
-}
-
-#start-overlay button {
-  background: color-mix(
-    in srgb,
-    var(--hema-left-color) 20%,
-    var(--hema-surface)
-  );
-  border: 1px solid var(--hema-left-color);
-  border-radius: var(--hema-radius);
-  color: var(--hema-text);
-  font-family: var(--hema-font-ui);
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  padding: 16px 32px;
-  text-transform: uppercase;
 }
 
 @media (orientation: landscape) and (pointer: coarse) {
