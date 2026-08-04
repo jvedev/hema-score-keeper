@@ -26,6 +26,12 @@ describe("warning-view", () => {
     });
     element.open(20);
 
+    expect(
+      element.shadowRoot?.querySelector(".fighter-a")?.textContent,
+    ).toBe("Fighter A");
+    expect(
+      element.shadowRoot?.querySelector(".fighter-b")?.textContent,
+    ).toBe("Fighter B");
     (element.shadowRoot?.querySelector(".fighter-a") as HTMLButtonElement).click();
     (
       element.shadowRoot?.querySelector(".penalty-option") as HTMLButtonElement

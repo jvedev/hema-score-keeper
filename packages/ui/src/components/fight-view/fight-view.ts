@@ -17,6 +17,8 @@ export interface MatchScores {
 
 export interface FightArenaConfig {
   name: string;
+  fighterAName: string;
+  fighterBName: string;
   leftFighterStyle: FighterStyleConfig;
   rightFighterStyle: FighterStyleConfig;
 }
@@ -94,6 +96,8 @@ export class FightView extends BaseComponent {
 
   configureArena(config: FightArenaConfig): void {
     this.queryRoot("#arena-name").textContent = config.name;
+    this.#fighterLeft.setAttribute("name", config.fighterAName);
+    this.#fighterRight.setAttribute("name", config.fighterBName);
     this.#leftFighterStyle = config.leftFighterStyle;
     this.#rightFighterStyle = config.rightFighterStyle;
     this.#colorsSwapped = false;

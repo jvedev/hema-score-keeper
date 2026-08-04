@@ -22,6 +22,8 @@ describe("fight-view", () => {
 
     element.configureArena({
       name: "Finals",
+      fighterAName: "Alice",
+      fighterBName: "Bob",
       leftFighterStyle: {
         backgroundColor: "#ff0000",
         textColor: "#ffffff",
@@ -35,6 +37,16 @@ describe("fight-view", () => {
     expect(element.shadowRoot?.querySelector("#arena-name")?.textContent).toBe(
       "Finals",
     );
+    expect(
+      element.shadowRoot
+        ?.querySelector<HTMLElementTagNameMap["fighter-score"]>("#fighter-left")
+        ?.getAttribute("name"),
+    ).toBe("Alice");
+    expect(
+      element.shadowRoot
+        ?.querySelector<HTMLElementTagNameMap["fighter-score"]>("#fighter-right")
+        ?.getAttribute("name"),
+    ).toBe("Bob");
     expect(
       element.style.getPropertyValue("--hema-left-background-color"),
     ).toBe("#ff0000");

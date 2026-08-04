@@ -93,6 +93,8 @@ async function loadArena(): Promise<void> {
   );
   fightView.configureArena({
     name: arena.name,
+    fighterAName: "Fighter A",
+    fighterBName: "Fighter B",
     leftFighterStyle: arena.fighterStyles.left,
     rightFighterStyle: arena.fighterStyles.right,
   });
@@ -128,6 +130,13 @@ async function loadArena(): Promise<void> {
     }
 
     selectedBoutId = bout.id;
+    fightView.configureArena({
+      name: arena.name,
+      fighterAName: fighterA.name,
+      fighterBName: fighterB.name,
+      leftFighterStyle: arena.fighterStyles.left,
+      rightFighterStyle: arena.fighterStyles.right,
+    });
     scoreView.configure({
         scores: ruleSet.matchParameters.scores,
         fighterA: {

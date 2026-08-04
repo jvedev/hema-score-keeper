@@ -31,6 +31,11 @@ describe("score-view", () => {
       "3",
       "Low quality",
     ]);
+    expect(
+      element.shadowRoot
+        ?.querySelector('.score-options[data-fighter="a"]')
+        ?.getAttribute("aria-label"),
+    ).toBe("A score");
 
     element.remove();
   });
