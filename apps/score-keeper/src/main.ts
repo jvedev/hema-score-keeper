@@ -105,7 +105,7 @@ async function loadArena(): Promise<void> {
   selectBoutView.configure({
     arenaName: arena.name,
     fighterCount: arena.fighters.length,
-    bouts: expectedBouts.map((bout) => {
+    bouts: expectedBouts.map((bout, index) => {
       const fighterA = fighters.get(bout.fighterAId);
       const fighterB = fighters.get(bout.fighterBId);
       if (!fighterA || !fighterB) {
@@ -113,6 +113,7 @@ async function loadArena(): Promise<void> {
       }
       return {
         id: bout.id,
+        sequenceNumber: index + 1,
         round: bout.round,
         fighterAName: fighterA.name,
         fighterBName: fighterB.name,

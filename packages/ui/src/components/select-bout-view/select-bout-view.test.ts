@@ -11,6 +11,7 @@ describe("select-bout-view", () => {
       bouts: [
         {
           id: "bout-1",
+          sequenceNumber: 1,
           round: 1,
           fighterAName: "Alex",
           fighterBName: "Blake",
@@ -24,6 +25,7 @@ describe("select-bout-view", () => {
 
     const button =
       element.shadowRoot?.querySelector<HTMLButtonElement>(".bout-button");
+    expect(button?.textContent).toContain("Bout 1");
     expect(button?.textContent).toContain("Alex vs Blake");
     button?.click();
     expect(selectedBoutId).toBe("bout-1");

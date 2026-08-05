@@ -4,6 +4,7 @@ import { BaseComponent } from "../base-component/base-component";
 
 export interface SelectableBout {
   id: string;
+  sequenceNumber: number;
   round: number;
   fighterAName: string;
   fighterBName: string;
@@ -37,7 +38,7 @@ export class SelectBoutView extends BaseComponent {
       button.className = "bout-button";
 
       const round = document.createElement("span");
-      round.textContent = `Round ${bout.round}`;
+      round.textContent = `Bout ${bout.sequenceNumber} · Round ${bout.round}`;
       const fighters = document.createElement("strong");
       fighters.textContent = `${bout.fighterAName} vs ${bout.fighterBName}`;
       button.append(round, fighters);

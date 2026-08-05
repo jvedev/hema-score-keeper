@@ -108,8 +108,8 @@ function scoreDelta(
   }
 
   return {
-    fighterA: Math.max(0, fighterA - fighterB),
-    fighterB: Math.max(0, fighterB - fighterA),
+    fighterA:  fighterA - fighterB,
+    fighterB:  fighterB - fighterA,
   };
 }
 

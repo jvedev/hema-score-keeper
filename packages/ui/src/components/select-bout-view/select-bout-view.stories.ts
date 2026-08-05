@@ -10,12 +10,14 @@ const meta = {
       bouts: [
         {
           id: "bout-1",
+          sequenceNumber: 1,
           round: 1,
           fighterAName: "Alex Meyer",
           fighterBName: "Blake Novak",
         },
         {
           id: "bout-2",
+          sequenceNumber: 2,
           round: 1,
           fighterAName: "Casey Silva",
           fighterBName: "Drew Fischer",
