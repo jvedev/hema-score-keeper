@@ -1,4 +1,5 @@
 # Repository workflow
 
-- Work directly in the currently open IDE checkout and branch for this repo; do not create, switch to, or rename an extra feature branch or worktree unless the user explicitly requests it.
-- Keep completed work consolidated into one working branch.
+- Work directly on `master`; do not create or rename branches unless the user explicitly requests it.
+- Keep completed work consolidated into one working `master` branch.
+- Don't commit changes to `master`; this will be done by the user.
