@@ -212,8 +212,14 @@ export class FightView extends BaseComponent {
       !started || !active;
     this.queryRoot<HTMLButtonElement>("#timeout-button").disabled =
       started ? !active : false;
-    this.queryRoot<HTMLButtonElement>("#hit-button").hidden = !started;
-    this.queryRoot<HTMLButtonElement>("#warning-button").hidden = !started;
+    this.queryRoot<HTMLButtonElement>("#hit-button").toggleAttribute(
+      "hidden",
+      !started,
+    );
+    this.queryRoot<HTMLButtonElement>("#warning-button").toggleAttribute(
+      "hidden",
+      !started,
+    );
     this.#buttonStack.classList.toggle("pre-start", !started);
     this.queryRoot<HTMLElementTagNameMap["confirm-button"]>(
       "#forfeit-button",
