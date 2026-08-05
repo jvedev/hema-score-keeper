@@ -115,14 +115,8 @@ export class FightView extends BaseComponent {
   }
 
   setScores(scores: MatchScores): void {
-    this.#fighterLeft.setAttribute(
-      "score",
-      String(Math.max(0, scores.fighterAScore)),
-    );
-    this.#fighterRight.setAttribute(
-      "score",
-      String(Math.max(0, scores.fighterBScore)),
-    );
+    this.#fighterLeft.setAttribute("score", String(scores.fighterAScore));
+    this.#fighterRight.setAttribute("score", String(scores.fighterBScore));
   }
 
   setMatchActive(active: boolean): void {

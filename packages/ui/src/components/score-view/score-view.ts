@@ -71,8 +71,8 @@ export class ScoreView extends BaseComponent {
   setScores(fighterAScore: number, fighterBScore: number): void {
     this.#config = {
       ...this.#config,
-      fighterA: { ...this.#config.fighterA, score: Math.max(0, fighterAScore) },
-      fighterB: { ...this.#config.fighterB, score: Math.max(0, fighterBScore) },
+      fighterA: { ...this.#config.fighterA, score: fighterAScore },
+      fighterB: { ...this.#config.fighterB, score: fighterBScore },
     };
     if (this.isConnected) this.#render();
   }

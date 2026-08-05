@@ -7,3 +7,5 @@ test-results/
 .DS_Store
 *.local
 
+/packages/ui/.vitest-attachments/ecb0fe381a4fcf390a5f6af6a771bc6fbc2f3512.png
+/packages/ui/src/components/fight-view/__screenshots__/fight-view.test.ts/fight-view-renders-the-fight-controls-1.png

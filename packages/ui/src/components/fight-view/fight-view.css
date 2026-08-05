@@ -100,6 +100,10 @@
   text-transform: uppercase;
 }
 
+.button-full[hidden] {
+  display: none;
+}
+
 .button-full.hit {
   background: color-mix(
     in srgb,

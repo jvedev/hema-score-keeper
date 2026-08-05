@@ -24,7 +24,7 @@ export function reduceMatchEvent(
   }
 
   if (event.type === "score-adjustment") {
-    const score = validPoints(event.score, "Adjusted score");
+    const score = validScore(event.score, "Adjusted score");
     return createMatchState({
       ...state,
       fighterAScore: event.fighter === "A" ? score : state.fighterAScore,
@@ -42,11 +42,11 @@ export function reduceMatchEvent(
       ...state,
       fighterAScore:
         event.fighter === "A"
-          ? Math.max(0, state.fighterAScore - pointsDeducted)
+          ? state.fighterAScore - pointsDeducted
           : state.fighterAScore,
       fighterBScore:
         event.fighter === "B"
-          ? Math.max(0, state.fighterBScore - pointsDeducted)
+          ? state.fighterBScore - pointsDeducted
           : state.fighterBScore,
       elapsedTimeSeconds: validElapsedTime(event.elapsedTimeSeconds),
       warnings: {
@@ -103,19 +103,40 @@ function scoreDelta(
     else fighterA = 0;
   }
 
-  if (!rules.useNetScore) {
-    return { fighterA, fighterB };
+
+
+  if(rules.useNetScore){
+    const netScore = getNetScore(fighterA, fighterB);
+    fighterA = netScore.fighterA;
+    fighterB = netScore.fighterB;
   }
 
   return {
-    fighterA:  fighterA - fighterB,
-    fighterB:  fighterB - fighterA,
+    fighterA,
+    fighterB,
   };
+}
+
+function getNetScore(a: number, b: number): { fighterA: number; fighterB: number } {
+  if (a === b) {
+    return { fighterA: 0, fighterB: 0 };
+  }
+  if (a > b) {
+    return { fighterA: a - b, fighterB: 0 };
+  }
+  return { fighterA: 0, fighterB: b - a };
 }
 
 function validPoints(value: number, label: string): number {
   if (!Number.isFinite(value) || value < 0) {
     throw new Error(`${label} must be a finite non-negative number.`);
+  }
+  return value;
+}
+
+function validScore(value: number, label: string): number {
+  if (!Number.isFinite(value)) {
+    throw new Error(`${label} must be a finite number.`);
   }
   return value;
 }

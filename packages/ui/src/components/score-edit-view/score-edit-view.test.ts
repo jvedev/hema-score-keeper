@@ -16,4 +16,17 @@ describe("score-edit-view", () => {
 
     element.remove();
   });
+
+  it("shows negative scores when opened", () => {
+    const element = document.createElement("score-edit-view");
+    document.body.appendChild(element);
+
+    element.open(-2, "Fighter A");
+
+    expect(element.shadowRoot?.querySelector(".value")?.textContent).toBe(
+      "-2",
+    );
+
+    element.remove();
+  });
 });

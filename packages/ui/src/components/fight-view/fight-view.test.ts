@@ -69,7 +69,7 @@ describe("fight-view", () => {
     const element = document.createElement("fight-view");
     document.body.appendChild(element);
 
-    element.setScores({ fighterAScore: 3, fighterBScore: 1 });
+    element.setScores({ fighterAScore: -3, fighterBScore: 1 });
 
     const fighterA =
       element.shadowRoot?.querySelector<HTMLElementTagNameMap["fighter-score"]>(
@@ -79,7 +79,7 @@ describe("fight-view", () => {
       element.shadowRoot?.querySelector<HTMLElementTagNameMap["fighter-score"]>(
         "#fighter-right",
       );
-    expect(fighterA?.score).toBe(3);
+    expect(fighterA?.score).toBe(-3);
     expect(fighterB?.score).toBe(1);
 
     element.remove();
@@ -100,6 +100,12 @@ describe("fight-view", () => {
       element.shadowRoot?.querySelector<HTMLButtonElement>("#warning-button")
         ?.hidden,
     ).toBe(true);
+    expect(
+      getComputedStyle(
+        element.shadowRoot?.querySelector<HTMLButtonElement>("#hit-button") ??
+          document.createElement("button"),
+      ).display,
+    ).toBe("none");
     expect(
       element.shadowRoot?.querySelector<HTMLButtonElement>("#timeout-button")
         ?.disabled,
@@ -141,6 +147,12 @@ describe("fight-view", () => {
       element.shadowRoot?.querySelector<HTMLButtonElement>("#warning-button")
         ?.hidden,
     ).toBe(false);
+    expect(
+      getComputedStyle(
+        element.shadowRoot?.querySelector<HTMLButtonElement>("#hit-button") ??
+          document.createElement("button"),
+      ).display,
+    ).not.toBe("none");
     expect(
       element.shadowRoot?.querySelector<HTMLButtonElement>("#timeout-button")
         ?.textContent?.trim(),

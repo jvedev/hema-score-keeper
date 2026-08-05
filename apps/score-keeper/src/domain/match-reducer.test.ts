@@ -24,15 +24,15 @@ describe("match reducer", () => {
     expect(state.fighterBScore).toBe(1);
   });
 
-  it("only adds the score difference when net scoring is enabled", () => {
+  it("adds both scores when net scoring is enabled", () => {
     const state = reduceMatchEvent(
       createInitialMatchState(),
       scoreEvent({ fighterAScore: 3, fighterBScore: 1 }),
       { ...baseRules, useNetScore: true },
     );
 
-    expect(state.fighterAScore).toBe(2);
-    expect(state.fighterBScore).toBe(0);
+    expect(state.fighterAScore).toBe(3);
+    expect(state.fighterBScore).toBe(1);
   });
 
   it("does not count doubles when disabled by the ruleset", () => {
@@ -66,7 +66,7 @@ describe("match reducer", () => {
     expect(state.fighterBScore).toBe(0);
   });
 
-  it("deducts penalty points from the selected fighter", () => {
+  it("allows penalties to drive the score below zero", () => {
     const scored = reduceMatchEvent(
       createInitialMatchState(),
       scoreEvent({ fighterAScore: 3 }),
@@ -77,12 +77,12 @@ describe("match reducer", () => {
       type: "warning",
       fighter: "A",
       description: "Illegal target",
-      pointsDeducted: 2,
+      pointsDeducted: 5,
     };
 
     const state = reduceMatchEvent(scored, warning, baseRules);
 
-    expect(state.fighterAScore).toBe(1);
+    expect(state.fighterAScore).toBe(-2);
     expect(state.warnings.A).toBe(1);
   });
 
@@ -105,6 +105,21 @@ describe("match reducer", () => {
     );
 
     expect(state.fighterAScore).toBe(1);
+  });
+
+  it("accepts negative manual score corrections", () => {
+    const state = reduceMatchEvent(
+      createInitialMatchState(),
+      {
+        elapsedTimeSeconds: 40,
+        type: "score-adjustment",
+        fighter: "A",
+        score: -1,
+      },
+      baseRules,
+    );
+
+    expect(state.fighterAScore).toBe(-1);
   });
 
   it("rejects events after a disqualification", () => {

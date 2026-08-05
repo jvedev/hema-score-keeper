@@ -118,4 +118,28 @@ describe("score-view", () => {
 
     element.remove();
   });
+
+  it("shows negative scores without clamping them", () => {
+    const element = document.createElement("score-view");
+    document.body.appendChild(element);
+
+    element.setScores(-2, 3);
+
+    expect(
+      element.shadowRoot
+        ?.querySelector<HTMLElementTagNameMap["fighter-score"]>(
+          "#fighter-a",
+        )
+        ?.getAttribute("score"),
+    ).toBe("-2");
+    expect(
+      element.shadowRoot
+        ?.querySelector<HTMLElementTagNameMap["fighter-score"]>(
+          "#fighter-b",
+        )
+        ?.getAttribute("score"),
+    ).toBe("3");
+
+    element.remove();
+  });
 });

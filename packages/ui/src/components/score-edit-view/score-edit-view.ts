@@ -22,7 +22,7 @@ export class ScoreEditView extends BaseComponent {
   }
 
   open(score: number, fighterName: string): void {
-    this.#score = Math.max(0, score);
+    this.#score = score;
     this.#value.textContent = String(this.#score);
     this.#name.textContent = fighterName;
     this.setAttribute("open", "");
@@ -33,7 +33,7 @@ export class ScoreEditView extends BaseComponent {
   }
 
   #step(delta: number): void {
-    this.#score = Math.max(0, this.#score + delta);
+    this.#score += delta;
     this.#value.textContent = String(this.#score);
     this.dispatchEvent(
       new CustomEvent("score-change", {

@@ -40,10 +40,20 @@ h1 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.selection-grid {
+  flex: 1;
+  align-items: stretch;
+}
+
 .score-options {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  height: 100%;
+}
+
+.score-options button {
+  flex: 1 1 0;
 }
 
 .score-options button,
