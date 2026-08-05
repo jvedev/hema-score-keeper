@@ -176,10 +176,21 @@ void loadArena().catch((error: unknown) => {
 });
 
 let wakeLock: WakeLockSentinel | undefined;
+let wakeLockRequested = false;
 
 async function requestWakeLock(): Promise<void> {
+  if (!wakeLockRequested) return;
   if (!("wakeLock" in navigator)) {
     fightView.setWakeLockActive(false);
+    return;
+  }
+
+  if (document.visibilityState !== "visible") {
+    return;
+  }
+
+  if (wakeLock?.released === false) {
+    fightView.setWakeLockActive(true);
     return;
   }
 
@@ -187,7 +198,13 @@ async function requestWakeLock(): Promise<void> {
     wakeLock = await navigator.wakeLock.request("screen");
     fightView.setWakeLockActive(true);
     wakeLock.addEventListener("release", () =>
-      fightView.setWakeLockActive(false),
+      {
+        wakeLock = undefined;
+        fightView.setWakeLockActive(false);
+        if (wakeLockRequested && document.visibilityState === "visible") {
+          void requestWakeLock();
+        }
+      },
     );
   } catch (error) {
     fightView.setWakeLockActive(false);
@@ -196,12 +213,15 @@ async function requestWakeLock(): Promise<void> {
 }
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && wakeLock?.released !== false) {
+  if (document.visibilityState === "visible" && wakeLockRequested) {
     void requestWakeLock();
   }
 });
 
 async function enterBoutMode(): Promise<void> {
+  wakeLockRequested = true;
+  void requestWakeLock();
+
   try {
     await document.documentElement.requestFullscreen();
   } catch (error) {
@@ -213,7 +233,6 @@ async function enterBoutMode(): Promise<void> {
   } catch (error) {
     console.warn("Portrait orientation lock is unavailable.", error);
   }
-
   await requestWakeLock();
   selectBoutView.hidden = true;
   fightView.hidden = false;
