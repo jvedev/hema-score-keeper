@@ -94,11 +94,11 @@ describe("fight-view", () => {
 
     expect(
       element.shadowRoot?.querySelector<HTMLButtonElement>("#hit-button")
-        ?.disabled,
+        ?.hidden,
     ).toBe(true);
     expect(
       element.shadowRoot?.querySelector<HTMLButtonElement>("#warning-button")
-        ?.disabled,
+        ?.hidden,
     ).toBe(true);
     expect(
       element.shadowRoot?.querySelector<HTMLButtonElement>("#timeout-button")
@@ -107,6 +107,10 @@ describe("fight-view", () => {
     expect(
       element.shadowRoot?.querySelector<HTMLButtonElement>("#timeout-button")
         ?.classList.contains("starting"),
+    ).toBe(true);
+    expect(
+      element.shadowRoot?.querySelector<HTMLElement>(".button-stack")
+        ?.classList.contains("pre-start"),
     ).toBe(true);
     const forfeit =
       element.shadowRoot?.querySelector<HTMLElementTagNameMap["confirm-button"]>(
@@ -131,11 +135,11 @@ describe("fight-view", () => {
 
     expect(
       element.shadowRoot?.querySelector<HTMLButtonElement>("#hit-button")
-        ?.disabled,
+        ?.hidden,
     ).toBe(false);
     expect(
       element.shadowRoot?.querySelector<HTMLButtonElement>("#warning-button")
-        ?.disabled,
+        ?.hidden,
     ).toBe(false);
     expect(
       element.shadowRoot?.querySelector<HTMLButtonElement>("#timeout-button")

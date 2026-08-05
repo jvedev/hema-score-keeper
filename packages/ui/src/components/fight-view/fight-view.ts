@@ -33,6 +33,7 @@ export class FightView extends BaseComponent {
   #fighterLeft!: HTMLElementTagNameMap["fighter-score"];
   #fighterRight!: HTMLElementTagNameMap["fighter-score"];
   #timeoutButton!: HTMLButtonElement;
+  #buttonStack!: HTMLElement;
   #wakeStatus!: HTMLElement;
   #matchStarted = false;
   #matchActive = false;
@@ -52,6 +53,7 @@ export class FightView extends BaseComponent {
     this.#fighterLeft = this.queryRoot("#fighter-left");
     this.#fighterRight = this.queryRoot("#fighter-right");
     this.#timeoutButton = this.queryRoot("#timeout-button");
+    this.#buttonStack = this.queryRoot(".button-stack");
     this.#wakeStatus = this.queryRoot("#wake-status");
     this.#registerScoreCorrection(this.#fighterLeft, "A");
     this.#registerScoreCorrection(this.#fighterRight, "B");
@@ -210,6 +212,9 @@ export class FightView extends BaseComponent {
       !started || !active;
     this.queryRoot<HTMLButtonElement>("#timeout-button").disabled =
       started ? !active : false;
+    this.queryRoot<HTMLButtonElement>("#hit-button").hidden = !started;
+    this.queryRoot<HTMLButtonElement>("#warning-button").hidden = !started;
+    this.#buttonStack.classList.toggle("pre-start", !started);
     this.queryRoot<HTMLElementTagNameMap["confirm-button"]>(
       "#forfeit-button",
     ).toggleAttribute("disabled", !started || !active);

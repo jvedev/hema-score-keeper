@@ -67,10 +67,17 @@
 }
 
 .score-panel-row,
-.button-row {
+.button-row,
+.button-stack {
   display: flex;
   gap: 6px;
+  flex-direction: column;
+  min-height: 0;
   padding: 0 6px;
+}
+
+.button-stack.pre-start {
+  flex: 1;
 }
 
 .button-full {
@@ -82,7 +89,6 @@
   font-size: 16px;
   font-weight: 600;
   letter-spacing: 0.1em;
-  margin: 0 6px;
   padding: 16px;
   text-transform: uppercase;
 }
@@ -96,6 +102,12 @@
   border-color: var(--hema-hit-color, #2f7dfa);
   flex: 1;
   font-size: 24px;
+}
+
+.button-stack:not(.pre-start) .button-full.hit,
+.button-stack:not(.pre-start) .button-full.warning,
+.button-stack:not(.pre-start) .button-full#timeout-button {
+  flex: 0 0 auto;
 }
 
 .button-full.warning {
@@ -113,8 +125,15 @@
 }
 
 #timeout-button.starting {
+  flex: 1;
+  background: color-mix(
+    in srgb,
+    var(--hema-left-color, #21c15b) 18%,
+    var(--surface-raised)
+  );
+  border-color: var(--hema-left-color, #21c15b);
   font-size: 30px;
-  min-height: 96px;
+  min-height: 0;
   padding: 28px 16px;
 }
 
