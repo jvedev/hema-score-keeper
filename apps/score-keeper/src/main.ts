@@ -73,6 +73,7 @@ fightView.addEventListener("warning-requested", (event) => {
 fightView.addEventListener("match-reset-requested", () => {
   if (!matchStore) throw new Error("Match store is not initialized.");
   matchStore.reset();
+  fightView.setMatchStarted(false);
 });
 fightView.addEventListener("forfeit-requested", () => forfeitDialog.open());
 

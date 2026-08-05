@@ -85,15 +85,28 @@ describe("fight-view", () => {
     element.remove();
   });
 
-  it("disables match actions when the match is inactive", () => {
+  it("keeps the fight in start mode before the match begins", () => {
     const element = document.createElement("fight-view");
     document.body.appendChild(element);
 
-    element.setMatchActive(false);
+    element.setMatchActive(true);
+    element.setMatchStarted(false);
 
     expect(
       element.shadowRoot?.querySelector<HTMLButtonElement>("#hit-button")
         ?.disabled,
+    ).toBe(true);
+    expect(
+      element.shadowRoot?.querySelector<HTMLButtonElement>("#warning-button")
+        ?.disabled,
+    ).toBe(true);
+    expect(
+      element.shadowRoot?.querySelector<HTMLButtonElement>("#timeout-button")
+        ?.disabled,
+    ).toBe(false);
+    expect(
+      element.shadowRoot?.querySelector<HTMLButtonElement>("#timeout-button")
+        ?.classList.contains("starting"),
     ).toBe(true);
     const forfeit =
       element.shadowRoot?.querySelector<HTMLElementTagNameMap["confirm-button"]>(
@@ -102,6 +115,36 @@ describe("fight-view", () => {
     expect(
       forfeit?.shadowRoot?.querySelector<HTMLButtonElement>("button")?.disabled,
     ).toBe(true);
+
+    element.remove();
+  });
+
+  it("enables the action buttons after the match starts", () => {
+    const element = document.createElement("fight-view");
+    document.body.appendChild(element);
+
+    element.setMatchActive(true);
+    element.setMatchStarted(false);
+
+    element.shadowRoot?.querySelector<HTMLButtonElement>("#timeout-button")
+      ?.click();
+
+    expect(
+      element.shadowRoot?.querySelector<HTMLButtonElement>("#hit-button")
+        ?.disabled,
+    ).toBe(false);
+    expect(
+      element.shadowRoot?.querySelector<HTMLButtonElement>("#warning-button")
+        ?.disabled,
+    ).toBe(false);
+    expect(
+      element.shadowRoot?.querySelector<HTMLButtonElement>("#timeout-button")
+        ?.textContent?.trim(),
+    ).toBe("Timeout");
+    expect(
+      element.shadowRoot?.querySelector<HTMLButtonElement>("#timeout-button")
+        ?.classList.contains("starting"),
+    ).toBe(false);
 
     element.remove();
   });

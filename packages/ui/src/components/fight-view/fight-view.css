@@ -112,6 +112,12 @@
   border-color: var(--danger);
 }
 
+#timeout-button.starting {
+  font-size: 30px;
+  min-height: 96px;
+  padding: 28px 16px;
+}
+
 #timeout-button.paused {
   background: color-mix(
     in srgb,
