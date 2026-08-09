@@ -49,3 +49,16 @@ De rule-set-adapter volgt hetzelfde patroon en roept
 `GET /api/v1/rule-set/{ruleSetId}` aan. De mock bevat voorlopig
 `rule-set-1`; deze repository is nog niet aan de interface gekoppeld. Alle
 API-payloads gebruiken camelCase.
+
+## Backend
+
+De backend staat in `apps/backend` en gebruikt Prisma met SQLite. Start hem met:
+
+```sh
+npm run backend:build
+npm run backend:dev
+```
+
+De API luistert standaard op `http://localhost:3001` en biedt nu CRUD voor
+clubs, vechters en toernooien, plus toernooi-arena's, poolindeling, bouts en
+losse exchanges.

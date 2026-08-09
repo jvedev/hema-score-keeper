@@ -11,6 +11,7 @@ export interface Arena {
 
 export interface Fighter {
   id: string;
+  club_id?: string;
   name: string;
 }
 

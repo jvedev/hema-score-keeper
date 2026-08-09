@@ -9,10 +9,18 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace @hema/score-keeper",
+    "admin:dev": "npm run dev --workspace @hema/tournament-admin",
+    "admin:build": "npm run build --workspace @hema/tournament-admin",
+    "admin:typecheck": "npm run typecheck --workspace @hema/tournament-admin",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "storybook": "npm run storybook --workspace @hema/ui"
+    "storybook": "npm run storybook --workspace @hema/ui",
+    "backend:dev": "npm run dev --workspace @hema/backend",
+    "backend:build": "npm run build --workspace @hema/backend",
+    "backend:prisma:generate": "npm run prisma:generate --workspace @hema/backend",
+    "backend:prisma:migrate": "npm run prisma:migrate --workspace @hema/backend",
+    "backend:prisma:seed": "npm run prisma:seed --workspace @hema/backend"
   },
   "engines": {
     "node": ">=22",
