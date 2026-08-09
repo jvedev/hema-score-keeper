@@ -1,0 +1,164 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id       String  @id @default(cuid())
+  username String  @unique
+  skills   Skill[]
+  entries  Entry[]
+}
+
+model Skill {
+  id         String @id @default(cuid())
+  userId     String
+  skillName  String
+  skillLevel Int
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Event {
+  id       String   @id @default(cuid())
+  eventName String
+  ruleset   String?
+  entries  Entry[]
+  stages   Stage[]
+  arenas   Arena[]
+}
+
+model Entry {
+  id              String  @id @default(cuid())
+  eventId         String
+  userId          String
+  kind            EntryKind @default(FIGHTER)
+  seed            Int?
+  event           Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matchesAsA      Match[] @relation("MatchEntryA")
+  matchesAsB      Match[] @relation("MatchEntryB")
+  matchesAsWinner Match[] @relation("MatchWinner")
+  stageOfficials  StageOfficial[]
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
+}
+
+model Arena {
+  id        String   @id @default(cuid())
+  eventId   String
+  name      String
+  order     Int      @default(0)
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  stages    StageArena[]
+  matches   Match[]
+
+  @@index([eventId])
+}
+
+model Stage {
+  id        String   @id @default(cuid())
+  eventId   String
+  type      StageType
+  name      String?
+  ruleset   String?
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  rounds    Round[]
+  arenas    StageArena[]
+  officials StageOfficial[]
+
+  @@index([eventId])
+}
+
+model StageArena {
+  id       String @id @default(cuid())
+  stageId  String
+  arenaId  String
+  stage    Stage  @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  arena    Arena  @relation(fields: [arenaId], references: [id], onDelete: Cascade)
+
+  @@unique([stageId, arenaId])
+  @@index([stageId])
+  @@index([arenaId])
+}
+
+model StageOfficial {
+  id      String @id @default(cuid())
+  stageId String
+  entryId String
+  role    StageOfficialRole
+  stage   Stage  @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  entry   Entry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@unique([stageId, entryId, role])
+  @@index([stageId])
+  @@index([entryId])
+}
+
+model Round {
+  id          String  @id @default(cuid())
+  stageId     String
+  roundNumber Int
+  stage       Stage   @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  matches     Match[]
+
+  @@unique([stageId, roundNumber])
+  @@index([stageId])
+}
+
+model Match {
+  id            String   @id @default(cuid())
+  roundId       String
+  arenaId       String?
+  entryAId      String?
+  entryBId      String?
+  winnerEntryId String?
+  scoreA        Int?
+  scoreB        Int?
+  ruleset       String?
+  round         Round    @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  arena         Arena?   @relation(fields: [arenaId], references: [id], onDelete: SetNull)
+  entryA        Entry?   @relation("MatchEntryA", fields: [entryAId], references: [id], onDelete: SetNull)
+  entryB        Entry?   @relation("MatchEntryB", fields: [entryBId], references: [id], onDelete: SetNull)
+  winnerEntry   Entry?   @relation("MatchWinner", fields: [winnerEntryId], references: [id], onDelete: SetNull)
+  exchanges     Exchange[]
+
+  @@index([roundId])
+  @@index([arenaId])
+}
+
+model Exchange {
+  id      String @id @default(cuid())
+  matchId String
+  scoreA  Int?
+  scoreB  Int?
+  details Json?
+  match   Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@index([matchId])
+}
+
+enum StageType {
+  POOL
+  ELIMINATION
+  FINAL
+}
+
+enum EntryKind {
+  FIGHTER
+  OFFICIAL
+}
+
+enum StageOfficialRole {
+  JUDGE
+  JURY
+  TELLER
+  TABLE
+}
