@@ -106,7 +106,7 @@ function updateIndex(exportLine, dryRun) {
 function templateTs(componentName, tagName, className) {
   return `import css from "./${componentName}.css?raw";
 import html from "./${componentName}.html?raw";
-import { BaseComponent } from "../base-component/base-component";
+import { BaseComponent } from "../base-component/base-component.js";
 
 export class ${className} extends BaseComponent {
   connectedCallback(): void {
@@ -192,7 +192,7 @@ function main() {
   assertClassName(className);
 
   const componentDir = path.join(componentsRoot, componentName);
-  const exportLine = `export * from "./components/${componentName}/${componentName}";`;
+  const exportLine = `export * from "./components/${componentName}/${componentName}.js";`;
   const files = [
     {
       path: path.join(componentDir, `${componentName}.ts`),

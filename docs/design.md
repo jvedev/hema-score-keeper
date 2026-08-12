@@ -45,5 +45,7 @@ Als een stage een ruleset heeft, wint die dus altijd van tournament- of event-ni
 
 De term "vrijwilligers" in het oude ontwerp past beter als "officials". Als er echt event-brede vrijwilligers nodig zijn, is daar later een aparte event-staff laag voor nodig.
 
+# event admin
+in deze admin app kan je events beheren en alle bijbehoorende
 
 
