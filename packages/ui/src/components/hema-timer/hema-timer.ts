@@ -1,7 +1,7 @@
 import css from "./hema-timer.css?raw";
 import html from "./hema-timer.html?raw";
-import { BaseComponent } from "../base-component/base-component";
-import { registerDoubleTap } from "../../utils/double-tap";
+import { BaseComponent } from "../base-component/base-component.js";
+import { registerDoubleTap } from "../../utils/double-tap.js";
 
 export class HemaTimer extends BaseComponent {
   static readonly observedAttributes = ["seconds"];

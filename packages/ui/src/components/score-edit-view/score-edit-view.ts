@@ -1,6 +1,6 @@
 import css from "./score-edit-view.css?raw";
 import html from "./score-edit-view.html?raw";
-import { BaseComponent } from "../base-component/base-component";
+import { BaseComponent } from "../base-component/base-component.js";
 
 export class ScoreEditView extends BaseComponent {
   #score = 0;

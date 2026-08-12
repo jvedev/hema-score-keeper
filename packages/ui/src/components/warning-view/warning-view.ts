@@ -1,11 +1,11 @@
 import css from "./warning-view.css?raw";
 import html from "./warning-view.html?raw";
-import { BaseComponent } from "../base-component/base-component";
+import { BaseComponent } from "../base-component/base-component.js";
 import {
   dispatchMatchEvent,
   type FighterIdentifier,
-} from "../../events/match-event";
-import "../confirm-button/confirm-button";
+} from "../../events/match-event.js";
+import "../confirm-button/confirm-button.js";
 
 interface WarningFighter {
   name: string;

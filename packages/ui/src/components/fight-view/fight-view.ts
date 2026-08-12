@@ -4,11 +4,11 @@ import {
   dispatchMatchEvent,
   type FighterIdentifier,
   type ScoreAdjustmentMatchEventDetail,
-} from "../../events/match-event";
-import { BaseComponent } from "../base-component/base-component";
-import "../confirm-button/confirm-button";
-import "../fighter-score/fighter-score";
-import "../hema-timer/hema-timer";
+} from "../../events/match-event.js";
+import { BaseComponent } from "../base-component/base-component.js";
+import "../confirm-button/confirm-button.js";
+import "../fighter-score/fighter-score.js";
+import "../hema-timer/hema-timer.js";
 
 export interface MatchScores {
   fighterAScore: number;

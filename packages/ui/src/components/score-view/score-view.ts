@@ -1,13 +1,13 @@
 import css from "./score-view.css?raw";
 import html from "./score-view.html?raw";
-import { BaseComponent } from "../base-component/base-component";
+import { BaseComponent } from "../base-component/base-component.js";
 import {
   dispatchMatchEvent,
   type FighterIdentifier,
   type ScoreAdjustmentMatchEventDetail,
   type ScoreMatchEventDetail,
-} from "../../events/match-event";
-import "../fighter-score/fighter-score";
+} from "../../events/match-event.js";
+import "../fighter-score/fighter-score.js";
 
 type FighterId = "a" | "b";
 type ScoreSelection = number | "no-score" | "low-quality";

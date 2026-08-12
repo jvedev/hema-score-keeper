@@ -1,6 +1,6 @@
 import css from "./action-dialog.css?raw";
 import html from "./action-dialog.html?raw";
-import { BaseComponent } from "../base-component/base-component";
+import { BaseComponent } from "../base-component/base-component.js";
 
 export class ActionDialog extends BaseComponent {
   static readonly observedAttributes = ["heading", "description"];

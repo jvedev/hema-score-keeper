@@ -1,6 +1,6 @@
 import css from "./select-bout-view.css?raw";
 import html from "./select-bout-view.html?raw";
-import { BaseComponent } from "../base-component/base-component";
+import { BaseComponent } from "../base-component/base-component.js";
 
 export interface SelectableBout {
   id: string;

@@ -1,6 +1,6 @@
 import css from "./confirm-button.css?raw";
 import html from "./confirm-button.html?raw";
-import { BaseComponent } from "../base-component/base-component";
+import { BaseComponent } from "../base-component/base-component.js";
 
 export class ConfirmButton extends BaseComponent {
   static readonly observedAttributes = ["label", "confirm-label", "disabled"];

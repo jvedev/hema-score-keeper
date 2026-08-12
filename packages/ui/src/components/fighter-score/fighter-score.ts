@@ -1,8 +1,8 @@
 import css from "./fighter-score.css?raw";
 import html from "./fighter-score.html?raw";
-import { BaseComponent } from "../base-component/base-component";
-import { registerDoubleTap } from "../../utils/double-tap";
-import "../score-edit-view/score-edit-view";
+import { BaseComponent } from "../base-component/base-component.js";
+import { registerDoubleTap } from "../../utils/double-tap.js";
+import "../score-edit-view/score-edit-view.js";
 
 export class FighterScore extends BaseComponent {
   static readonly observedAttributes = [
@@ -15,7 +15,7 @@ export class FighterScore extends BaseComponent {
   #panel!: HTMLElement;
   #name!: HTMLElement;
   #score!: HTMLElement;
-  #editor!: import("../score-edit-view/score-edit-view").ScoreEditView;
+  #editor!: import("../score-edit-view/score-edit-view.js").ScoreEditView;
   #ready = false;
 
   get score(): number {
