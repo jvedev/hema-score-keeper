@@ -38,6 +38,11 @@ const routes: Route[] = [
   { method: "GET", pattern: /^\/api\/v1\/events\/([^/]+)$/, handler: getEvent },
   { method: "PATCH", pattern: /^\/api\/v1\/events\/([^/]+)$/, handler: updateEvent },
   { method: "DELETE", pattern: /^\/api\/v1\/events\/([^/]+)$/, handler: deleteEvent },
+  { method: "GET", pattern: /^\/api\/v1\/tournaments$/, handler: listTournaments },
+  { method: "POST", pattern: /^\/api\/v1\/tournaments$/, handler: createTournament },
+  { method: "GET", pattern: /^\/api\/v1\/tournaments\/([^/]+)$/, handler: getTournament },
+  { method: "PATCH", pattern: /^\/api\/v1\/tournaments\/([^/]+)$/, handler: updateTournament },
+  { method: "DELETE", pattern: /^\/api\/v1\/tournaments\/([^/]+)$/, handler: deleteTournament },
   { method: "GET", pattern: /^\/api\/v1\/arenas$/, handler: listArenas },
   { method: "POST", pattern: /^\/api\/v1\/arenas$/, handler: createArena },
   { method: "GET", pattern: /^\/api\/v1\/arenas\/([^/]+)$/, handler: getArena },
@@ -75,6 +80,79 @@ const routes: Route[] = [
   { method: "PATCH", pattern: /^\/api\/v1\/exchanges\/([^/]+)$/, handler: updateExchange },
   { method: "DELETE", pattern: /^\/api\/v1\/exchanges\/([^/]+)$/, handler: deleteExchange },
 ];
+
+const tournamentOrderBy: Prisma.TournamentOrderByWithRelationInput[] = [
+  { order: "asc" },
+  { name: "asc" },
+];
+
+const eventDetailInclude: Prisma.EventInclude = {
+  tournaments: {
+    orderBy: tournamentOrderBy,
+    include: {
+      entries: { include: { user: true } },
+      stages: {
+        include: {
+          tournament: { include: { event: true } },
+          rounds: true,
+          arenas: { include: { arena: true } },
+          officials: { include: { entry: { include: { user: true } } } },
+        },
+      },
+    },
+  },
+  arenas: true,
+};
+
+const tournamentDetailInclude = {
+  event: true,
+  entries: { include: { user: true, stageOfficials: { include: { stage: { include: { tournament: { include: { event: true } } } } } } } },
+  stages: {
+    include: {
+      tournament: { include: { event: true } },
+      rounds: true,
+      arenas: { include: { arena: true } },
+      officials: { include: { entry: { include: { user: true } } } },
+    },
+  },
+} as const;
+
+const entryDetailInclude = {
+  tournament: { include: { event: true } },
+  user: true,
+  stageOfficials: { include: { stage: { include: { tournament: { include: { event: true } } } } } },
+} as const;
+
+const stageDetailInclude = {
+  tournament: { include: { event: true } },
+  rounds: true,
+  arenas: { include: { arena: true } },
+  officials: { include: { entry: { include: { user: true } } } },
+} as const;
+
+const arenaDetailInclude = {
+  event: true,
+  stages: { include: { stage: { include: { tournament: { include: { event: true } } } } } },
+  matches: true,
+} as const;
+
+const roundDetailInclude = {
+  stage: { include: { tournament: { include: { event: true } } } },
+  matches: true,
+} as const;
+
+const matchDetailInclude = {
+  round: { include: { stage: { include: { tournament: { include: { event: true } } } } } },
+  arena: true,
+  entryA: { include: { user: true, tournament: { include: { event: true } } } },
+  entryB: { include: { user: true, tournament: { include: { event: true } } } },
+  winnerEntry: { include: { user: true, tournament: { include: { event: true } } } },
+  exchanges: { orderBy: { id: "asc" } },
+} as const;
+
+const exchangeDetailInclude = {
+  match: { include: matchDetailInclude },
+} as const;
 
 const server = createServer(async (request, response) => {
   try {
@@ -141,7 +219,7 @@ async function health(): Promise<unknown> {
 async function listUsers(): Promise<unknown> {
   return prisma.user.findMany({
     orderBy: { username: "asc" },
-    include: { skills: true, entries: true },
+    include: { skills: true, entries: { include: { tournament: { include: { event: true } } } } },
   });
 }
 
@@ -233,11 +311,7 @@ async function deleteSkill(_request: IncomingMessage, params: Record<string, str
 async function listEvents(): Promise<unknown> {
   return prisma.event.findMany({
     orderBy: { eventName: "asc" },
-    include: {
-      entries: { include: { user: true } },
-      stages: { include: { rounds: true, arenas: true, officials: { include: { entry: { include: { user: true } } } } } },
-      arenas: true,
-    },
+    include: eventDetailInclude,
   });
 }
 
@@ -256,6 +330,68 @@ async function createEvent(request: IncomingMessage): Promise<unknown> {
 
 async function getEvent(_request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
   return requireEvent(routeId(params));
+}
+
+async function listTournaments(): Promise<unknown> {
+  return prisma.tournament.findMany({
+    orderBy: [{ eventId: "asc" }, { order: "asc" }, { name: "asc" }],
+    include: tournamentDetailInclude,
+  });
+}
+
+async function createTournament(request: IncomingMessage): Promise<unknown> {
+  const body = ensureObject(await readJsonBody(request), "Tournament");
+  const eventId = requireString(body.eventId, "Event ID");
+  const name = requireString(body.name, "Tournament name");
+  const ruleset = body.ruleset === undefined ? undefined : optionalString(body.ruleset);
+  const order = body.order === undefined ? 0 : requirePositiveInteger(body.order, "Tournament order");
+
+  await requireEvent(eventId);
+
+  return prisma.tournament.create({
+    data: {
+      eventId,
+      name,
+      order,
+      ...(ruleset !== undefined ? { ruleset } : {}),
+    },
+    include: tournamentDetailInclude,
+  });
+}
+
+async function getTournament(_request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
+  return requireTournament(routeId(params));
+}
+
+async function updateTournament(request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
+  const body = ensureObject(await readJsonBody(request), "Tournament");
+  const data: { eventId?: string; name?: string; ruleset?: string | null; order?: number } = {};
+
+  if (body.eventId !== undefined) {
+    const eventId = requireString(body.eventId, "Event ID");
+    await requireEvent(eventId);
+    data.eventId = eventId;
+  }
+  if (body.name !== undefined) {
+    data.name = requireString(body.name, "Tournament name");
+  }
+  if (body.ruleset !== undefined) {
+    data.ruleset = optionalString(body.ruleset) ?? null;
+  }
+  if (body.order !== undefined) {
+    data.order = requirePositiveInteger(body.order, "Tournament order");
+  }
+
+  return prisma.tournament.update({
+    where: { id: routeId(params) },
+    data,
+    include: tournamentDetailInclude,
+  });
+}
+
+async function deleteTournament(_request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
+  await prisma.tournament.delete({ where: { id: routeId(params) } });
+  return undefined;
 }
 
 async function updateEvent(request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
@@ -283,11 +419,7 @@ async function deleteEvent(_request: IncomingMessage, params: Record<string, str
 async function listArenas(): Promise<unknown> {
   return prisma.arena.findMany({
     orderBy: [{ eventId: "asc" }, { order: "asc" }, { name: "asc" }],
-    include: {
-      event: true,
-      stages: { include: { stage: true } },
-      matches: true,
-    },
+    include: arenaDetailInclude,
   });
 }
 
@@ -305,11 +437,7 @@ async function createArena(request: IncomingMessage): Promise<unknown> {
       name,
       order,
     },
-    include: {
-      event: true,
-      stages: { include: { stage: true } },
-      matches: true,
-    },
+    include: arenaDetailInclude,
   });
 }
 
@@ -336,11 +464,7 @@ async function updateArena(request: IncomingMessage, params: Record<string, stri
   return prisma.arena.update({
     where: { id: routeId(params) },
     data,
-    include: {
-      event: true,
-      stages: { include: { stage: true } },
-      matches: true,
-    },
+    include: arenaDetailInclude,
   });
 }
 
@@ -351,29 +475,29 @@ async function deleteArena(_request: IncomingMessage, params: Record<string, str
 
 async function listEntries(): Promise<unknown> {
   return prisma.entry.findMany({
-    orderBy: [{ seed: "asc" }, { id: "asc" }],
-    include: { event: true, user: true, stageOfficials: true },
+    orderBy: [{ tournamentId: "asc" }, { seed: "asc" }, { id: "asc" }],
+    include: entryDetailInclude,
   });
 }
 
 async function createEntry(request: IncomingMessage): Promise<unknown> {
   const body = ensureObject(await readJsonBody(request), "Entry");
-  const eventId = requireString(body.eventId, "Event ID");
+  const tournamentId = requireString(body.tournamentId, "Tournament ID");
   const userId = requireString(body.userId, "User ID");
   const kind = body.kind === undefined ? undefined : parseEntryKind(body.kind);
   const seed = body.seed === undefined ? undefined : requirePositiveInteger(body.seed, "Seed");
 
-  await requireEvent(eventId);
+  await requireTournament(tournamentId);
   await requireUser(userId);
 
   return prisma.entry.create({
     data: {
-      eventId,
+      tournamentId,
       userId,
       ...(kind !== undefined ? { kind } : {}),
       ...(seed !== undefined ? { seed } : {}),
     },
-    include: { event: true, user: true, stageOfficials: true },
+    include: entryDetailInclude,
   });
 }
 
@@ -383,12 +507,12 @@ async function getEntry(_request: IncomingMessage, params: Record<string, string
 
 async function updateEntry(request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
   const body = ensureObject(await readJsonBody(request), "Entry");
-  const data: { eventId?: string; userId?: string; kind?: "FIGHTER" | "OFFICIAL"; seed?: number | null } = {};
+  const data: { tournamentId?: string; userId?: string; kind?: "FIGHTER" | "OFFICIAL"; seed?: number | null } = {};
 
-  if (body.eventId !== undefined) {
-    const eventId = requireString(body.eventId, "Event ID");
-    await requireEvent(eventId);
-    data.eventId = eventId;
+  if (body.tournamentId !== undefined) {
+    const tournamentId = requireString(body.tournamentId, "Tournament ID");
+    await requireTournament(tournamentId);
+    data.tournamentId = tournamentId;
   }
   if (body.userId !== undefined) {
     const userId = requireString(body.userId, "User ID");
@@ -405,7 +529,7 @@ async function updateEntry(request: IncomingMessage, params: Record<string, stri
   return prisma.entry.update({
     where: { id: routeId(params) },
     data,
-    include: { event: true, user: true, stageOfficials: true },
+    include: entryDetailInclude,
   });
 }
 
@@ -416,28 +540,28 @@ async function deleteEntry(_request: IncomingMessage, params: Record<string, str
 
 async function listStages(): Promise<unknown> {
   return prisma.stage.findMany({
-    orderBy: [{ eventId: "asc" }, { type: "asc" }, { name: "asc" }],
-    include: { event: true, rounds: true, arenas: { include: { arena: true } }, officials: { include: { entry: { include: { user: true } } } } },
+    orderBy: [{ tournamentId: "asc" }, { type: "asc" }, { name: "asc" }],
+    include: stageDetailInclude,
   });
 }
 
 async function createStage(request: IncomingMessage): Promise<unknown> {
   const body = ensureObject(await readJsonBody(request), "Stage");
-  const eventId = requireString(body.eventId, "Event ID");
+  const tournamentId = requireString(body.tournamentId, "Tournament ID");
   const type = parseStageType(body.type);
   const name = body.name === undefined ? undefined : optionalString(body.name);
   const ruleset = body.ruleset === undefined ? undefined : optionalString(body.ruleset);
 
-  await requireEvent(eventId);
+  await requireTournament(tournamentId);
 
   return prisma.stage.create({
     data: {
-      eventId,
+      tournamentId,
       type,
       ...(name !== undefined ? { name } : {}),
       ...(ruleset !== undefined ? { ruleset } : {}),
     },
-    include: { event: true, rounds: true, arenas: { include: { arena: true } }, officials: { include: { entry: { include: { user: true } } } } },
+    include: stageDetailInclude,
   });
 }
 
@@ -448,16 +572,16 @@ async function getStage(_request: IncomingMessage, params: Record<string, string
 async function updateStage(request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
   const body = ensureObject(await readJsonBody(request), "Stage");
   const data: {
-    eventId?: string;
+    tournamentId?: string;
     type?: "POOL" | "ELIMINATION" | "FINAL";
     name?: string | null;
     ruleset?: string | null;
   } = {};
 
-  if (body.eventId !== undefined) {
-    const eventId = requireString(body.eventId, "Event ID");
-    await requireEvent(eventId);
-    data.eventId = eventId;
+  if (body.tournamentId !== undefined) {
+    const tournamentId = requireString(body.tournamentId, "Tournament ID");
+    await requireTournament(tournamentId);
+    data.tournamentId = tournamentId;
   }
   if (body.type !== undefined) {
     data.type = parseStageType(body.type);
@@ -472,7 +596,7 @@ async function updateStage(request: IncomingMessage, params: Record<string, stri
   return prisma.stage.update({
     where: { id: routeId(params) },
     data,
-    include: { event: true, rounds: true, arenas: { include: { arena: true } }, officials: { include: { entry: { include: { user: true } } } } },
+    include: stageDetailInclude,
   });
 }
 
@@ -487,20 +611,23 @@ async function listStageArenas(_request: IncomingMessage, params: Record<string,
   return prisma.stageArena.findMany({
     where: { stageId },
     orderBy: { id: "asc" },
-    include: { arena: true, stage: true },
+    include: { arena: true, stage: { include: { tournament: { include: { event: true } } } } },
   });
 }
 
 async function createStageArena(request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
   const stageId = routeId(params);
-  await requireStage(stageId);
   const body = ensureObject(await readJsonBody(request), "Stage arena");
   const arenaId = requireString(body.arenaId, "Arena ID");
-  await requireArena(arenaId);
+  const arena = await requireArena(arenaId);
+  const stage = await requireStage(stageId);
+  if (arena.eventId !== stage.tournament.eventId) {
+    throw new HttpError(400, "Arena must belong to the same event as the stage.");
+  }
 
   return prisma.stageArena.create({
     data: { stageId, arenaId },
-    include: { arena: true, stage: true },
+    include: { arena: true, stage: { include: { tournament: { include: { event: true } } } } },
   });
 }
 
@@ -526,7 +653,7 @@ async function listStageOfficials(_request: IncomingMessage, params: Record<stri
   return prisma.stageOfficial.findMany({
     where: { stageId },
     orderBy: [{ role: "asc" }, { id: "asc" }],
-    include: { stage: true, entry: { include: { user: true } } },
+    include: { stage: { include: { tournament: { include: { event: true } } } }, entry: { include: { user: true } } },
   });
 }
 
@@ -541,8 +668,8 @@ async function createStageOfficial(
   const role = parseStageOfficialRole(body.role);
 
   const entry = await requireEntry(entryId);
-  if (entry.eventId !== stage.eventId) {
-    throw new HttpError(400, "Official must belong to the same event as the stage.");
+  if (entry.tournamentId !== stage.tournamentId) {
+    throw new HttpError(400, "Official must belong to the same tournament as the stage.");
   }
   if (entry.kind !== "OFFICIAL") {
     throw new HttpError(400, "Only official entries can be assigned as stage officials.");
@@ -550,7 +677,7 @@ async function createStageOfficial(
 
   return prisma.stageOfficial.create({
     data: { stageId, entryId, role },
-    include: { stage: true, entry: { include: { user: true } } },
+    include: { stage: { include: { tournament: { include: { event: true } } } }, entry: { include: { user: true } } },
   });
 }
 
@@ -562,7 +689,7 @@ async function deleteStageOfficial(_request: IncomingMessage, params: Record<str
 async function listRounds(): Promise<unknown> {
   return prisma.round.findMany({
     orderBy: [{ stageId: "asc" }, { roundNumber: "asc" }],
-    include: { stage: { include: { event: true } }, matches: true },
+    include: roundDetailInclude,
   });
 }
 
@@ -575,7 +702,7 @@ async function createRound(request: IncomingMessage): Promise<unknown> {
 
   return prisma.round.create({
     data: { stageId, roundNumber },
-    include: { stage: { include: { event: true } }, matches: true },
+    include: roundDetailInclude,
   });
 }
 
@@ -599,7 +726,7 @@ async function updateRound(request: IncomingMessage, params: Record<string, stri
   return prisma.round.update({
     where: { id: routeId(params) },
     data,
-    include: { stage: { include: { event: true } }, matches: true },
+    include: roundDetailInclude,
   });
 }
 
@@ -611,14 +738,7 @@ async function deleteRound(_request: IncomingMessage, params: Record<string, str
 async function listMatches(): Promise<unknown> {
   return prisma.match.findMany({
     orderBy: [{ roundId: "asc" }, { id: "asc" }],
-    include: {
-      round: { include: { stage: { include: { event: true } } } },
-      arena: true,
-      entryA: { include: { user: true, event: true } },
-      entryB: { include: { user: true, event: true } },
-      winnerEntry: { include: { user: true, event: true } },
-      exchanges: { orderBy: { id: "asc" } },
-    },
+    include: matchDetailInclude,
   });
 }
 
@@ -634,11 +754,19 @@ async function createMatch(request: IncomingMessage): Promise<unknown> {
   const scoreB = body.scoreB === undefined ? undefined : requirePositiveInteger(body.scoreB, "Score B");
   const ruleset = body.ruleset === undefined ? undefined : optionalString(body.ruleset);
 
-  await requireRound(roundId);
-  if (arenaId) await requireArena(arenaId);
-  if (entryAId) await requireEntry(entryAId);
-  if (entryBId) await requireEntry(entryBId);
-  if (winnerEntryId) await requireEntry(winnerEntryId);
+  const round = await requireRound(roundId);
+  const stage = round.stage;
+  const tournamentId = stage.tournamentId;
+  const eventId = stage.tournament.eventId;
+  if (arenaId) {
+    const arena = await requireArena(arenaId);
+    if (arena.eventId !== eventId) {
+      throw new HttpError(400, "Arena must belong to the same event as the round stage.");
+    }
+  }
+  if (entryAId) await requireEntryInTournament(entryAId, tournamentId, "Entry A");
+  if (entryBId) await requireEntryInTournament(entryBId, tournamentId, "Entry B");
+  if (winnerEntryId) await requireEntryInTournament(winnerEntryId, tournamentId, "Winner entry");
 
   return prisma.match.create({
     data: {
@@ -651,14 +779,7 @@ async function createMatch(request: IncomingMessage): Promise<unknown> {
       ...(scoreB !== undefined ? { scoreB } : {}),
       ...(ruleset !== undefined ? { ruleset } : {}),
     },
-    include: {
-      round: { include: { stage: { include: { event: true } } } },
-      arena: true,
-      entryA: { include: { user: true, event: true } },
-      entryB: { include: { user: true, event: true } },
-      winnerEntry: { include: { user: true, event: true } },
-      exchanges: true,
-    },
+    include: matchDetailInclude,
   });
 }
 
@@ -713,18 +834,39 @@ async function updateMatch(request: IncomingMessage, params: Record<string, stri
   if (body.ruleset !== undefined) {
     data.ruleset = optionalString(body.ruleset) ?? null;
   }
+  if (data.roundId !== undefined || data.arenaId !== undefined || data.entryAId !== undefined || data.entryBId !== undefined || data.winnerEntryId !== undefined) {
+    const currentMatch = await requireMatch(routeId(params));
+    const nextRoundId = data.roundId ?? currentMatch.roundId;
+    const nextRound = data.roundId !== undefined ? await requireRound(nextRoundId) : currentMatch.round;
+    const nextStage = nextRound.stage;
+    const nextTournamentId = nextStage.tournamentId;
+    const nextEventId = nextStage.tournament.eventId;
+    const nextArenaId = data.arenaId !== undefined ? data.arenaId : currentMatch.arenaId;
+    const nextEntryAId = data.entryAId !== undefined ? data.entryAId : currentMatch.entryAId;
+    const nextEntryBId = data.entryBId !== undefined ? data.entryBId : currentMatch.entryBId;
+    const nextWinnerEntryId = data.winnerEntryId !== undefined ? data.winnerEntryId : currentMatch.winnerEntryId;
+
+    if (nextArenaId) {
+      const arena = await requireArena(nextArenaId);
+      if (arena.eventId !== nextEventId) {
+        throw new HttpError(400, "Arena must belong to the same event as the match stage.");
+      }
+    }
+    if (nextEntryAId) {
+      await requireEntryInTournament(nextEntryAId, nextTournamentId, "Entry A");
+    }
+    if (nextEntryBId) {
+      await requireEntryInTournament(nextEntryBId, nextTournamentId, "Entry B");
+    }
+    if (nextWinnerEntryId) {
+      await requireEntryInTournament(nextWinnerEntryId, nextTournamentId, "Winner entry");
+    }
+  }
 
   return prisma.match.update({
     where: { id: routeId(params) },
     data,
-    include: {
-      round: { include: { stage: { include: { event: true } } } },
-      arena: true,
-      entryA: { include: { user: true, event: true } },
-      entryB: { include: { user: true, event: true } },
-      winnerEntry: { include: { user: true, event: true } },
-      exchanges: { orderBy: { id: "asc" } },
-    },
+    include: matchDetailInclude,
   });
 }
 
@@ -736,14 +878,7 @@ async function deleteMatch(_request: IncomingMessage, params: Record<string, str
 async function listExchanges(): Promise<unknown> {
   return prisma.exchange.findMany({
     orderBy: [{ matchId: "asc" }, { id: "asc" }],
-    include: {
-      match: {
-        include: {
-          round: { include: { stage: { include: { event: true } } } },
-          arena: true,
-        },
-      },
-    },
+    include: exchangeDetailInclude,
   });
 }
 
@@ -766,14 +901,7 @@ async function createExchange(request: IncomingMessage): Promise<unknown> {
             details: body.details === null ? Prisma.JsonNull : ensureJsonValue(body.details),
           }),
     },
-    include: {
-      match: {
-        include: {
-          round: { include: { stage: { include: { event: true } } } },
-          arena: true,
-        },
-      },
-    },
+    include: exchangeDetailInclude,
   });
 }
 
@@ -808,14 +936,7 @@ async function updateExchange(request: IncomingMessage, params: Record<string, s
   return prisma.exchange.update({
     where: { id: routeId(params) },
     data,
-    include: {
-      match: {
-        include: {
-          round: { include: { stage: { include: { event: true } } } },
-          arena: true,
-        },
-      },
-    },
+    include: exchangeDetailInclude,
   });
 }
 
@@ -846,11 +967,7 @@ async function requireSkill(id: string) {
 async function requireEvent(id: string) {
   const event = await prisma.event.findUnique({
     where: { id },
-    include: {
-      entries: { include: { user: true } },
-      stages: { include: { rounds: true, arenas: true, officials: { include: { entry: { include: { user: true } } } } } },
-      arenas: true,
-    },
+    include: eventDetailInclude,
   });
   if (!event) {
     throw new HttpError(404, `Event "${id}" not found.`);
@@ -858,10 +975,21 @@ async function requireEvent(id: string) {
   return event;
 }
 
+async function requireTournament(id: string) {
+  const tournament = await prisma.tournament.findUnique({
+    where: { id },
+    include: tournamentDetailInclude,
+  });
+  if (!tournament) {
+    throw new HttpError(404, `Tournament "${id}" not found.`);
+  }
+  return tournament;
+}
+
 async function requireArena(id: string) {
   const arena = await prisma.arena.findUnique({
     where: { id },
-    include: { event: true, stages: { include: { stage: true } }, matches: true },
+    include: arenaDetailInclude,
   });
   if (!arena) {
     throw new HttpError(404, `Arena "${id}" not found.`);
@@ -872,7 +1000,7 @@ async function requireArena(id: string) {
 async function requireEntry(id: string) {
   const entry = await prisma.entry.findUnique({
     where: { id },
-    include: { event: true, user: true },
+    include: entryDetailInclude,
   });
   if (!entry) {
     throw new HttpError(404, `Entry "${id}" not found.`);
@@ -883,7 +1011,7 @@ async function requireEntry(id: string) {
 async function requireStage(id: string) {
   const stage = await prisma.stage.findUnique({
     where: { id },
-    include: { event: true, rounds: true, arenas: { include: { arena: true } }, officials: { include: { entry: { include: { user: true } } } } },
+    include: stageDetailInclude,
   });
   if (!stage) {
     throw new HttpError(404, `Stage "${id}" not found.`);
@@ -894,10 +1022,7 @@ async function requireStage(id: string) {
 async function requireRound(id: string) {
   const round = await prisma.round.findUnique({
     where: { id },
-    include: {
-      stage: { include: { event: true } },
-      matches: true,
-    },
+    include: roundDetailInclude,
   });
   if (!round) {
     throw new HttpError(404, `Round "${id}" not found.`);
@@ -908,14 +1033,7 @@ async function requireRound(id: string) {
 async function requireMatch(id: string) {
   const match = await prisma.match.findUnique({
     where: { id },
-    include: {
-      round: { include: { stage: { include: { event: true } } } },
-      arena: true,
-      entryA: { include: { user: true, event: true } },
-      entryB: { include: { user: true, event: true } },
-      winnerEntry: { include: { user: true, event: true } },
-      exchanges: true,
-    },
+    include: matchDetailInclude,
   });
   if (!match) {
     throw new HttpError(404, `Match "${id}" not found.`);
@@ -926,19 +1044,20 @@ async function requireMatch(id: string) {
 async function requireExchange(id: string) {
   const exchange = await prisma.exchange.findUnique({
     where: { id },
-    include: {
-      match: {
-        include: {
-          round: { include: { stage: { include: { event: true } } } },
-          arena: true,
-        },
-      },
-    },
+    include: exchangeDetailInclude,
   });
   if (!exchange) {
     throw new HttpError(404, `Exchange "${id}" not found.`);
   }
   return exchange;
+}
+
+async function requireEntryInTournament(id: string, tournamentId: string, label: string) {
+  const entry = await requireEntry(id);
+  if (entry.tournamentId !== tournamentId) {
+    throw new HttpError(400, `${label} must belong to the same tournament as the stage.`);
+  }
+  return entry;
 }
 
 function parseStageType(value: unknown): "POOL" | "ELIMINATION" | "FINAL" {

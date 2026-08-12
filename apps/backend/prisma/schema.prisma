@@ -25,29 +25,41 @@ model Skill {
 }
 
 model Event {
-  id       String   @id @default(cuid())
+  id        String       @id @default(cuid())
   eventName String
   ruleset   String?
-  entries  Entry[]
-  stages   Stage[]
-  arenas   Arena[]
+  tournaments Tournament[]
+  arenas    Arena[]
+}
+
+model Tournament {
+  id         String   @id @default(cuid())
+  eventId    String
+  name       String
+  ruleset    String?
+  order      Int      @default(0)
+  event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  entries    Entry[]
+  stages     Stage[]
+
+  @@index([eventId])
 }
 
 model Entry {
-  id              String  @id @default(cuid())
-  eventId         String
+  id              String    @id @default(cuid())
+  tournamentId    String
   userId          String
   kind            EntryKind @default(FIGHTER)
   seed            Int?
-  event           Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tournament      Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   matchesAsA      Match[] @relation("MatchEntryA")
   matchesAsB      Match[] @relation("MatchEntryB")
   matchesAsWinner Match[] @relation("MatchWinner")
   stageOfficials  StageOfficial[]
 
-  @@unique([eventId, userId])
-  @@index([eventId])
+  @@unique([tournamentId, userId])
+  @@index([tournamentId])
   @@index([userId])
 }
 
@@ -64,17 +76,17 @@ model Arena {
 }
 
 model Stage {
-  id        String   @id @default(cuid())
-  eventId   String
-  type      StageType
-  name      String?
-  ruleset   String?
-  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  rounds    Round[]
-  arenas    StageArena[]
-  officials StageOfficial[]
+  id          String   @id @default(cuid())
+  tournamentId String
+  type        StageType
+  name        String?
+  ruleset     String?
+  tournament  Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  rounds      Round[]
+  arenas      StageArena[]
+  officials   StageOfficial[]
 
-  @@index([eventId])
+  @@index([tournamentId])
 }
 
 model StageArena {
