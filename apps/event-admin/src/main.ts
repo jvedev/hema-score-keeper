@@ -38,7 +38,7 @@ interface AppState {
 }
 
 const api = createApiClient();
-const app = requireElement<HTMLDivElement>("#app");
+const app = requireElement<HTMLElement>("#app");
 
 const state: AppState = {
   loading: true,

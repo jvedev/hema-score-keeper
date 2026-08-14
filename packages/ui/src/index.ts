@@ -11,3 +11,4 @@ export * from "./components/score-view/score-view.js";
 export * from "./components/warning-view/warning-view.js";
 export * from "./components/select-bout-view/select-bout-view.js";
 export * from "./components/stage-view/stage-view.js";
+export * from "./components/event-view/event-view.js";

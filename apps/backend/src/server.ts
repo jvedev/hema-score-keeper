@@ -367,6 +367,14 @@ async function createTournament(request: IncomingMessage): Promise<unknown> {
       order,
       color,
       ...(ruleset !== undefined ? { ruleset } : {}),
+      stages: {
+        create: [
+          { type: "POOL" },
+          { type: "ELIMINATION" },
+          { type: "SEMI_FINAL" },
+          { type: "FINAL" },
+        ],
+      },
     },
     include: tournamentDetailInclude,
   });
