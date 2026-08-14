@@ -7,6 +7,7 @@ import {
   HttpError,
   optionalString,
   readJsonBody,
+  requireBoolean,
   requirePositiveInteger,
   requireString,
   sendError,
@@ -90,7 +91,7 @@ const eventDetailInclude: Prisma.EventInclude = {
   tournaments: {
     orderBy: tournamentOrderBy,
     include: {
-      entries: { include: { user: true } },
+      entries: { include: { user: { include: { skills: true } } } },
       stages: {
         include: {
           tournament: { include: { event: true } },
@@ -106,7 +107,7 @@ const eventDetailInclude: Prisma.EventInclude = {
 
 const tournamentDetailInclude = {
   event: true,
-  entries: { include: { user: true, stageOfficials: { include: { stage: { include: { tournament: { include: { event: true } } } } } } } },
+  entries: { include: { user: { include: { skills: true } }, stageOfficials: { include: { stage: { include: { tournament: { include: { event: true } } } } } } } },
   stages: {
     include: {
       tournament: { include: { event: true } },
@@ -119,7 +120,7 @@ const tournamentDetailInclude = {
 
 const entryDetailInclude = {
   tournament: { include: { event: true } },
-  user: true,
+  user: { include: { skills: true } },
   stageOfficials: { include: { stage: { include: { tournament: { include: { event: true } } } } } },
 } as const;
 
@@ -319,11 +320,16 @@ async function createEvent(request: IncomingMessage): Promise<unknown> {
   const body = ensureObject(await readJsonBody(request), "Event");
   const eventName = requireString(body.eventName, "Event name");
   const ruleset = body.ruleset === undefined ? undefined : optionalString(body.ruleset);
+  const allFightersAreVolunteers =
+    body.allFightersAreVolunteers === undefined
+      ? undefined
+      : requireBoolean(body.allFightersAreVolunteers, "All fighters are volunteers");
 
   return prisma.event.create({
     data: {
       eventName,
       ...(ruleset !== undefined ? { ruleset } : {}),
+      ...(allFightersAreVolunteers !== undefined ? { allFightersAreVolunteers } : {}),
     },
   });
 }
@@ -396,13 +402,16 @@ async function deleteTournament(_request: IncomingMessage, params: Record<string
 
 async function updateEvent(request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
   const body = ensureObject(await readJsonBody(request), "Event");
-  const data: { eventName?: string; ruleset?: string | null } = {};
+  const data: { eventName?: string; ruleset?: string | null; allFightersAreVolunteers?: boolean } = {};
 
   if (body.eventName !== undefined) {
     data.eventName = requireString(body.eventName, "Event name");
   }
   if (body.ruleset !== undefined) {
     data.ruleset = optionalString(body.ruleset) ?? null;
+  }
+  if (body.allFightersAreVolunteers !== undefined) {
+    data.allFightersAreVolunteers = requireBoolean(body.allFightersAreVolunteers, "All fighters are volunteers");
   }
 
   return prisma.event.update({
@@ -484,13 +493,16 @@ async function createEntry(request: IncomingMessage): Promise<unknown> {
   const body = ensureObject(await readJsonBody(request), "Entry");
   const tournamentId = requireString(body.tournamentId, "Tournament ID");
   const userId = requireString(body.userId, "User ID");
-  const kind = body.kind === undefined ? undefined : parseEntryKind(body.kind);
+  const requestedKind = body.kind === undefined ? undefined : parseEntryKind(body.kind);
   const seed = body.seed === undefined ? undefined : requirePositiveInteger(body.seed, "Seed");
 
-  await requireTournament(tournamentId);
+  const tournament = await requireTournament(tournamentId);
   await requireUser(userId);
+  const kind = requestedKind === "FIGHTER" && tournament.event.allFightersAreVolunteers
+    ? "BOTH"
+    : requestedKind;
 
-  return prisma.entry.create({
+  const entry = await prisma.entry.create({
     data: {
       tournamentId,
       userId,
@@ -499,6 +511,8 @@ async function createEntry(request: IncomingMessage): Promise<unknown> {
     },
     include: entryDetailInclude,
   });
+
+  return entry;
 }
 
 async function getEntry(_request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
@@ -507,7 +521,7 @@ async function getEntry(_request: IncomingMessage, params: Record<string, string
 
 async function updateEntry(request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
   const body = ensureObject(await readJsonBody(request), "Entry");
-  const data: { tournamentId?: string; userId?: string; kind?: "FIGHTER" | "OFFICIAL"; seed?: number | null } = {};
+  const data: { tournamentId?: string; userId?: string; kind?: "FIGHTER" | "VOLUNTEER" | "BOTH"; seed?: number | null } = {};
 
   if (body.tournamentId !== undefined) {
     const tournamentId = requireString(body.tournamentId, "Tournament ID");
@@ -671,8 +685,8 @@ async function createStageOfficial(
   if (entry.tournamentId !== stage.tournamentId) {
     throw new HttpError(400, "Official must belong to the same tournament as the stage.");
   }
-  if (entry.kind !== "OFFICIAL") {
-    throw new HttpError(400, "Only official entries can be assigned as stage officials.");
+  if (entry.kind === "FIGHTER") {
+    throw new HttpError(400, "Only official or both-role entries can be assigned as stage officials.");
   }
 
   return prisma.stageOfficial.create({
@@ -1068,12 +1082,12 @@ function parseStageType(value: unknown): "POOL" | "ELIMINATION" | "FINAL" {
   return type as "POOL" | "ELIMINATION" | "FINAL";
 }
 
-function parseEntryKind(value: unknown): "FIGHTER" | "OFFICIAL" {
+function parseEntryKind(value: unknown): "FIGHTER" | "VOLUNTEER" | "BOTH" {
   const kind = requireString(value, "Entry kind");
-  if (!["FIGHTER", "OFFICIAL"].includes(kind)) {
-    throw new HttpError(400, "Entry kind must be FIGHTER or OFFICIAL.");
+  if (!["FIGHTER", "VOLUNTEER", "BOTH"].includes(kind)) {
+    throw new HttpError(400, "Entry kind must be FIGHTER, VOLUNTEER, or BOTH.");
   }
-  return kind as "FIGHTER" | "OFFICIAL";
+  return kind as "FIGHTER" | "VOLUNTEER" | "BOTH";
 }
 
 function parseStageOfficialRole(value: unknown): "JUDGE" | "JURY" | "TELLER" | "TABLE" {

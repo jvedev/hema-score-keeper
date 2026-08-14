@@ -25,11 +25,12 @@ model Skill {
 }
 
 model Event {
-  id        String       @id @default(cuid())
-  eventName String
-  ruleset   String?
-  tournaments Tournament[]
-  arenas    Arena[]
+  id                       String       @id @default(cuid())
+  eventName                String
+  ruleset                  String?
+  allFightersAreVolunteers Boolean      @default(false)
+  tournaments              Tournament[]
+  arenas                   Arena[]
 }
 
 model Tournament {
@@ -165,7 +166,8 @@ enum StageType {
 
 enum EntryKind {
   FIGHTER
-  OFFICIAL
+  VOLUNTEER
+  BOTH
 }
 
 enum StageOfficialRole {

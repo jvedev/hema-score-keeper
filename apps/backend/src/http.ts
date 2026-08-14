@@ -94,6 +94,14 @@ export function requirePositiveInteger(value: unknown, label: string): number {
   return value;
 }
 
+export function requireBoolean(value: unknown, label: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new HttpError(400, `${label} must be a boolean.`);
+  }
+
+  return value;
+}
+
 export function optionalDate(value: unknown): Date | undefined {
   if (value === undefined || value === null) {
     return undefined;
