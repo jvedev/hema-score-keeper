@@ -1,4 +1,4 @@
-export type StageType = "POOL" | "ELIMINATION" | "FINAL";
+export type StageType = "POOL" | "ELIMINATION" | "SEMI_FINAL" | "FINAL";
 export type EntryKind = "FIGHTER" | "VOLUNTEER" | "BOTH";
 export type StageOfficialRole = "JUDGE" | "JURY" | "TELLER" | "TABLE";
 
@@ -81,6 +81,7 @@ export interface ApiTournament {
   name: string;
   ruleset: string | null;
   order: number;
+  color: string;
   entries: ApiEntry[];
   stages: ApiStage[];
 }

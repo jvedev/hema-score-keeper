@@ -13,7 +13,7 @@ import {
 } from "./api";
 import "./styles.css";
 
-type EventTab = "tournaments" | "arenas" | "officials" | "entries";
+type EventTab = "tournaments" | "arenas" | "officials";
 type TournamentTab = "entries" | "officials" | "stages";
 type StageTab = "overview" | "arenas" | "officials" | "rounds" | "matches";
 type EditorKind = "event" | "tournament" | "arena" | "entry" | "stage" | "stage-arena" | "stage-official";
@@ -317,6 +317,7 @@ function renderStageCreateForm(tournament: ApiTournament, stage?: ApiStage): str
           <select class="text-input" name="type">
             <option value="POOL" ${type === "POOL" ? "selected" : ""}>POOL</option>
             <option value="ELIMINATION" ${type === "ELIMINATION" ? "selected" : ""}>ELIMINATION</option>
+            <option value="SEMI_FINAL" ${type === "SEMI_FINAL" ? "selected" : ""}>SEMI_FINAL</option>
             <option value="FINAL" ${type === "FINAL" ? "selected" : ""}>FINAL</option>
           </select>
         </label>
@@ -489,6 +490,7 @@ function renderShell(): string {
               <h2>${escapeHtml(event ? event.eventName : "Geen events")}</h2>
               <p class="panel-meta">${event ? "Beheer de onderdelen van dit event." : "Maak een event aan in het overzicht."}</p>
             </div>
+            ${event ? `<div class="panel-actions">${renderEventCreateAction()}</div>` : ""}
           </header>
           ${renderTabBar(
             "event",
@@ -497,7 +499,6 @@ function renderShell(): string {
               { value: "tournaments", label: "Toernooien" },
               { value: "arenas", label: "Arenas" },
               { value: "officials", label: "Vrijwilligers" },
-              { value: "entries", label: "Inschrijvingen" },
             ],
           )}
           <div class="panel-body">
@@ -511,7 +512,10 @@ function renderShell(): string {
               <div class="eyebrow">Toernooi</div>
               <h2>${tournament ? escapeHtml(tournament.name) : "Geen toernooi geselecteerd"}</h2>
             </div>
-            <div class="panel-meta">${tournamentSummary ? `${tournamentSummary.entries} inschrijvingen` : "Geen data"}</div>
+            <div class="panel-actions">
+              <div class="panel-meta">${tournamentSummary ? `${tournamentSummary.entries} inschrijvingen` : "Geen data"}</div>
+              ${event && tournament ? renderTournamentCreateAction() : ""}
+            </div>
           </header>
           ${renderTabBar(
             "tournament",
@@ -684,6 +688,7 @@ function renderEditorFields(
         <label class="field"><span>Type</span><select class="text-input" name="type">
           <option value="POOL" ${type === "POOL" ? "selected" : ""}>POOL</option>
           <option value="ELIMINATION" ${type === "ELIMINATION" ? "selected" : ""}>ELIMINATION</option>
+          <option value="SEMI_FINAL" ${type === "SEMI_FINAL" ? "selected" : ""}>SEMI_FINAL</option>
           <option value="FINAL" ${type === "FINAL" ? "selected" : ""}>FINAL</option>
         </select></label>
         ${renderTextFields([
@@ -711,59 +716,50 @@ function renderEditorFields(
 function renderEventTab(event: ApiEvent): string {
   switch (state.eventTab) {
     case "tournaments":
-      return `
-        <div class="section-actions">
-          <button type="button" class="button icon-button" data-action="open-editor" data-editor="tournament" title="Nieuw toernooi" aria-label="Nieuw toernooi">+</button>
-        </div>
-        ${renderTournamentList(event, currentTournament(event))}
-      `;
+      return renderTournamentList(event, currentTournament(event));
     case "arenas":
-      return `
-        <div class="section-actions">
-          <button type="button" class="button icon-button" data-action="open-editor" data-editor="arena" title="Nieuwe arena" aria-label="Nieuwe arena">+</button>
-        </div>
-        ${renderArenaList(event, event.arenas)}
-      `;
+      return renderArenaList(event, event.arenas);
     case "officials":
-      return `
-        <div class="section-actions">
-          <button type="button" class="button icon-button" data-action="open-editor" data-editor="entry" data-entry-kind="VOLUNTEER" title="Nieuwe vrijwilliger" aria-label="Nieuwe vrijwilliger">+</button>
-        </div>
-        ${renderEventOfficials(event)}
-      `;
-    case "entries":
-      return `
-        <div class="section-actions">
-          <button type="button" class="button icon-button" data-action="open-editor" data-editor="entry" data-entry-kind="FIGHTER" title="Nieuwe inschrijving" aria-label="Nieuwe inschrijving">+</button>
-        </div>
-        ${renderEventEntries(event)}
-      `;
+      return renderEventOfficials(event);
   }
+}
+
+function renderEventCreateAction(): string {
+  switch (state.eventTab) {
+    case "tournaments":
+      return renderCreateButton("tournament", "Nieuw toernooi");
+    case "arenas":
+      return renderCreateButton("arena", "Nieuwe arena");
+    case "officials":
+      return renderCreateButton("entry", "Nieuwe vrijwilliger", "VOLUNTEER");
+  }
+}
+
+function renderTournamentCreateAction(): string {
+  switch (state.tournamentTab) {
+    case "entries":
+      return renderCreateButton("entry", "Nieuwe deelnemer", "FIGHTER");
+    case "officials":
+      return renderCreateButton("entry", "Nieuwe vrijwilliger", "VOLUNTEER");
+    case "stages":
+      return renderCreateButton("stage", "Nieuwe stage");
+  }
+}
+
+function renderCreateButton(editor: EditorKind, label: string, entryKind?: EntryKind): string {
+  return `
+    <button type="button" class="button icon-button" data-action="open-editor" data-editor="${editor}" ${entryKind ? `data-entry-kind="${entryKind}"` : ""} title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">+</button>
+  `;
 }
 
 function renderTournamentTab(event: ApiEvent, tournament: ApiTournament): string {
   switch (state.tournamentTab) {
     case "entries":
-      return `
-        <div class="section-actions">
-          <button type="button" class="button icon-button" data-action="open-editor" data-editor="entry" data-entry-kind="FIGHTER" title="Nieuwe deelnemer" aria-label="Nieuwe deelnemer">+</button>
-        </div>
-        ${renderEntryList(tournament.entries.filter((entry) => entry.kind !== "VOLUNTEER"))}
-      `;
+      return renderEntryList(tournament.entries.filter((entry) => entry.kind !== "VOLUNTEER"));
     case "officials":
-      return `
-        <div class="section-actions">
-          <button type="button" class="button icon-button" data-action="open-editor" data-editor="entry" data-entry-kind="VOLUNTEER" title="Nieuwe vrijwilliger" aria-label="Nieuwe vrijwilliger">+</button>
-        </div>
-        ${renderTournamentOfficials(tournament)}
-      `;
+      return renderTournamentOfficials(tournament);
     case "stages":
-      return `
-        <div class="section-actions">
-          <button type="button" class="button icon-button" data-action="open-editor" data-editor="stage" title="Nieuwe stage" aria-label="Nieuwe stage">+</button>
-        </div>
-        ${renderStageList(event, tournament, currentStage(tournament))}
-      `;
+      return renderStageList(event, tournament, currentStage(tournament));
   }
 }
 
@@ -809,7 +805,7 @@ function renderTournamentList(event: ApiEvent, selectedTournament: ApiTournament
           const summary = summarizeTournament(event, tournament);
           return `
             <div class="info-card list-item ${selectedTournament?.id === tournament.id ? "is-active" : ""}" data-action="select-tournament" data-id="${escapeHtml(tournament.id)}">
-                <span class="list-title">${escapeHtml(tournament.name)}</span>
+                <span class="tournament-title"><span class="tournament-color" style="background-color: ${escapeHtml(tournament.color)}" title="Tournament color: ${escapeHtml(tournament.color)}"></span><span class="list-title">${escapeHtml(tournament.name)}</span></span>
                 <span class="list-meta">${escapeHtml(summary.ruleset)}</span>
                 <span class="list-stats">${summary.entries} inschrijvingen · ${summary.stages} stages</span>
               ${renderResourceActions("tournament", tournament.id, tournament.name)}
@@ -877,24 +873,6 @@ function renderEventOfficials(event: ApiEvent): string {
             ${renderEntryActions(entry)}
           </div>
         `)
-        .join("")}
-    </div>
-  `;
-}
-
-function renderEventEntries(event: ApiEvent): string {
-  const entries = event.tournaments.flatMap((tournament) =>
-    tournament.entries.filter((entry) => entry.kind !== "VOLUNTEER"),
-  );
-
-  if (entries.length === 0) {
-    return renderEmptyCard("Geen deelnemers gevonden.");
-  }
-
-  return `
-    <div class="list">
-      ${entries
-        .map((entry) => renderEntryCard(entry))
         .join("")}
     </div>
   `;

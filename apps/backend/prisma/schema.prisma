@@ -39,6 +39,7 @@ model Tournament {
   name       String
   ruleset    String?
   order      Int      @default(0)
+  color      String   @default("#5B8CFF")
   event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   entries    Entry[]
   stages     Stage[]
@@ -161,6 +162,7 @@ model Exchange {
 enum StageType {
   POOL
   ELIMINATION
+  SEMI_FINAL
   FINAL
 }
 

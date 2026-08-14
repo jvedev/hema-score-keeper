@@ -87,6 +87,8 @@ const tournamentOrderBy: Prisma.TournamentOrderByWithRelationInput[] = [
   { name: "asc" },
 ];
 
+const tournamentColors = ["#5B8CFF", "#E06C75", "#98C379", "#E5C07B", "#C678DD", "#56B6C2"];
+
 const eventDetailInclude: Prisma.EventInclude = {
   tournaments: {
     orderBy: tournamentOrderBy,
@@ -352,13 +354,18 @@ async function createTournament(request: IncomingMessage): Promise<unknown> {
   const ruleset = body.ruleset === undefined ? undefined : optionalString(body.ruleset);
   const order = body.order === undefined ? 0 : requirePositiveInteger(body.order, "Tournament order");
 
-  await requireEvent(eventId);
+  const event = await requireEvent(eventId);
+  const usedColors = new Set(event.tournaments.map((tournament) => tournament.color));
+  const color = tournamentColors.find((candidate) => !usedColors.has(candidate))
+    ?? tournamentColors[event.tournaments.length % tournamentColors.length]
+    ?? "#5B8CFF";
 
   return prisma.tournament.create({
     data: {
       eventId,
       name,
       order,
+      color,
       ...(ruleset !== undefined ? { ruleset } : {}),
     },
     include: tournamentDetailInclude,
@@ -587,7 +594,7 @@ async function updateStage(request: IncomingMessage, params: Record<string, stri
   const body = ensureObject(await readJsonBody(request), "Stage");
   const data: {
     tournamentId?: string;
-    type?: "POOL" | "ELIMINATION" | "FINAL";
+    type?: "POOL" | "ELIMINATION" | "SEMI_FINAL" | "FINAL";
     name?: string | null;
     ruleset?: string | null;
   } = {};
@@ -1074,12 +1081,12 @@ async function requireEntryInTournament(id: string, tournamentId: string, label:
   return entry;
 }
 
-function parseStageType(value: unknown): "POOL" | "ELIMINATION" | "FINAL" {
+function parseStageType(value: unknown): "POOL" | "ELIMINATION" | "SEMI_FINAL" | "FINAL" {
   const type = requireString(value, "Stage type");
-  if (!["POOL", "ELIMINATION", "FINAL"].includes(type)) {
-    throw new HttpError(400, "Stage type must be POOL, ELIMINATION, or FINAL.");
+  if (!["POOL", "ELIMINATION", "SEMI_FINAL", "FINAL"].includes(type)) {
+    throw new HttpError(400, "Stage type must be POOL, ELIMINATION, SEMI_FINAL, or FINAL.");
   }
-  return type as "POOL" | "ELIMINATION" | "FINAL";
+  return type as "POOL" | "ELIMINATION" | "SEMI_FINAL" | "FINAL";
 }
 
 function parseEntryKind(value: unknown): "FIGHTER" | "VOLUNTEER" | "BOTH" {
