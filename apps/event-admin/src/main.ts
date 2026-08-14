@@ -109,6 +109,11 @@ function onAppClick(event: MouseEvent): void {
     case "delete-event":
       void deleteEvent(target.dataset.id);
       return;
+    case "delete-tournament":
+    case "delete-arena":
+    case "delete-stage":
+      void deleteResource(target.dataset.action, target.dataset.id);
+      return;
     case "select-tournament":
       selectTournament(target.dataset.id);
       return;
@@ -440,7 +445,6 @@ function renderShell(): string {
   const stage = currentStage(tournament);
   const eventSummary = event ? summarizeEvent(event) : null;
   const tournamentSummary = event && tournament ? summarizeTournament(event, tournament) : null;
-  const stageSummary = event && tournament && stage ? summarizeStage(event, tournament, stage) : null;
   return `
     <main class="app-shell">
       <header class="topbar">
@@ -523,29 +527,6 @@ function renderShell(): string {
           </div>
         </article>
 
-        <article class="panel">
-          <header class="panel-header">
-            <div>
-              <div class="eyebrow">Stage</div>
-              <h2>${stage ? escapeHtml(stageLabel(stage)) : "Geen stage geselecteerd"}</h2>
-            </div>
-            <div class="panel-meta">${stageSummary ? `${stageSummary.rounds} rondes` : "Geen data"}</div>
-          </header>
-          ${renderTabBar(
-            "stage",
-            state.stageTab,
-            [
-              { value: "overview", label: "Overzicht" },
-              { value: "arenas", label: "Arenas" },
-              { value: "officials", label: "Vrijwilligers" },
-              { value: "rounds", label: "Rondes" },
-              { value: "matches", label: "Matches" },
-            ],
-          )}
-          <div class="panel-body">
-            ${event && tournament && stage ? renderStageTab(event, tournament, stage) : renderEmptyCard("Selecteer een stage.")}
-          </div>
-        </article>
       </section>
       ${renderEditor()}
     </main>
@@ -565,17 +546,14 @@ function renderEventList(selectedEvent: ApiEvent | undefined): string {
         .map((event) => {
           const summary = summarizeEvent(event);
           return `
-            <div class="list-row">
-              <button
-                type="button"
-                class="list-item ${event.id === activeEventId ? "is-active" : ""}"
+            <div
+                class="info-card list-item ${event.id === activeEventId ? "is-active" : ""}"
                 data-action="select-event"
                 data-id="${escapeHtml(event.id)}"
               >
                 <span class="list-title">${escapeHtml(event.eventName)}</span>
                 <span class="list-meta">${escapeHtml(summary.ruleset)}</span>
                 <span class="list-stats">${summary.tournaments} toernooien · ${summary.arenas} arenas</span>
-              </button>
               ${renderEventActions(event)}
             </div>
           `;
@@ -588,7 +566,7 @@ function renderEventList(selectedEvent: ApiEvent | undefined): string {
 function renderEventActions(event: ApiEvent): string {
   const name = escapeHtml(event.eventName);
   return `
-    <div class="card-actions list-row-actions">
+    <div class="card-actions">
       <button type="button" class="button secondary icon-button" data-action="open-editor" data-editor="event" data-id="${escapeHtml(event.id)}" title="Bewerk ${name}" aria-label="Bewerk ${name}">&#9998;</button>
       <button type="button" class="button secondary icon-button danger-button" data-action="delete-event" data-id="${escapeHtml(event.id)}" title="Verwijder ${name}" aria-label="Verwijder ${name}">&#128465;</button>
     </div>
@@ -676,7 +654,7 @@ function renderEditorFields(
           <input type="hidden" name="entryKind" value="${escapeHtml(kind)}" />
           ${renderTextFields([["username", "Name", "", "For example, Jane Doe", true]])}
           ${renderVolunteerPreferences([])}
-          ${kind === "FIGHTER"
+          ${kind === "FIGHTER" && !event?.allFightersAreVolunteers
             ? `<label class="checkbox-field"><input name="alsoVolunteer" type="checkbox" /> <span>Also Volunteer</span></label>`
             : ""}
         `;
@@ -830,17 +808,12 @@ function renderTournamentList(event: ApiEvent, selectedTournament: ApiTournament
         .map((tournament) => {
           const summary = summarizeTournament(event, tournament);
           return `
-            <button
-              type="button"
-              class="list-item ${selectedTournament?.id === tournament.id ? "is-active" : ""}"
-              data-action="select-tournament"
-              data-id="${escapeHtml(tournament.id)}"
-            >
-              <span class="list-title">${escapeHtml(tournament.name)}</span>
-              <span class="list-meta">${escapeHtml(summary.ruleset)}</span>
-              <span class="list-stats">${summary.entries} inschrijvingen · ${summary.stages} stages</span>
-            </button>
-            <button type="button" class="button secondary card-action" data-action="open-editor" data-editor="tournament" data-id="${escapeHtml(tournament.id)}">Bewerken</button>
+            <div class="info-card list-item ${selectedTournament?.id === tournament.id ? "is-active" : ""}" data-action="select-tournament" data-id="${escapeHtml(tournament.id)}">
+                <span class="list-title">${escapeHtml(tournament.name)}</span>
+                <span class="list-meta">${escapeHtml(summary.ruleset)}</span>
+                <span class="list-stats">${summary.entries} inschrijvingen · ${summary.stages} stages</span>
+              ${renderResourceActions("tournament", tournament.id, tournament.name)}
+            </div>
           `;
         })
         .join("")}
@@ -874,9 +847,7 @@ function renderArenaList(event: ApiEvent, arenas: ApiArena[]): string {
                   ? usages.map((usage) => `<span class="badge badge-muted">${escapeHtml(usage)}</span>`).join("")
                   : `<span class="badge badge-muted">Nog niet gekoppeld</span>`}
               </div>
-              <div class="card-actions">
-                <button type="button" class="button secondary" data-action="open-editor" data-editor="arena" data-id="${escapeHtml(arena.id)}">Bewerken</button>
-              </div>
+              ${renderResourceActions("arena", arena.id, arena.name)}
             </div>
           `;
         })
@@ -964,6 +935,16 @@ function renderEntryActions(entry: ApiEntry): string {
   `;
 }
 
+function renderResourceActions(kind: "tournament" | "arena" | "stage", id: string, name: string): string {
+  const escapedName = escapeHtml(name);
+  return `
+    <div class="card-actions list-row-actions">
+      <button type="button" class="button secondary icon-button" data-action="open-editor" data-editor="${kind}" data-id="${escapeHtml(id)}" title="Bewerk ${escapedName}" aria-label="Bewerk ${escapedName}">&#9998;</button>
+      <button type="button" class="button secondary icon-button danger-button" data-action="delete-${kind}" data-id="${escapeHtml(id)}" title="Verwijder ${escapedName}" aria-label="Verwijder ${escapedName}">&#128465;</button>
+    </div>
+  `;
+}
+
 function renderTournamentOfficials(tournament: ApiTournament): string {
   const officials = tournament.entries.filter((entry) => entry.kind !== "FIGHTER");
   if (officials.length === 0) {
@@ -1004,17 +985,12 @@ function renderStageList(event: ApiEvent, tournament: ApiTournament, selectedSta
         .map((stage) => {
           const summary = summarizeStage(event, tournament, stage);
           return `
-            <button
-              type="button"
-              class="list-item ${selectedStage?.id === stage.id ? "is-active" : ""}"
-              data-action="select-stage"
-              data-id="${escapeHtml(stage.id)}"
-            >
-              <span class="list-title">${escapeHtml(stageLabel(stage))}</span>
-              <span class="list-meta">${escapeHtml(summary.ruleset)}</span>
-              <span class="list-stats">${summary.rounds} rondes · ${summary.matches} matches</span>
-            </button>
-            <button type="button" class="button secondary card-action" data-action="open-editor" data-editor="stage" data-id="${escapeHtml(stage.id)}">Bewerken</button>
+            <div class="info-card list-item ${selectedStage?.id === stage.id ? "is-active" : ""}" data-action="select-stage" data-id="${escapeHtml(stage.id)}">
+                <span class="list-title">${escapeHtml(stageLabel(stage))}</span>
+                <span class="list-meta">${escapeHtml(summary.ruleset)}</span>
+                <span class="list-stats">${summary.rounds} rondes · ${summary.matches} matches</span>
+              ${renderResourceActions("stage", stage.id, stageLabel(stage))}
+            </div>
           `;
         })
         .join("")}
@@ -1258,6 +1234,37 @@ async function deleteEvent(id?: string): Promise<void> {
   }
 }
 
+async function deleteResource(action: string | undefined, id?: string): Promise<void> {
+  const event = currentEvent();
+  const tournament = event?.tournaments.find((item) => item.id === id);
+  const arena = event?.arenas.find((item) => item.id === id);
+  const stage = event?.tournaments.flatMap((item) => item.stages).find((item) => item.id === id);
+  const name = action === "delete-tournament"
+    ? tournament?.name
+    : action === "delete-arena"
+      ? arena?.name
+      : stage
+        ? stageLabel(stage)
+        : undefined;
+  if (!id || !name || !window.confirm(`Weet je zeker dat je ${name} wilt verwijderen?`)) {
+    return;
+  }
+
+  state.loading = true;
+  state.error = null;
+  render();
+  try {
+    if (action === "delete-tournament") await api.deleteTournament(id);
+    if (action === "delete-arena") await api.deleteArena(id);
+    if (action === "delete-stage") await api.deleteStage(id);
+    await bootstrap();
+  } catch (error) {
+    state.loading = false;
+    state.error = toErrorMessage(error);
+    render();
+  }
+}
+
 function selectTournament(id?: string): void {
   if (!id) {
     return;
@@ -1447,13 +1454,18 @@ function renderVolunteerPreferences(skills: ApiSkill[]): string {
   const other = skills.some((skill) => skill.skillName === "OTHER");
   return `
     <div class="volunteer-preferences">
-      <span>Volunteer preferences</span>
-      <label class="checkbox-field"><input name="judgeVolunteer" type="checkbox" ${judge ? "checked" : ""} /><span>Judge</span></label>
-      ${renderSkillRating("judgeSkill", "Judge", judge?.skillLevel ?? 1)}
-      <label class="checkbox-field"><input name="juryVolunteer" type="checkbox" ${jury ? "checked" : ""} /><span>Jury</span></label>
-      ${renderSkillRating("jurySkill", "Jury", jury?.skillLevel ?? 1)}
-      <label class="checkbox-field"><input name="tableVolunteer" type="checkbox" ${table ? "checked" : ""} /><span>Table</span></label>
-      <label class="checkbox-field"><input name="otherVolunteer" type="checkbox" ${other ? "checked" : ""} /><span>Other volunteer work</span></label>
+      <span>This participant would like to volunteer as:</span>
+      <div class="volunteer-checkboxes">
+        <label class="checkbox-field"><input name="judgeVolunteer" type="checkbox" ${judge ? "checked" : ""} /><span>Judge</span></label>
+        <label class="checkbox-field"><input name="juryVolunteer" type="checkbox" ${jury ? "checked" : ""} /><span>Jury</span></label>
+        <label class="checkbox-field"><input name="tableVolunteer" type="checkbox" ${table ? "checked" : ""} /><span>Table</span></label>
+        <label class="checkbox-field"><input name="otherVolunteer" type="checkbox" ${other ? "checked" : ""} /><span>Other volunteer work</span></label>
+      </div>
+      <div class="volunteer-skills">
+        <span>Skills</span>
+        ${renderSkillRating("judgeSkill", "Judge", judge?.skillLevel ?? 1)}
+        ${renderSkillRating("jurySkill", "Jury", jury?.skillLevel ?? 1)}
+      </div>
     </div>
   `;
 }

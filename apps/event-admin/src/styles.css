@@ -82,7 +82,7 @@ button {
 .workspace {
   display: grid;
   gap: 12px;
-  grid-template-columns: minmax(270px, 300px) minmax(320px, 1fr) minmax(320px, 1fr) minmax(360px, 1fr);
+  grid-template-columns: minmax(360px, 420px) repeat(2, minmax(320px, 1fr));
   min-height: 0;
   overflow: auto;
   padding: 12px;
@@ -177,6 +177,17 @@ button {
 }
 
 .volunteer-preferences > span {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+}
+
+.volunteer-checkboxes,
+.volunteer-skills {
+  display: grid;
+  gap: 8px;
+}
+
+.volunteer-skills > span {
   color: rgba(255, 255, 255, 0.72);
   font-size: 12px;
 }
@@ -470,13 +481,13 @@ button {
 
 @media (max-width: 1500px) {
   .workspace {
-    grid-template-columns: minmax(270px, 300px) repeat(3, minmax(320px, 1fr));
+    grid-template-columns: minmax(360px, 420px) repeat(2, minmax(320px, 1fr));
   }
 }
 
 @media (max-width: 1280px) {
   .workspace {
-    grid-template-columns: minmax(270px, 300px) repeat(2, minmax(320px, 1fr));
+    grid-template-columns: minmax(360px, 420px) minmax(320px, 1fr);
   }
 }
 

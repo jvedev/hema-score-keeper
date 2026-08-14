@@ -130,9 +130,11 @@ export interface ApiClient {
   ): Promise<ApiTournament>;
   listTournaments(): Promise<ApiTournament[]>;
   getTournament(id: string): Promise<ApiTournament>;
+  deleteTournament(id: string): Promise<void>;
   createArena(body: { eventId: string; name: string; order?: number }): Promise<ApiArena>;
   updateArena(id: string, body: { eventId?: string; name?: string; order?: number }): Promise<ApiArena>;
   listArenas(): Promise<ApiArena[]>;
+  deleteArena(id: string): Promise<void>;
   createEntry(body: {
     tournamentId: string;
     userId: string;
@@ -166,6 +168,7 @@ export interface ApiClient {
     },
   ): Promise<ApiStage>;
   listStages(): Promise<ApiStage[]>;
+  deleteStage(id: string): Promise<void>;
   createStageArena(stageId: string, body: { arenaId: string }): Promise<ApiStageArena>;
   deleteStageArena(stageId: string, arenaId: string): Promise<void>;
   createStageOfficial(
@@ -203,9 +206,11 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
       requestJson<ApiTournament>(baseUrl, `/tournaments/${id}`, { method: "PATCH", body }),
     listTournaments: () => requestJson<ApiTournament[]>(baseUrl, "/tournaments"),
     getTournament: (id) => requestJson<ApiTournament>(baseUrl, `/tournaments/${id}`),
+    deleteTournament: (id) => requestJson<void>(baseUrl, `/tournaments/${id}`, { method: "DELETE" }),
     createArena: (body) => requestJson<ApiArena>(baseUrl, "/arenas", { method: "POST", body }),
     updateArena: (id, body) => requestJson<ApiArena>(baseUrl, `/arenas/${id}`, { method: "PATCH", body }),
     listArenas: () => requestJson<ApiArena[]>(baseUrl, "/arenas"),
+    deleteArena: (id) => requestJson<void>(baseUrl, `/arenas/${id}`, { method: "DELETE" }),
     createEntry: (body) => requestJson<ApiEntry>(baseUrl, "/entries", { method: "POST", body }),
     updateEntry: (id, body) => requestJson<ApiEntry>(baseUrl, `/entries/${id}`, { method: "PATCH", body }),
     listEntries: () => requestJson<ApiEntry[]>(baseUrl, "/entries"),
@@ -213,6 +218,7 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
     createStage: (body) => requestJson<ApiStage>(baseUrl, "/stages", { method: "POST", body }),
     updateStage: (id, body) => requestJson<ApiStage>(baseUrl, `/stages/${id}`, { method: "PATCH", body }),
     listStages: () => requestJson<ApiStage[]>(baseUrl, "/stages"),
+    deleteStage: (id) => requestJson<void>(baseUrl, `/stages/${id}`, { method: "DELETE" }),
     createStageArena: (stageId, body) =>
       requestJson<ApiStageArena>(baseUrl, `/stages/${stageId}/arenas`, { method: "POST", body }),
     deleteStageArena: (stageId, arenaId) =>
