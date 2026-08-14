@@ -7,7 +7,18 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./event-view": {
+      "types": "./src/components/event-view/event-view.ts",
+      "default": "./src/components/event-view/event-view.ts"
+    },
+    "./event-editor-view": {
+      "types": "./src/components/event-editor-view/event-editor-view.ts",
+      "default": "./src/components/event-editor-view/event-editor-view.ts"
     }
+  },
+  "dependencies": {
+    "@hema/event-admin-api": "*"
   },
   "scripts": {
     "build": "vite build",
