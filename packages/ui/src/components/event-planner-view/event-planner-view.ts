@@ -1,13 +1,16 @@
 import css from "./event-planner-view.css?raw";
 import { BaseComponent } from "../base-component/base-component.js";
+import "../event-editor-view/event-editor-view.js";
 import {
   createApiClient,
   type ApiEvent,
   type ApiEventSchedule,
   type ApiEventScheduleResponse,
   type ApiSkill,
+  type ApiRuleset,
   type ApiScheduledPhase,
   type ApiScheduleTimeSlot,
+  type ApiStage,
   type ScheduleRole,
 } from "@hema/event-admin-api";
 
@@ -19,6 +22,7 @@ export class EventPlannerView extends BaseComponent {
   #error: string | undefined;
   #loading = false;
   #showSlotDetails = false;
+  #showSuggestions = false;
   #mode: "stages" | "volunteers" = "stages";
   #dragging = false;
 
@@ -143,11 +147,25 @@ export class EventPlannerView extends BaseComponent {
 
     const actionElement = target.closest<HTMLElement>("[data-click-action]");
     if (!actionElement) {
+      if (target.classList.contains("modal-backdrop")) {
+        this.#showSuggestions = false;
+        this.renderPlanner();
+      }
       return;
     }
 
     if (actionElement.dataset.clickAction === "toggle-slot-details") {
       this.#showSlotDetails = !this.#showSlotDetails;
+      this.renderPlanner();
+      return;
+    }
+    if (actionElement.dataset.clickAction === "open-suggestions") {
+      this.#showSuggestions = true;
+      this.renderPlanner();
+      return;
+    }
+    if (actionElement.dataset.clickAction === "close-suggestions") {
+      this.#showSuggestions = false;
       this.renderPlanner();
       return;
     }
@@ -306,18 +324,29 @@ export class EventPlannerView extends BaseComponent {
             <a data-route href="/">Event administration</a>
             <h1>Event planner</h1>
           </div>
-          <label>
-            Event
-            <select name="eventId" ${this.#loading ? "disabled" : ""}>
-              <option value="">Choose an event</option>
-              ${eventOptions}
-            </select>
-          </label>
+          <div class="planner-header-actions">
+            <label>
+              Event
+              <select name="eventId" ${this.#loading ? "disabled" : ""}>
+                <option value="">Choose an event</option>
+                ${eventOptions}
+              </select>
+            </label>
+            <button
+              type="button"
+              class="button secondary icon-button"
+              data-click-action="open-suggestions"
+              title="Open suggestions"
+              aria-label="Open suggestions"
+              ${event ? "" : "disabled"}
+            >✦</button>
+          </div>
         </header>
         ${this.#error ? `<p class="planner-error" role="alert">${escapeHtml(this.#error)}</p>` : ""}
         ${this.#loading ? "<p>Loading planner...</p>" : ""}
         ${!this.#loading && !event ? "<p class=\"planner-empty\">Choose an event to create a schedule.</p>" : ""}
         ${event && schedule ? this.renderSchedule(event, schedule) : ""}
+        ${event ? this.renderSuggestionsModal(event) : ""}
       </section>
     `);
   }
@@ -384,6 +413,94 @@ export class EventPlannerView extends BaseComponent {
           </div>
         </div>
       </div>
+    `;
+  }
+
+  private renderSuggestionsModal(event: ApiEvent): string {
+    if (!this.#showSuggestions) {
+      return "";
+    }
+
+    const suggestions = buildEventSuggestions(event);
+    const longestSlot = suggestions.reduce((max, suggestion) => Math.max(max, suggestion.longestSlotMinutes), 0);
+    const totalParticipants = suggestions.reduce((sum, suggestion) => sum + suggestion.participantCount, 0);
+    const totalPools = suggestions.reduce((sum, suggestion) => sum + suggestion.poolCount, 0);
+
+    return `
+      <event-editor-view>
+        <section class="modal-backdrop" role="presentation">
+          <div class="modal-card suggestions-modal-card" role="dialog" aria-modal="true" aria-labelledby="suggestions-title">
+            <header class="modal-header">
+              <div>
+                <div class="eyebrow">Planning suggestions</div>
+                <h2 id="suggestions-title">Pool and elimination suggestions</h2>
+                <p class="editor-note">These are estimates based on the current event, participant counts, pool limits, elimination setup, ruleset match length, and time between matches.</p>
+              </div>
+              <div class="modal-actions">
+                <button type="button" class="button secondary" data-click-action="close-suggestions">Close</button>
+              </div>
+            </header>
+
+            <div class="suggestion-summary">
+              <span class="badge">Tournaments ${suggestions.length}</span>
+              <span class="badge badge-muted">Participants ${totalParticipants}</span>
+              <span class="badge badge-muted">Pools ${totalPools}</span>
+              <span class="badge badge-muted">Longest slot ${formatDuration(longestSlot)}</span>
+            </div>
+
+            <div class="suggestion-list">
+              ${suggestions.length > 0
+                ? suggestions.map((suggestion) => this.renderSuggestionCard(suggestion)).join("")
+                : `<div class="empty-state">No tournaments with pool suggestions yet.</div>`}
+            </div>
+          </div>
+        </section>
+      </event-editor-view>
+    `;
+  }
+
+  private renderSuggestionCard(suggestion: TournamentSuggestion): string {
+    return `
+      <article class="suggestion-card" style="--tournament-color: ${escapeHtml(suggestion.color)}">
+        <div class="suggestion-card-header">
+          <div>
+            <h3>${escapeHtml(suggestion.tournamentName)}</h3>
+            <p>${escapeHtml(suggestion.reason)}</p>
+          </div>
+          <div class="suggestion-pill">${suggestion.participantCount} participants</div>
+        </div>
+
+        <div class="badge-row">
+          <span class="badge badge-muted">Pool sizes ${escapeHtml(suggestion.poolSizes.join(", "))}</span>
+          <span class="badge badge-muted">Pools ${suggestion.poolCount}</span>
+          <span class="badge badge-muted">Pool slot lengths ${escapeHtml(suggestion.waveLengths.map(formatDuration).join(", "))}</span>
+          <span class="badge badge-muted">Elimination length ${formatDuration(suggestion.eliminationLengthMinutes)}</span>
+          <span class="badge badge-muted">Total ${formatDuration(suggestion.totalMinutes)}</span>
+        </div>
+
+        <div class="suggestion-metrics">
+          <div>
+            <span>Participant count</span>
+            <strong>${suggestion.participantCount}</strong>
+          </div>
+          <div>
+            <span>Match block</span>
+            <strong>${formatDuration(suggestion.matchBlockMinutes)}</strong>
+          </div>
+          <div>
+            <span>Preferred pool</span>
+            <strong>${suggestion.preferredPoolSize}</strong>
+          </div>
+          <div>
+            <span>Limits</span>
+            <strong>${suggestion.minPoolSize} - ${suggestion.maxPoolSize}</strong>
+          </div>
+        </div>
+
+        ${suggestion.warnings.length > 0
+          ? `<div class="suggestion-warning">${suggestion.warnings.map(escapeHtml).join("<br />")}</div>`
+          : ""}
+      </article>
     `;
   }
 
@@ -620,11 +737,11 @@ function stageLabel(type: string): string {
     case "POOL":
       return "Pool";
     case "ELIMINATION":
-      return "Eliminatie";
+      return "Elimination";
     case "SEMI_FINAL":
-      return "Halve finale";
+      return "Semi-final";
     case "FINAL":
-      return "Finale";
+      return "Final";
     default:
       return type;
   }
@@ -637,6 +754,348 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+interface TournamentSuggestion {
+  tournamentId: string;
+  tournamentName: string;
+  color: string;
+  participantCount: number;
+  poolSizes: number[];
+  poolCount: number;
+  waveLengths: number[];
+  firstSlotLengthMinutes: number;
+  eliminationLengthMinutes: number;
+  longestSlotMinutes: number;
+  totalMinutes: number;
+  matchBlockMinutes: number;
+  minPoolSize: number;
+  maxPoolSize: number;
+  preferredPoolSize: number;
+  reason: string;
+  warnings: string[];
+}
+
+function buildEventSuggestions(event: ApiEvent): TournamentSuggestion[] {
+  const arenaCount = Math.max(1, event.arenas.length);
+  return [...event.tournaments]
+    .sort((left, right) => left.order - right.order || left.name.localeCompare(right.name))
+    .map((tournament) => buildTournamentSuggestion(tournament, arenaCount, event.ruleset));
+}
+
+function buildTournamentSuggestion(
+  tournament: ApiEvent["tournaments"][number],
+  arenaCount: number,
+  eventRuleset: ApiRuleset | null,
+): TournamentSuggestion {
+  const poolStage = tournament.stages.find((stage) => stage.type === "POOL");
+  const eliminationStage = tournament.stages.find((stage) => stage.type === "ELIMINATION" || stage.type === "SEMI_FINAL" || stage.type === "FINAL");
+  const participantCount = tournament.entries.filter((entry) => entry.kind !== "VOLUNTEER").length;
+  const ruleset = resolveStageRuleset(poolStage?.ruleset ?? tournament.ruleset ?? eventRuleset);
+  const minPoolSize = poolStage?.minPoolSize ?? 4;
+  const maxPoolSize = poolStage?.maxPoolSize ?? 6;
+  const preferredPoolSize = poolStage?.preferredPoolSize ?? 5;
+  const timeBetweenMatchesMinutes = poolStage?.timeBetweenMatchesMinutes ?? 2;
+  const matchMinutes = Math.max(1, Math.ceil((ruleset?.definition?.matchParameters.maxDurationSeconds ?? 180) / 60));
+  const matchBlockMinutes = matchMinutes + timeBetweenMatchesMinutes;
+  const eliminationParticipantCount = resolveEliminationParticipantCount(poolStage, eliminationStage, participantCount);
+  const eliminationLengthMinutes = calculateEliminationDurationMinutes(eliminationParticipantCount, arenaCount, matchBlockMinutes);
+  const warnings: string[] = [];
+
+  if (!poolStage) {
+    warnings.push("No pool stage settings were found; default pool limits were used.");
+  }
+
+  if (participantCount === 0) {
+    warnings.push("No participants are registered yet.");
+    return {
+      tournamentId: tournament.id,
+      tournamentName: tournament.name,
+      color: tournament.color,
+      participantCount,
+      poolSizes: [],
+      poolCount: 0,
+      waveLengths: [],
+      firstSlotLengthMinutes: 0,
+      eliminationLengthMinutes,
+      longestSlotMinutes: eliminationLengthMinutes,
+      totalMinutes: 0,
+      matchBlockMinutes,
+      minPoolSize,
+      maxPoolSize,
+      preferredPoolSize,
+      reason: "No participant data is available yet.",
+      warnings,
+    };
+  }
+
+  const distribution = buildPoolDistribution(
+    participantCount,
+    minPoolSize,
+    maxPoolSize,
+    preferredPoolSize,
+    arenaCount,
+    matchMinutes,
+    timeBetweenMatchesMinutes,
+  );
+  if (!distribution) {
+    warnings.push("The participant count does not fit the configured pool limits.");
+    const fallbackSize = participantCount;
+    const poolSizes = [fallbackSize];
+    const waveLengths = [calculatePoolDurationMinutes(fallbackSize, matchMinutes, timeBetweenMatchesMinutes)];
+    return {
+      tournamentId: tournament.id,
+      tournamentName: tournament.name,
+      color: tournament.color,
+      participantCount,
+      poolSizes,
+      poolCount: poolSizes.length,
+      waveLengths,
+      firstSlotLengthMinutes: waveLengths[0] ?? 0,
+      eliminationLengthMinutes,
+      longestSlotMinutes: Math.max(eliminationLengthMinutes, ...waveLengths),
+      totalMinutes: waveLengths.reduce((sum, duration) => sum + duration, 0) + eliminationLengthMinutes,
+      matchBlockMinutes,
+      minPoolSize,
+      maxPoolSize,
+      preferredPoolSize,
+      reason: `Fallback to a single pool of ${fallbackSize}; elimination length ${formatDuration(eliminationLengthMinutes)}.`,
+      warnings,
+    };
+  }
+
+  const poolDurations = distribution.sizes.map((size) => calculatePoolDurationMinutes(size, matchMinutes, timeBetweenMatchesMinutes));
+  const waveLengths = chunkDurations(poolDurations, arenaCount);
+  const totalMinutes = waveLengths.reduce((sum, duration) => sum + duration, 0) + eliminationLengthMinutes;
+  const firstSlotLengthMinutes = waveLengths[0] ?? 0;
+  const longestSlotMinutes = Math.max(eliminationLengthMinutes, ...waveLengths);
+  const longestPool = distribution.sizes[0] ?? participantCount;
+  const shortestPool = distribution.sizes[distribution.sizes.length - 1] ?? participantCount;
+
+  return {
+    tournamentId: tournament.id,
+    tournamentName: tournament.name,
+    color: tournament.color,
+    participantCount,
+    poolSizes: distribution.sizes,
+    poolCount: distribution.sizes.length,
+    waveLengths,
+    firstSlotLengthMinutes,
+    eliminationLengthMinutes,
+    longestSlotMinutes,
+    totalMinutes,
+    matchBlockMinutes,
+    minPoolSize,
+    maxPoolSize,
+    preferredPoolSize,
+    reason: `Balanced across ${distribution.sizes.length} pools with sizes ${distribution.sizes.join(", ")}; elimination length ${formatDuration(eliminationLengthMinutes)}.`,
+    warnings: [
+      ...(distribution.sizes.some((size) => size < minPoolSize || size > maxPoolSize)
+        ? ["One or more pools fall outside the configured limits."]
+        : []),
+      ...(longestPool !== shortestPool ? [`Pool sizes vary between ${shortestPool} and ${longestPool}.`] : []),
+      ...warnings,
+    ],
+  };
+}
+
+function resolveStageRuleset(ruleset: ApiRuleset | null | undefined): ApiRuleset | null {
+  return ruleset ?? null;
+}
+
+function resolveEliminationParticipantCount(
+  poolStage: ApiStage | undefined,
+  eliminationStage: ApiStage | undefined,
+  participantCount: number,
+): number {
+  if (eliminationStage?.eliminationParticipantCount !== null && eliminationStage?.eliminationParticipantCount !== undefined) {
+    return eliminationStage.eliminationParticipantCount;
+  }
+
+  if (poolStage?.preferredPoolSize !== null && poolStage?.preferredPoolSize !== undefined) {
+    return poolStage.preferredPoolSize;
+  }
+
+  return Math.min(Math.max(1, participantCount), 5);
+}
+
+function calculateEliminationDurationMinutes(participantCount: number, arenaCount: number, matchBlockMinutes: number): number {
+  if (participantCount <= 1) {
+    return 0;
+  }
+
+  let remainingParticipants = participantCount;
+  let totalMinutes = 0;
+  while (remainingParticipants > 1) {
+    const matchesThisRound = Math.floor(remainingParticipants / 2);
+    if (matchesThisRound > 0) {
+      totalMinutes += Math.ceil(matchesThisRound / arenaCount) * matchBlockMinutes;
+    }
+    remainingParticipants = Math.ceil(remainingParticipants / 2);
+  }
+
+  return roundUpToFive(totalMinutes);
+}
+
+function buildPoolDistribution(
+  participantCount: number,
+  minPoolSize: number,
+  maxPoolSize: number,
+  preferredPoolSize: number,
+  arenaCount: number,
+  matchMinutes: number,
+  timeBetweenMatchesMinutes: number,
+): { sizes: number[] } | undefined {
+  if (participantCount < minPoolSize) {
+    return undefined;
+  }
+
+  const minPools = Math.ceil(participantCount / maxPoolSize);
+  const maxPools = Math.floor(participantCount / minPoolSize);
+  let best: { sizes: number[]; totalMinutes: number; deviation: number; spread: number } | undefined;
+
+  for (let poolCount = minPools; poolCount <= maxPools; poolCount += 1) {
+    const sizes = createBalancedPoolSizes(participantCount, poolCount, minPoolSize, maxPoolSize, preferredPoolSize);
+    if (!sizes) {
+      continue;
+    }
+
+    const totalDeviation = sizes.reduce((sum, size) => sum + Math.abs(size - preferredPoolSize), 0);
+    const spread = Math.max(...sizes) - Math.min(...sizes);
+    const totalMinutes = estimateTournamentDurationMinutes(sizes, arenaCount, matchMinutes, timeBetweenMatchesMinutes);
+    const candidate = { sizes, totalMinutes, deviation: totalDeviation, spread };
+    if (!best) {
+      best = candidate;
+      continue;
+    }
+
+    const currentScore = [best.totalMinutes, best.deviation, best.spread, best.sizes.length];
+    const nextScore = [candidate.totalMinutes, candidate.deviation, candidate.spread, candidate.sizes.length];
+    if (compareScores(nextScore, currentScore) < 0) {
+      best = candidate;
+    }
+  }
+
+  return best ? { sizes: best.sizes } : undefined;
+}
+
+function createBalancedPoolSizes(
+  participantCount: number,
+  poolCount: number,
+  minPoolSize: number,
+  maxPoolSize: number,
+  preferredPoolSize: number,
+): number[] | undefined {
+  if (participantCount < poolCount * minPoolSize || participantCount > poolCount * maxPoolSize) {
+    return undefined;
+  }
+
+  const target = clamp(preferredPoolSize, minPoolSize, maxPoolSize);
+  const sizes = Array.from({ length: poolCount }, () => target);
+  let remaining = participantCount - target * poolCount;
+
+  if (remaining > 0) {
+    while (remaining > 0) {
+      let changed = false;
+      for (let index = 0; index < sizes.length && remaining > 0; index += 1) {
+        const current = sizes[index];
+        if (current === undefined || current >= maxPoolSize) {
+          continue;
+        }
+        sizes[index] = current + 1;
+        remaining -= 1;
+        changed = true;
+      }
+      if (!changed) {
+        return undefined;
+      }
+    }
+  } else if (remaining < 0) {
+    while (remaining < 0) {
+      let changed = false;
+      for (let index = sizes.length - 1; index >= 0 && remaining < 0; index -= 1) {
+        const current = sizes[index];
+        if (current === undefined || current <= minPoolSize) {
+          continue;
+        }
+        sizes[index] = current - 1;
+        remaining += 1;
+        changed = true;
+      }
+      if (!changed) {
+        return undefined;
+      }
+    }
+  }
+
+  return sizes.sort((left, right) => right - left);
+}
+
+function estimateTournamentDurationMinutes(
+  poolSizes: number[],
+  arenaCount: number,
+  matchMinutes: number,
+  timeBetweenMatchesMinutes: number,
+): number {
+  const poolDurations = poolSizes.map((size) => calculatePoolDurationMinutes(size, matchMinutes, timeBetweenMatchesMinutes));
+  return chunkDurations(poolDurations, arenaCount).reduce((sum, duration) => sum + duration, 0);
+}
+
+function calculatePoolDurationMinutes(poolSize: number, matchMinutes: number, timeBetweenMatchesMinutes: number): number {
+  const matchCount = (poolSize * (poolSize - 1)) / 2;
+  if (matchCount <= 0) {
+   return 0;
+  }
+
+  const exactMinutes = (matchCount * matchMinutes) + Math.max(0, matchCount - 1) * timeBetweenMatchesMinutes;
+  return roundUpToFive(Math.max(matchMinutes + timeBetweenMatchesMinutes, exactMinutes));
+}
+
+function chunkDurations(durations: number[], arenaCount: number): number[] {
+  if (durations.length === 0) {
+    return [];
+  }
+
+  const sorted = [...durations].sort((left, right) => right - left);
+  const waveLengths: number[] = [];
+  for (let index = 0; index < sorted.length; index += arenaCount) {
+    waveLengths.push(Math.max(...sorted.slice(index, index + arenaCount)));
+  }
+
+  return waveLengths;
+}
+
+function compareScores(left: number[], right: number[]): number {
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const delta = (left[index] ?? 0) - (right[index] ?? 0);
+    if (delta !== 0) {
+      return delta;
+    }
+  }
+
+  return 0;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function roundUpToFive(minutes: number): number {
+  return Math.ceil(minutes / 5) * 5;
+}
+
+function formatDuration(minutes: number): string {
+  if (minutes <= 0) {
+    return "0 min";
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  if (hours === 0) {
+    return `${minutes} min`;
+  }
+
+  return remainder === 0 ? `${hours} h` : `${hours} h ${remainder} min`;
 }
 
 if (!customElements.get("event-planner-view")) {

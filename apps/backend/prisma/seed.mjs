@@ -3,6 +3,22 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 async function main() {
+  const defaultRulesetDefinition = {
+    weaponClass: "",
+    matchParameters: {
+      maxDurationSeconds: 180,
+      stopOnTimeOut: true,
+      maxPointsCap: 10,
+      pointSpreadVictory: 5,
+      scores: [1, 2, 3, 4],
+      maxDoubles: 3,
+      allowAfterBlow: true,
+      countDoubles: true,
+      useNetScore: true,
+      penalties: [],
+    },
+  };
+
   await prisma.exchange.deleteMany();
   await prisma.match.deleteMany();
   await prisma.stageOfficial.deleteMany();
@@ -25,6 +41,7 @@ async function main() {
       eventId: event.id,
       name: "Round robin",
       version: 1,
+      definition: defaultRulesetDefinition,
     },
   });
   await prisma.event.update({

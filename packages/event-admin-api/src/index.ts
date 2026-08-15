@@ -3,11 +3,36 @@ export type EntryKind = "FIGHTER" | "VOLUNTEER" | "BOTH";
 export type StageOfficialRole = "JUDGE" | "JURY" | "TELLER" | "TABLE";
 export type ScheduleRole = "JUDGE" | "JURY" | "TABLE";
 
+export interface ApiPenaltyRule {
+  description: string;
+  penalties: number[];
+  disqualify: boolean;
+}
+
+export interface ApiMatchParameters {
+  maxDurationSeconds: number;
+  stopOnTimeOut: boolean;
+  maxPointsCap: number;
+  pointSpreadVictory: number;
+  scores: number[];
+  maxDoubles: number;
+  allowAfterBlow: boolean;
+  countDoubles: boolean;
+  useNetScore: boolean;
+  penalties: ApiPenaltyRule[];
+}
+
+export interface ApiRulesetDefinition {
+  weaponClass: string;
+  matchParameters: ApiMatchParameters;
+}
+
 export interface ApiRuleset {
   id: string;
   eventId: string;
   name: string;
   version: number;
+  definition: ApiRulesetDefinition | null;
 }
 
 export interface ApiUser {
@@ -207,12 +232,14 @@ export interface ApiClient {
     body: {
       name: string;
       baseRulesetId?: string;
+      definition?: ApiRulesetDefinition | null;
     },
   ): Promise<ApiRulesetDetail>;
   updateRuleset(
     id: string,
     body: {
       name?: string;
+      definition?: ApiRulesetDefinition | null;
     },
   ): Promise<ApiRulesetDetail>;
   createScheduledPhase(body: {

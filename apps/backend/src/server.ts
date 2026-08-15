@@ -553,12 +553,18 @@ async function createRuleset(request: IncomingMessage, params: Record<string, st
     ? requireString(body.name, "Ruleset name")
     : source?.name ?? "Nieuwe ruleset";
   const version = await nextRulesetVersion(eventId, name);
+  const definition = body.definition === undefined
+    ? ensureJsonValue(source?.definition ?? defaultRulesetDefinition())
+    : body.definition === null
+      ? Prisma.JsonNull
+      : ensureJsonValue(body.definition);
 
   const ruleset = await prisma.ruleset.create({
     data: {
       eventId,
       name,
       version,
+      definition,
     },
     include: { _count: { select: { matches: true } } },
   });
@@ -579,10 +585,14 @@ async function updateRuleset(request: IncomingMessage, params: Record<string, st
   const body = ensureObject(await readJsonBody(request), "Ruleset");
   const data: {
     name?: string;
+    definition?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
   } = {};
 
   if (body.name !== undefined) {
     data.name = requireString(body.name, "Ruleset name");
+  }
+  if (body.definition !== undefined) {
+    data.definition = body.definition === null ? Prisma.JsonNull : ensureJsonValue(body.definition);
   }
 
   if (data.name !== undefined && data.name !== existing.name) {
@@ -1722,6 +1732,7 @@ function toRulesetDetail(ruleset: {
   eventId: string;
   name: string;
   version: number;
+  definition: Prisma.JsonValue | null;
   _count: { matches: number };
 }) {
   return {
@@ -1729,6 +1740,7 @@ function toRulesetDetail(ruleset: {
     eventId: ruleset.eventId,
     name: ruleset.name,
     version: ruleset.version,
+    definition: ruleset.definition,
     matchCount: ruleset._count.matches,
     locked: ruleset._count.matches > 0,
   };
@@ -1741,6 +1753,24 @@ async function nextRulesetVersion(eventId: string, name: string): Promise<number
     select: { version: true },
   });
   return (current?.version ?? 0) + 1;
+}
+
+function defaultRulesetDefinition() {
+  return {
+    weaponClass: "",
+    matchParameters: {
+      maxDurationSeconds: 180,
+      stopOnTimeOut: true,
+      maxPointsCap: 10,
+      pointSpreadVictory: 5,
+      scores: [1, 2, 3, 4],
+      maxDoubles: 3,
+      allowAfterBlow: true,
+      countDoubles: true,
+      useNetScore: true,
+      penalties: [],
+    },
+  };
 }
 
 function requireTimeSlotDuration(value: unknown): number {

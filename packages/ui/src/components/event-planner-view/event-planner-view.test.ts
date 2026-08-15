@@ -63,6 +63,34 @@ describe("event-planner-view", () => {
     expect(scheduleMock.calls).toHaveLength(1);
   });
 
+  it("opens the suggestions popup with event-wide pool estimates", async () => {
+    const { eventsMock, scheduleMock } = installPlannerFetchMock();
+
+    window.history.replaceState({}, "", "/planning?eventId=event-1");
+    const element = document.createElement("event-planner-view");
+    document.body.appendChild(element);
+
+    await expect.poll(() => element.shadowRoot?.querySelector(".slot-label")?.textContent).toBe("Instructie");
+
+    const suggestionsButton = await waitForElement<HTMLButtonElement>(element.shadowRoot as ShadowRoot, 'button[data-click-action="open-suggestions"]');
+    suggestionsButton.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    await flush();
+
+    const modal = await waitForElement<HTMLElement>(element.shadowRoot as ShadowRoot, ".modal-card");
+    expect(modal.textContent).toContain("Pool and elimination suggestions");
+    expect(modal.textContent).toContain("Longest slot 50 min");
+    expect(modal.textContent).toContain("Open");
+    expect(modal.textContent).toContain("Pool sizes 5, 5, 5, 4");
+    expect(modal.textContent).toContain("Pool slot lengths 50 min");
+    expect(modal.textContent).toContain("Elimination length 15 min");
+    expect(modal.textContent).toContain("Second");
+    expect(modal.textContent).toContain("Pool sizes 4, 4, 4");
+    expect(modal.textContent).toContain("Pool slot lengths 30 min");
+
+    expect(eventsMock.calls).toHaveLength(1);
+    expect(scheduleMock.calls).toHaveLength(1);
+  });
+
   it("hides volunteer tooltips while dragging", async () => {
     const { eventsMock, scheduleMock } = installPlannerFetchMock();
 
@@ -104,9 +132,68 @@ function installPlannerFetchMock() {
       data.event.tournaments = [
         {
           id: "tournament-1",
+          eventId: "event-1",
           name: "Open",
           color: "#ffcc00",
-          stages: [],
+          order: 0,
+          ruleset: {
+            id: "ruleset-1",
+            eventId: "event-1",
+            name: "Round robin",
+            version: 1,
+            definition: {
+              weaponClass: "Longsword",
+              matchParameters: {
+                maxDurationSeconds: 180,
+                stopOnTimeOut: true,
+                maxPointsCap: 10,
+                pointSpreadVictory: 5,
+                scores: [1, 2, 3, 4],
+                maxDoubles: 3,
+                allowAfterBlow: true,
+                countDoubles: true,
+                useNetScore: true,
+                penalties: [],
+              },
+            },
+          },
+          stages: [
+            {
+              id: "stage-1",
+              tournamentId: "tournament-1",
+              type: "POOL",
+              name: "Pool",
+              ruleset: {
+                id: "ruleset-1",
+                eventId: "event-1",
+                name: "Round robin",
+                version: 1,
+                definition: {
+                  weaponClass: "Longsword",
+                  matchParameters: {
+                    maxDurationSeconds: 180,
+                    stopOnTimeOut: true,
+                    maxPointsCap: 10,
+                    pointSpreadVictory: 5,
+                    scores: [1, 2, 3, 4],
+                    maxDoubles: 3,
+                    allowAfterBlow: true,
+                    countDoubles: true,
+                    useNetScore: true,
+                    penalties: [],
+                  },
+                },
+              },
+              minPoolSize: 4,
+              maxPoolSize: 6,
+              preferredPoolSize: 5,
+              eliminationParticipantCount: null,
+              timeBetweenMatchesMinutes: 2,
+              rounds: [],
+              arenas: [],
+              officials: [],
+            },
+          ],
           entries: [
             {
               id: "entry-1",
@@ -124,13 +211,88 @@ function installPlannerFetchMock() {
                 ],
               },
             },
+            ...Array.from({ length: 19 }, (_, index) => ({
+              id: `participant-1-${index + 1}`,
+              tournamentId: "tournament-1",
+              userId: `fighter-1-${index + 1}`,
+              kind: "FIGHTER",
+              seed: index + 1,
+              user: {
+                id: `fighter-1-${index + 1}`,
+                username: `fighter-1-${index + 1}`,
+                judgeVolunteer: false,
+                juryVolunteer: false,
+                tableVolunteer: false,
+                otherVolunteer: false,
+                skills: [],
+              },
+            })),
           ],
         },
         {
           id: "tournament-2",
+          eventId: "event-1",
           name: "Second",
           color: "#66ccff",
-          stages: [],
+          order: 1,
+          ruleset: {
+            id: "ruleset-1",
+            eventId: "event-1",
+            name: "Round robin",
+            version: 1,
+            definition: {
+              weaponClass: "Longsword",
+              matchParameters: {
+                maxDurationSeconds: 180,
+                stopOnTimeOut: true,
+                maxPointsCap: 10,
+                pointSpreadVictory: 5,
+                scores: [1, 2, 3, 4],
+                maxDoubles: 3,
+                allowAfterBlow: true,
+                countDoubles: true,
+                useNetScore: true,
+                penalties: [],
+              },
+            },
+          },
+          stages: [
+            {
+              id: "stage-2",
+              tournamentId: "tournament-2",
+              type: "POOL",
+              name: "Pool",
+              ruleset: {
+                id: "ruleset-1",
+                eventId: "event-1",
+                name: "Round robin",
+                version: 1,
+                definition: {
+                  weaponClass: "Longsword",
+                  matchParameters: {
+                    maxDurationSeconds: 180,
+                    stopOnTimeOut: true,
+                    maxPointsCap: 10,
+                    pointSpreadVictory: 5,
+                    scores: [1, 2, 3, 4],
+                    maxDoubles: 3,
+                    allowAfterBlow: true,
+                    countDoubles: true,
+                    useNetScore: true,
+                    penalties: [],
+                  },
+                },
+              },
+              minPoolSize: 4,
+              maxPoolSize: 6,
+              preferredPoolSize: 5,
+              eliminationParticipantCount: null,
+              timeBetweenMatchesMinutes: 2,
+              rounds: [],
+              arenas: [],
+              officials: [],
+            },
+          ],
           entries: [
             {
               id: "entry-2",
@@ -147,11 +309,30 @@ function installPlannerFetchMock() {
                 ],
               },
             },
+            ...Array.from({ length: 12 }, (_, index) => ({
+              id: `participant-2-${index + 1}`,
+              tournamentId: "tournament-2",
+              userId: `fighter-2-${index + 1}`,
+              kind: "FIGHTER",
+              seed: index + 1,
+              user: {
+                id: `fighter-2-${index + 1}`,
+                username: `fighter-2-${index + 1}`,
+                judgeVolunteer: false,
+                juryVolunteer: false,
+                tableVolunteer: false,
+                otherVolunteer: false,
+                skills: [],
+              },
+            })),
           ],
         },
       ];
       data.event.arenas = [
         { id: "arena-1", eventId: "event-1", name: "Arena A", order: 1 },
+        { id: "arena-2", eventId: "event-1", name: "Arena B", order: 2 },
+        { id: "arena-3", eventId: "event-1", name: "Arena C", order: 3 },
+        { id: "arena-4", eventId: "event-1", name: "Arena D", order: 4 },
       ];
       data.schedule.timeSlots[0].scheduledPhases = [
         {
@@ -219,4 +400,20 @@ function installPlannerFetchMock() {
   };
 
   return { eventsMock, scheduleMock };
+}
+
+async function flush(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+async function waitForElement<T extends Element>(root: ParentNode, selector: string): Promise<T> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const element = root.querySelector(selector);
+    if (element instanceof Element) {
+      return element as T;
+    }
+    await flush();
+  }
+
+  throw new Error(`Element not found for selector: ${selector}`);
 }

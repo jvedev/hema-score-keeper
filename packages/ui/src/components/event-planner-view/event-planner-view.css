@@ -25,6 +25,12 @@
   margin-bottom: 1rem;
 }
 
+.planner-header-actions {
+  display: flex;
+  align-items: end;
+  gap: 0.5rem;
+}
+
 .planner-header h1,
 .planner-header h2,
 .planner-header h3,
@@ -75,6 +81,12 @@ button:disabled {
   opacity: 0.45;
 }
 
+.icon-button {
+  min-width: 2.1rem;
+  padding: 0.45rem 0.4rem;
+  text-align: center;
+}
+
 .planner-controls {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -84,6 +96,146 @@ button:disabled {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 0.8rem;
   background: #111723;
+}
+
+.badge-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.badge {
+  align-items: center;
+  background: #20283a;
+  border-radius: 999px;
+  color: white;
+  display: inline-flex;
+  font-size: 0.75rem;
+  min-height: 1.5rem;
+  padding: 0 0.65rem;
+}
+
+.badge.badge-muted {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.empty-state {
+  background: #101621;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.9rem;
+  padding: 0.9rem;
+}
+
+.modal-backdrop {
+  align-items: center;
+  background: rgba(4, 8, 15, 0.72);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 1.25rem;
+  position: fixed;
+  z-index: 20;
+}
+
+.modal-card {
+  background: #111723;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 1rem;
+  box-shadow: 0 1.2rem 3rem rgba(0, 0, 0, 0.45);
+  display: grid;
+  gap: 1rem;
+  max-height: calc(100vh - 2.5rem);
+  max-width: 72rem;
+  overflow: auto;
+  padding: 1rem;
+  width: 100%;
+}
+
+.modal-header {
+  align-items: start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.modal-header h2 {
+  margin: 0.25rem 0 0;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.suggestion-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.suggestion-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.suggestion-card {
+  background: #101621;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 0.35rem solid var(--tournament-color, #2d66ff);
+  border-radius: 0.9rem;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.9rem;
+}
+
+.suggestion-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.suggestion-card-header h3 {
+  margin: 0;
+}
+
+.suggestion-card-header p {
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0.25rem 0 0;
+}
+
+.suggestion-pill {
+  align-self: start;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.65rem;
+  white-space: nowrap;
+}
+
+.suggestion-metrics {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.suggestion-metrics span {
+  color: rgba(255, 255, 255, 0.65);
+  display: block;
+  font-size: 0.75rem;
+}
+
+.suggestion-metrics strong {
+  display: block;
+  margin-top: 0.2rem;
+}
+
+.suggestion-warning {
+  background: rgba(229, 72, 77, 0.12);
+  border: 1px solid rgba(229, 72, 77, 0.35);
+  border-radius: 0.6rem;
+  color: #ffb6b9;
+  padding: 0.65rem 0.75rem;
 }
 
 .start-time-form,
@@ -354,6 +506,13 @@ button:disabled {
 }
 
 .icon-button {
+  min-width: 2.1rem;
+  padding: 0.45rem 0.4rem;
+  text-align: center;
+}
+
+.slot-header .icon-button,
+.phase-card button {
   margin-top: 0.4rem;
   background: #a61b1b;
 }
@@ -490,7 +649,24 @@ button:disabled {
     flex-direction: column;
   }
 
+  .planner-header-actions {
+    width: 100%;
+  }
+
+  .planner-header-actions label {
+    flex: 1;
+  }
+
   .phase-sidebar {
     max-height: none;
+  }
+
+  .modal-header,
+  .suggestion-card-header {
+    flex-direction: column;
+  }
+
+  .suggestion-metrics {
+    grid-template-columns: 1fr 1fr;
   }
 }
