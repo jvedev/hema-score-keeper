@@ -15,6 +15,10 @@
     "./event-editor-view": {
       "types": "./src/components/event-editor-view/event-editor-view.ts",
       "default": "./src/components/event-editor-view/event-editor-view.ts"
+    },
+    "./event-planner-view": {
+      "types": "./src/components/event-planner-view/event-planner-view.ts",
+      "default": "./src/components/event-planner-view/event-planner-view.ts"
     }
   },
   "dependencies": {

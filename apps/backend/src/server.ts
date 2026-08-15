@@ -39,6 +39,9 @@ const routes: Route[] = [
   { method: "GET", pattern: /^\/api\/v1\/events\/([^/]+)$/, handler: getEvent },
   { method: "PATCH", pattern: /^\/api\/v1\/events\/([^/]+)$/, handler: updateEvent },
   { method: "DELETE", pattern: /^\/api\/v1\/events\/([^/]+)$/, handler: deleteEvent },
+  { method: "GET", pattern: /^\/api\/v1\/events\/([^/]+)\/schedule$/, handler: getEventSchedule },
+  { method: "PATCH", pattern: /^\/api\/v1\/events\/([^/]+)\/schedule$/, handler: updateEventSchedule },
+  { method: "POST", pattern: /^\/api\/v1\/events\/([^/]+)\/schedule\/slots$/, handler: createScheduleTimeSlot },
   { method: "GET", pattern: /^\/api\/v1\/tournaments$/, handler: listTournaments },
   { method: "POST", pattern: /^\/api\/v1\/tournaments$/, handler: createTournament },
   { method: "GET", pattern: /^\/api\/v1\/tournaments\/([^/]+)$/, handler: getTournament },
@@ -65,6 +68,13 @@ const routes: Route[] = [
   { method: "GET", pattern: /^\/api\/v1\/stages\/([^/]+)\/officials$/, handler: listStageOfficials },
   { method: "POST", pattern: /^\/api\/v1\/stages\/([^/]+)\/officials$/, handler: createStageOfficial },
   { method: "DELETE", pattern: /^\/api\/v1\/stage-officials\/([^/]+)$/, handler: deleteStageOfficial },
+  { method: "PATCH", pattern: /^\/api\/v1\/schedule-time-slots\/([^/]+)$/, handler: updateScheduleTimeSlot },
+  { method: "DELETE", pattern: /^\/api\/v1\/schedule-time-slots\/([^/]+)$/, handler: deleteScheduleTimeSlot },
+  { method: "POST", pattern: /^\/api\/v1\/scheduled-phases$/, handler: createScheduledPhase },
+  { method: "PATCH", pattern: /^\/api\/v1\/scheduled-phases\/([^/]+)$/, handler: updateScheduledPhase },
+  { method: "DELETE", pattern: /^\/api\/v1\/scheduled-phases\/([^/]+)$/, handler: deleteScheduledPhase },
+  { method: "POST", pattern: /^\/api\/v1\/scheduled-phases\/([^/]+)\/assignments$/, handler: createScheduledAssignment },
+  { method: "DELETE", pattern: /^\/api\/v1\/scheduled-assignments\/([^/]+)$/, handler: deleteScheduledAssignment },
   { method: "GET", pattern: /^\/api\/v1\/rounds$/, handler: listRounds },
   { method: "POST", pattern: /^\/api\/v1\/rounds$/, handler: createRound },
   { method: "GET", pattern: /^\/api\/v1\/rounds\/([^/]+)$/, handler: getRound },
@@ -137,6 +147,28 @@ const arenaDetailInclude = {
   event: true,
   stages: { include: { stage: { include: { tournament: { include: { event: true } } } } } },
   matches: true,
+} as const;
+
+const scheduledPhaseDetailInclude = {
+  stage: { include: { tournament: true } },
+  arena: true,
+  timeSlot: true,
+  assignments: { include: { user: { include: { skills: true } } } },
+} as const;
+
+const scheduleDetailInclude = {
+  timeSlots: {
+    orderBy: { order: "asc" },
+    include: {
+      scheduledPhases: {
+        include: {
+          stage: { include: { tournament: true } },
+          arena: true,
+          assignments: { include: { user: { include: { skills: true } } } },
+        },
+      },
+    },
+  },
 } as const;
 
 const roundDetailInclude = {
@@ -437,6 +469,201 @@ async function updateEvent(request: IncomingMessage, params: Record<string, stri
 
 async function deleteEvent(_request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
   await prisma.event.delete({ where: { id: routeId(params) } });
+  return undefined;
+}
+
+async function getEventSchedule(_request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
+  const eventId = routeId(params);
+  const event = await requireEvent(eventId);
+  const schedule = await getOrCreateSchedule(eventId);
+  return { event, schedule };
+}
+
+async function updateEventSchedule(
+  request: IncomingMessage,
+  params: Record<string, string>,
+): Promise<unknown> {
+  const body = ensureObject(await readJsonBody(request), "Event schedule");
+  const schedule = await getOrCreateSchedule(routeId(params));
+  const data: { startTimeMinutes?: number } = {};
+  if (body.startTimeMinutes !== undefined) {
+    data.startTimeMinutes = requireTimeOfDay(body.startTimeMinutes);
+  }
+
+  return prisma.eventSchedule.update({
+    where: { id: schedule.id },
+    data,
+    include: scheduleDetailInclude,
+  });
+}
+
+async function createScheduleTimeSlot(
+  request: IncomingMessage,
+  params: Record<string, string>,
+): Promise<unknown> {
+  const body = ensureObject(await readJsonBody(request), "Schedule time slot");
+  const schedule = await getOrCreateSchedule(routeId(params));
+  const durationMinutes = requireTimeSlotDuration(body.durationMinutes);
+  const label = requireString(body.label, "Time slot label");
+  const color = body.color === undefined || body.color === null ? null : requireString(body.color, "Time slot color");
+  const isBreak = body.isBreak === undefined ? false : requireBoolean(body.isBreak, "Time slot break flag");
+  const lastSlot = await prisma.scheduleTimeSlot.findFirst({
+    where: { scheduleId: schedule.id },
+    orderBy: { order: "desc" },
+  });
+
+  return prisma.scheduleTimeSlot.create({
+    data: {
+      scheduleId: schedule.id,
+      order: (lastSlot?.order ?? -1) + 1,
+      durationMinutes,
+      label,
+      color,
+      isBreak,
+    },
+    include: {
+      scheduledPhases: {
+        include: {
+          stage: { include: { tournament: true } },
+          arena: true,
+        },
+      },
+    },
+  });
+}
+
+async function updateScheduleTimeSlot(
+  request: IncomingMessage,
+  params: Record<string, string>,
+): Promise<unknown> {
+  const body = ensureObject(await readJsonBody(request), "Schedule time slot");
+  const timeSlotId = routeId(params);
+  const timeSlot = await requireScheduleTimeSlot(timeSlotId);
+  const data: { durationMinutes?: number; label?: string; color?: string | null; isBreak?: boolean } = {};
+
+  if (body.durationMinutes !== undefined) {
+    data.durationMinutes = requireTimeSlotDuration(body.durationMinutes);
+  }
+  if (body.label !== undefined) {
+    data.label = requireString(body.label, "Time slot label");
+  }
+  if (body.color !== undefined) {
+    data.color = body.color === null ? null : requireString(body.color, "Time slot color");
+  }
+  if (body.isBreak !== undefined) {
+    const isBreak = requireBoolean(body.isBreak, "Time slot break flag");
+    if (isBreak && timeSlot.scheduledPhases.length > 0) {
+      throw new HttpError(409, "A time slot with phase assignments cannot become a break.");
+    }
+    data.isBreak = isBreak;
+  }
+
+  return prisma.scheduleTimeSlot.update({
+    where: { id: timeSlotId },
+    data,
+    include: {
+      scheduledPhases: {
+        include: {
+          stage: { include: { tournament: true } },
+          arena: true,
+        },
+      },
+    },
+  });
+}
+
+async function deleteScheduleTimeSlot(
+  _request: IncomingMessage,
+  params: Record<string, string>,
+): Promise<unknown> {
+  const timeSlot = await requireScheduleTimeSlot(routeId(params));
+  if (timeSlot.scheduledPhases.length > 0) {
+    throw new HttpError(409, "Remove phase assignments before deleting this time slot.");
+  }
+
+  await prisma.scheduleTimeSlot.delete({ where: { id: timeSlot.id } });
+  return undefined;
+}
+
+async function createScheduledPhase(request: IncomingMessage): Promise<unknown> {
+  const body = ensureObject(await readJsonBody(request), "Scheduled phase");
+  const stageId = requireString(body.stageId, "Stage ID");
+  const arenaId = requireString(body.arenaId, "Arena ID");
+  const timeSlotId = requireString(body.timeSlotId, "Time slot ID");
+  await validateScheduledPhase(stageId, arenaId, timeSlotId);
+
+  return prisma.scheduledPhase.create({
+    data: { stageId, arenaId, timeSlotId },
+    include: scheduledPhaseDetailInclude,
+  });
+}
+
+async function updateScheduledPhase(
+  request: IncomingMessage,
+  params: Record<string, string>,
+): Promise<unknown> {
+  const body = ensureObject(await readJsonBody(request), "Scheduled phase");
+  const existing = await requireScheduledPhase(routeId(params));
+  const stageId = body.stageId === undefined ? existing.stageId : requireString(body.stageId, "Stage ID");
+  const arenaId = body.arenaId === undefined ? existing.arenaId : requireString(body.arenaId, "Arena ID");
+  const timeSlotId = body.timeSlotId === undefined
+    ? existing.timeSlotId
+    : requireString(body.timeSlotId, "Time slot ID");
+  await validateScheduledPhase(stageId, arenaId, timeSlotId, existing.id);
+
+  return prisma.scheduledPhase.update({
+    where: { id: existing.id },
+    data: { stageId, arenaId, timeSlotId },
+    include: scheduledPhaseDetailInclude,
+  });
+}
+
+async function deleteScheduledPhase(_request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
+  await prisma.scheduledPhase.delete({ where: { id: routeId(params) } });
+  return undefined;
+}
+
+async function createScheduledAssignment(request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
+  const body = ensureObject(await readJsonBody(request), "Scheduled assignment");
+  const scheduledPhase = await requireScheduledPhase(routeId(params));
+  const userId = requireString(body.userId, "User ID");
+  const role = parseScheduleRole(body.role);
+  const user = await requireUser(userId);
+  const eventId = scheduledPhase.arena.eventId;
+  const eligible = await prisma.entry.findFirst({
+    where: {
+      userId,
+      tournament: { eventId },
+      kind: { in: ["VOLUNTEER", "BOTH"] },
+    },
+  });
+  if (!eligible) {
+    throw new HttpError(400, `${user.username} is not a volunteer for this event.`);
+  }
+  const conflict = await prisma.scheduledAssignment.findFirst({
+    where: {
+      userId,
+      scheduledPhase: { timeSlotId: scheduledPhase.timeSlotId },
+    },
+  });
+  if (conflict) {
+    throw new HttpError(409, `${user.username} is already assigned in this time slot.`);
+  }
+  const assignedRoleCount = await prisma.scheduledAssignment.count({
+    where: { scheduledPhaseId: scheduledPhase.id, role },
+  });
+  const roleLimit = role === "JURY" ? 4 : 1;
+  if (assignedRoleCount >= roleLimit) {
+    throw new HttpError(409, `${role} already has the maximum of ${roleLimit} volunteer${roleLimit === 1 ? "" : "s"}.`);
+  }
+  return prisma.scheduledAssignment.create({
+    data: { scheduledPhaseId: scheduledPhase.id, userId, role },
+    include: { user: { include: { skills: true } } },
+  });
+}
+
+async function deleteScheduledAssignment(_request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
+  await prisma.scheduledAssignment.delete({ where: { id: routeId(params) } });
   return undefined;
 }
 
@@ -1048,6 +1275,81 @@ async function requireStage(id: string) {
   return stage;
 }
 
+async function getOrCreateSchedule(eventId: string) {
+  await requireEvent(eventId);
+  return prisma.eventSchedule.upsert({
+    where: { eventId },
+    create: { eventId },
+    update: {},
+    include: scheduleDetailInclude,
+  });
+}
+
+async function requireScheduleTimeSlot(id: string) {
+  const timeSlot = await prisma.scheduleTimeSlot.findUnique({
+    where: { id },
+    include: {
+      scheduledPhases: {
+        include: {
+          stage: { include: { tournament: true } },
+          arena: true,
+        },
+      },
+    },
+  });
+  if (!timeSlot) {
+    throw new HttpError(404, `Schedule time slot "${id}" not found.`);
+  }
+  return timeSlot;
+}
+
+async function requireScheduledPhase(id: string) {
+  const scheduledPhase = await prisma.scheduledPhase.findUnique({
+    where: { id },
+    include: scheduledPhaseDetailInclude,
+  });
+  if (!scheduledPhase) {
+    throw new HttpError(404, `Scheduled phase "${id}" not found.`);
+  }
+  return scheduledPhase;
+}
+
+async function validateScheduledPhase(
+  stageId: string,
+  arenaId: string,
+  timeSlotId: string,
+  existingId?: string,
+): Promise<void> {
+  const [stage, arena, timeSlot] = await Promise.all([
+    prisma.stage.findUnique({ where: { id: stageId }, include: { tournament: true } }),
+    prisma.arena.findUnique({ where: { id: arenaId } }),
+    prisma.scheduleTimeSlot.findUnique({ where: { id: timeSlotId }, include: { schedule: true } }),
+  ]);
+
+  if (!stage) {
+    throw new HttpError(404, `Stage "${stageId}" not found.`);
+  }
+  if (!arena) {
+    throw new HttpError(404, `Arena "${arenaId}" not found.`);
+  }
+  if (!timeSlot) {
+    throw new HttpError(404, `Schedule time slot "${timeSlotId}" not found.`);
+  }
+  if (stage.tournament.eventId !== arena.eventId || arena.eventId !== timeSlot.schedule.eventId) {
+    throw new HttpError(400, "Stage, arena, and time slot must belong to the same event.");
+  }
+  if (timeSlot.isBreak) {
+    throw new HttpError(409, "A phase cannot be placed in a break time slot.");
+  }
+
+  const occupiedPlacement = await prisma.scheduledPhase.findUnique({
+    where: { arenaId_timeSlotId: { arenaId, timeSlotId } },
+  });
+  if (occupiedPlacement && occupiedPlacement.id !== existingId) {
+    throw new HttpError(409, "This arena already has a phase in the selected time slot.");
+  }
+}
+
 async function requireRound(id: string) {
   const round = await prisma.round.findUnique({
     where: { id },
@@ -1087,6 +1389,31 @@ async function requireEntryInTournament(id: string, tournamentId: string, label:
     throw new HttpError(400, `${label} must belong to the same tournament as the stage.`);
   }
   return entry;
+}
+
+function requireTimeSlotDuration(value: unknown): number {
+  const durationMinutes = requirePositiveInteger(value, "Time slot duration");
+  if (durationMinutes < 1 || durationMinutes > 24 * 60) {
+    throw new HttpError(400, "Time slot duration must be between 1 and 1440 minutes.");
+  }
+
+  return durationMinutes;
+}
+
+function parseScheduleRole(value: unknown): "JUDGE" | "JURY" | "TABLE" {
+  const role = requireString(value, "Schedule role");
+  if (!["JUDGE", "JURY", "TABLE"].includes(role)) {
+    throw new HttpError(400, "Schedule role must be JUDGE, JURY, or TABLE.");
+  }
+  return role as "JUDGE" | "JURY" | "TABLE";
+}
+
+function requireTimeOfDay(value: unknown): number {
+  const minutes = requirePositiveInteger(value, "Schedule start time");
+  if (minutes >= 24 * 60) {
+    throw new HttpError(400, "Schedule start time must be between 00:00 and 23:59.");
+  }
+  return minutes;
 }
 
 function parseStageType(value: unknown): "POOL" | "ELIMINATION" | "SEMI_FINAL" | "FINAL" {

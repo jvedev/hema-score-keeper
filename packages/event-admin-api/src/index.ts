@@ -1,6 +1,7 @@
 export type StageType = "POOL" | "ELIMINATION" | "SEMI_FINAL" | "FINAL";
 export type EntryKind = "FIGHTER" | "VOLUNTEER" | "BOTH";
 export type StageOfficialRole = "JUDGE" | "JURY" | "TELLER" | "TABLE";
+export type ScheduleRole = "JUDGE" | "JURY" | "TABLE";
 
 export interface ApiUser {
   id: string;
@@ -75,6 +76,49 @@ export interface ApiStage {
   officials: ApiStageOfficial[];
 }
 
+export interface ApiScheduledPhase {
+  id: string;
+  stageId: string;
+  arenaId: string;
+  timeSlotId: string;
+  stage: ApiStage & {
+    tournament: Pick<ApiTournament, "id" | "eventId" | "name" | "color">;
+  };
+  arena: ApiArena;
+  assignments: ApiScheduledAssignment[];
+}
+
+export interface ApiScheduledAssignment {
+  id: string;
+  scheduledPhaseId: string;
+  userId: string;
+  role: ScheduleRole;
+  user: ApiUser;
+}
+
+export interface ApiScheduleTimeSlot {
+  id: string;
+  scheduleId: string;
+  order: number;
+  durationMinutes: number;
+  label: string;
+  color: string | null;
+  isBreak: boolean;
+  scheduledPhases: ApiScheduledPhase[];
+}
+
+export interface ApiEventSchedule {
+  id: string;
+  eventId: string;
+  startTimeMinutes: number;
+  timeSlots: ApiScheduleTimeSlot[];
+}
+
+export interface ApiEventScheduleResponse {
+  event: ApiEvent;
+  schedule: ApiEventSchedule;
+}
+
 export interface ApiTournament {
   id: string;
   eventId: string;
@@ -114,6 +158,32 @@ export interface ApiClient {
   createEvent(body: { eventName: string; ruleset?: string | null; allFightersAreVolunteers?: boolean }): Promise<ApiEventMutationResult>;
   updateEvent(id: string, body: { eventName?: string; ruleset?: string | null; allFightersAreVolunteers?: boolean }): Promise<ApiEventMutationResult>;
   deleteEvent(id: string): Promise<void>;
+  getEventSchedule(eventId: string): Promise<ApiEventScheduleResponse>;
+  updateEventSchedule(eventId: string, body: { startTimeMinutes: number }): Promise<ApiEventSchedule>;
+  createScheduleTimeSlot(
+    eventId: string,
+    body: { durationMinutes: number; label: string; color?: string | null; isBreak?: boolean },
+  ): Promise<ApiScheduleTimeSlot>;
+  updateScheduleTimeSlot(
+    id: string,
+    body: { durationMinutes?: number; label?: string; color?: string | null; isBreak?: boolean },
+  ): Promise<ApiScheduleTimeSlot>;
+  deleteScheduleTimeSlot(id: string): Promise<void>;
+  createScheduledPhase(body: {
+    stageId: string;
+    arenaId: string;
+    timeSlotId: string;
+  }): Promise<ApiScheduledPhase>;
+  updateScheduledPhase(
+    id: string,
+    body: { stageId?: string; arenaId?: string; timeSlotId?: string },
+  ): Promise<ApiScheduledPhase>;
+  deleteScheduledPhase(id: string): Promise<void>;
+  createScheduledAssignment(
+    scheduledPhaseId: string,
+    body: { userId: string; role: ScheduleRole },
+  ): Promise<ApiScheduledAssignment>;
+  deleteScheduledAssignment(id: string): Promise<void>;
   createTournament(body: {
     eventId: string;
     name: string;
@@ -202,6 +272,41 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
       body,
     }),
     deleteEvent: (id) => requestJson<void>(baseUrl, `/events/${id}`, { method: "DELETE" }),
+    getEventSchedule: (eventId) =>
+      requestJson<ApiEventScheduleResponse>(baseUrl, `/events/${eventId}/schedule`),
+    updateEventSchedule: (eventId, body) =>
+      requestJson<ApiEventSchedule>(baseUrl, `/events/${eventId}/schedule`, {
+        method: "PATCH",
+        body,
+      }),
+    createScheduleTimeSlot: (eventId, body) =>
+      requestJson<ApiScheduleTimeSlot>(baseUrl, `/events/${eventId}/schedule/slots`, {
+        method: "POST",
+        body,
+      }),
+    updateScheduleTimeSlot: (id, body) =>
+      requestJson<ApiScheduleTimeSlot>(baseUrl, `/schedule-time-slots/${id}`, {
+        method: "PATCH",
+        body,
+      }),
+    deleteScheduleTimeSlot: (id) =>
+      requestJson<void>(baseUrl, `/schedule-time-slots/${id}`, { method: "DELETE" }),
+    createScheduledPhase: (body) =>
+      requestJson<ApiScheduledPhase>(baseUrl, "/scheduled-phases", { method: "POST", body }),
+    updateScheduledPhase: (id, body) =>
+      requestJson<ApiScheduledPhase>(baseUrl, `/scheduled-phases/${id}`, {
+        method: "PATCH",
+        body,
+      }),
+    deleteScheduledPhase: (id) =>
+      requestJson<void>(baseUrl, `/scheduled-phases/${id}`, { method: "DELETE" }),
+    createScheduledAssignment: (scheduledPhaseId, body) =>
+      requestJson<ApiScheduledAssignment>(baseUrl, `/scheduled-phases/${scheduledPhaseId}/assignments`, {
+        method: "POST",
+        body,
+      }),
+    deleteScheduledAssignment: (id) =>
+      requestJson<void>(baseUrl, `/scheduled-assignments/${id}`, { method: "DELETE" }),
     createTournament: (body) => requestJson<ApiTournament>(baseUrl, "/tournaments", { method: "POST", body }),
     updateTournament: (id, body) =>
       requestJson<ApiTournament>(baseUrl, `/tournaments/${id}`, { method: "PATCH", body }),

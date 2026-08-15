@@ -12,6 +12,7 @@ model User {
   username String  @unique
   skills   Skill[]
   entries  Entry[]
+  scheduledAssignments ScheduledAssignment[]
 }
 
 model Skill {
@@ -31,6 +32,30 @@ model Event {
   allFightersAreVolunteers Boolean      @default(false)
   tournaments              Tournament[]
   arenas                   Arena[]
+  schedule                 EventSchedule?
+}
+
+model EventSchedule {
+  id               String             @id @default(cuid())
+  eventId          String             @unique
+  startTimeMinutes Int                @default(540)
+  event            Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  timeSlots        ScheduleTimeSlot[]
+}
+
+model ScheduleTimeSlot {
+  id              String           @id @default(cuid())
+  scheduleId      String
+  order           Int
+  durationMinutes Int
+  label           String
+  color           String?
+  isBreak         Boolean          @default(false)
+  schedule        EventSchedule    @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  scheduledPhases ScheduledPhase[]
+
+  @@unique([scheduleId, order])
+  @@index([scheduleId])
 }
 
 model Tournament {
@@ -73,6 +98,7 @@ model Arena {
   event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   stages    StageArena[]
   matches   Match[]
+  scheduledPhases ScheduledPhase[]
 
   @@index([eventId])
 }
@@ -87,8 +113,37 @@ model Stage {
   rounds      Round[]
   arenas      StageArena[]
   officials   StageOfficial[]
+  scheduledPhases ScheduledPhase[]
 
   @@index([tournamentId])
+}
+
+model ScheduledPhase {
+  id         String           @id @default(cuid())
+  stageId    String
+  arenaId    String
+  timeSlotId String
+  stage      Stage            @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  arena      Arena            @relation(fields: [arenaId], references: [id], onDelete: Cascade)
+  timeSlot   ScheduleTimeSlot @relation(fields: [timeSlotId], references: [id], onDelete: Cascade)
+  assignments ScheduledAssignment[]
+
+  @@unique([arenaId, timeSlotId])
+  @@unique([stageId, arenaId, timeSlotId])
+  @@index([stageId])
+  @@index([timeSlotId])
+}
+
+model ScheduledAssignment {
+  id               String         @id @default(cuid())
+  scheduledPhaseId String
+  userId           String
+  role             ScheduleRole
+  scheduledPhase   ScheduledPhase @relation(fields: [scheduledPhaseId], references: [id], onDelete: Cascade)
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduledPhaseId, userId])
+  @@index([userId])
 }
 
 model StageArena {
@@ -176,5 +231,11 @@ enum StageOfficialRole {
   JUDGE
   JURY
   TELLER
+  TABLE
+}
+
+enum ScheduleRole {
+  JUDGE
+  JURY
   TABLE
 }

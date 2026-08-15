@@ -4,6 +4,7 @@ import {
   type ApiEntry,
   type ApiEvent,
   type ApiEventMutationResult,
+  type ApiUser,
   type ApiSkill,
   type ApiStage,
   type ApiTournament,
@@ -21,6 +22,13 @@ interface EditorState {
   kind: EditorKind;
   id?: string;
   entryKind?: EntryKind;
+  entryMode?: "single" | "bulk";
+}
+
+interface VolunteerViewState {
+  scope: "event" | "tournament";
+  eventId: string;
+  tournamentId?: string;
 }
 
 interface AppState {
@@ -31,6 +39,7 @@ interface AppState {
   selectedTournamentId: string | null;
   selectedStageId: string | null;
   editor: EditorState | undefined;
+  volunteerView: VolunteerViewState | undefined;
   eventTab: EventTab;
   tournamentTab: TournamentTab;
   stageTab: StageTab;
@@ -47,6 +56,7 @@ const state: AppState = {
   selectedTournamentId: null,
   selectedStageId: null,
   editor: undefined,
+  volunteerView: undefined,
   eventTab: "tournaments",
   tournamentTab: "stages",
   stageTab: "overview",
@@ -55,12 +65,14 @@ const state: AppState = {
 export function mountEventView(host: HTMLElement): void {
   app = host;
   app.addEventListener("click", onAppClick);
+  app.addEventListener("change", onAppChange);
   app.addEventListener("submit", onAppSubmit);
   void bootstrap();
 }
 
 export function unmountEventView(host: HTMLElement): void {
   host.removeEventListener("click", onAppClick);
+  host.removeEventListener("change", onAppChange);
   host.removeEventListener("submit", onAppSubmit);
 }
 
@@ -107,6 +119,15 @@ function onAppClick(event: MouseEvent): void {
         ...(target.dataset.entryKind ? { entryKind: target.dataset.entryKind as EntryKind } : {}),
       });
       return;
+    case "toggle-entry-mode":
+      toggleEntryMode();
+      return;
+    case "open-volunteer-view":
+      openVolunteerView(target.dataset.scope === "tournament" ? "tournament" : "event");
+      return;
+    case "close-volunteer-view":
+      closeVolunteerView();
+      return;
     case "close-editor":
       closeEditor();
       return;
@@ -141,14 +162,30 @@ function onAppClick(event: MouseEvent): void {
   }
 }
 
+function onAppChange(event: Event): void {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) {
+    return;
+  }
+
+  const volunteerForm = target.closest<HTMLFormElement>("[data-action=\"volunteer-update\"]");
+  if (volunteerForm) {
+    void submitVolunteerUpdate(volunteerForm);
+  }
+}
+
 function onAppSubmit(event: SubmitEvent): void {
   const form = event.target instanceof HTMLFormElement ? event.target : null;
-  if (!form || form.dataset.action !== "editor") {
+  if (!form || (form.dataset.action !== "editor" && form.dataset.action !== "volunteer-update")) {
     return;
   }
 
   event.preventDefault();
-  void submitEditor(form);
+  if (form.dataset.action === "editor") {
+    void submitEditor(form);
+  } else {
+    void submitVolunteerUpdate(form);
+  }
 }
 
 function render(): void {
@@ -540,6 +577,7 @@ function renderShell(): string {
 
       </section>
       ${renderEditor()}
+      ${renderVolunteerView()}
     </main>
   `;
 }
@@ -578,6 +616,7 @@ function renderEventActions(event: ApiEvent): string {
   const name = escapeHtml(event.eventName);
   return `
     <div class="card-actions">
+      <a class="button secondary icon-button" data-route href="/planning?eventId=${encodeURIComponent(event.id)}" title="Planning" aria-label="Planning">&#128339;</a>
       <button type="button" class="button secondary icon-button" data-action="open-editor" data-editor="event" data-id="${escapeHtml(event.id)}" title="Bewerk ${name}" aria-label="Bewerk ${name}">&#9998;</button>
       <button type="button" class="button secondary icon-button danger-button" data-action="delete-event" data-id="${escapeHtml(event.id)}" title="Verwijder ${name}" aria-label="Verwijder ${name}">&#128465;</button>
     </div>
@@ -594,8 +633,9 @@ function renderEditor(): string {
   const tournament = event ? currentTournament(event) : undefined;
   const stage = currentStage(tournament);
   const isEdit = Boolean(editor.id);
+  const isBulkEntry = editor.kind === "entry" && !isEdit && editor.entryMode === "bulk";
   const title = editor.kind === "entry"
-    ? `${isEdit ? "Edit" : "New"} ${editorLabel(editor.kind, editor.entryKind)}`
+    ? `${isBulkEntry ? "Bulk import" : isEdit ? "Edit" : "New"} ${editorLabel(editor.kind, editor.entryKind)}`
     : `${isEdit ? "Bewerk" : "Nieuw"} ${editorLabel(editor.kind, editor.entryKind)}`;
   const body = renderEditorFields(editor, event, tournament, stage);
 
@@ -613,12 +653,63 @@ function renderEditor(): string {
         <input type="hidden" name="editorKind" value="${escapeHtml(editor.kind)}" />
         ${editor.id ? `<input type="hidden" name="id" value="${escapeHtml(editor.id)}" />` : ""}
         ${editor.entryKind ? `<input type="hidden" name="entryKind" value="${escapeHtml(editor.entryKind)}" />` : ""}
+        ${editor.kind === "entry" && !editor.id ? `<input type="hidden" name="entryMode" value="${escapeHtml(editor.entryMode ?? "single")}" />` : ""}
         <div class="editor-form">${body}</div>
         <div class="modal-actions">
-          <button type="submit" class="button">${editor.kind === "entry" ? (isEdit ? "Save changes" : `Create ${editorLabel(editor.kind, editor.entryKind)}`) : (isEdit ? "Wijzigingen opslaan" : `${editorLabel(editor.kind, editor.entryKind)} aanmaken`)}</button>
+          ${editor.kind === "entry" && !isEdit
+            ? `<button type="button" class="button secondary" data-action="toggle-entry-mode" aria-pressed="${isBulkEntry}">${isBulkEntry ? "Enkel" : "Bulk"}</button>`
+            : ""}
+          <button type="submit" class="button">${editor.kind === "entry" ? (isBulkEntry ? "Bulk importeren" : isEdit ? "Save changes" : `Create ${editorLabel(editor.kind, editor.entryKind)}`) : (isEdit ? "Wijzigingen opslaan" : `${editorLabel(editor.kind, editor.entryKind)} aanmaken`)}</button>
           <button type="button" class="button secondary" data-action="close-editor">Sluiten</button>
         </div>
         </form>
+      </section>
+    </event-editor-view>
+  `;
+}
+
+function renderVolunteerView(): string {
+  const view = state.volunteerView;
+  if (!view) {
+    return "";
+  }
+
+  const event = state.events.find((candidate) => candidate.id === view.eventId) ?? currentEvent();
+  if (!event) {
+    return "";
+  }
+
+  const tournament = view.scope === "tournament"
+    ? event.tournaments.find((candidate) => candidate.id === view.tournamentId)
+    : undefined;
+  const volunteers = collectVolunteerCards(event, tournament);
+  const title = view.scope === "tournament"
+    ? `Vrijwilligers · ${escapeHtml(tournament?.name ?? "Toernooi")}`
+    : `Vrijwilligers · ${escapeHtml(event.eventName)}`;
+  const description = view.scope === "tournament"
+    ? `Vrijwilligers in ${escapeHtml(tournament?.name ?? "dit toernooi")}`
+    : `Vrijwilligers in ${escapeHtml(event.eventName)}`;
+
+  return `
+    <event-editor-view>
+      <section class="modal-backdrop" role="presentation">
+        <div class="modal-card volunteer-modal-card" role="dialog" aria-modal="true" aria-labelledby="volunteer-view-title">
+          <header class="modal-header">
+            <div>
+              <div class="eyebrow">Vrijwilligersoverzicht</div>
+              <h2 id="volunteer-view-title">${title}</h2>
+              <p class="editor-note">${description}</p>
+            </div>
+            <button type="button" class="button secondary" data-action="close-volunteer-view">Sluiten</button>
+          </header>
+          <div class="volunteer-view-body">
+            ${volunteers.length > 0
+              ? `<div class="volunteer-view-grid">
+                  ${volunteers.map((volunteer) => renderVolunteerCard(volunteer)).join("")}
+                </div>`
+              : renderEmptyCard("Geen vrijwilligers gevonden voor deze selectie.")}
+          </div>
+        </div>
       </section>
     </event-editor-view>
   `;
@@ -663,9 +754,12 @@ function renderEditorFields(
       const item = findEntryInEvent(event, editor.id);
       const kind = item?.kind ?? editor.entryKind ?? "FIGHTER";
       if (!item) {
+        const isBulkEntry = editor.entryMode === "bulk";
         return `
           <input type="hidden" name="entryKind" value="${escapeHtml(kind)}" />
-          ${renderTextFields([["username", "Name", "", "For example, Jane Doe", true]])}
+          ${isBulkEntry
+            ? renderTextAreaField("usernames", "Namen", "", "Een naam per regel", true, 6)
+            : renderTextFields([["username", "Name", "", "For example, Jane Doe", true]])}
           ${renderVolunteerPreferences([])}
           ${kind === "FIGHTER" && !event?.allFightersAreVolunteers
             ? `<label class="checkbox-field"><input name="alsoVolunteer" type="checkbox" /> <span>Also Volunteer</span></label>`
@@ -740,7 +834,7 @@ function renderEventCreateAction(): string {
     case "arenas":
       return renderCreateButton("arena", "Nieuwe arena");
     case "officials":
-      return renderCreateButton("entry", "Nieuwe vrijwilliger", "VOLUNTEER");
+      return `${renderVolunteerViewButton("event")}${renderCreateButton("entry", "Nieuwe vrijwilliger", "VOLUNTEER")}`;
   }
 }
 
@@ -749,10 +843,23 @@ function renderTournamentCreateAction(): string {
     case "entries":
       return renderCreateButton("entry", "Nieuwe deelnemer", "FIGHTER");
     case "officials":
-      return renderCreateButton("entry", "Nieuwe vrijwilliger", "VOLUNTEER");
+      return `${renderVolunteerViewButton("tournament")}${renderCreateButton("entry", "Nieuwe vrijwilliger", "VOLUNTEER")}`;
     case "stages":
       return renderCreateButton("stage", "Nieuwe stage");
   }
+}
+
+function renderVolunteerViewButton(scope: "event" | "tournament"): string {
+  return `
+    <button
+      type="button"
+      class="button secondary icon-button"
+      data-action="open-volunteer-view"
+      data-scope="${scope}"
+      title="Vrijwilligersoverzicht openen"
+      aria-label="Vrijwilligersoverzicht openen"
+    >↗</button>
+  `;
 }
 
 function renderCreateButton(editor: EditorKind, label: string, entryKind?: EntryKind): string {
@@ -1161,12 +1268,52 @@ function openEditor(editor: EditorState): void {
     return;
   }
 
-  state.editor = editor;
+  state.volunteerView = undefined;
+  state.editor = editor.kind === "entry" && !editor.id && !editor.entryMode
+    ? { ...editor, entryMode: "single" }
+    : editor;
   render();
 }
 
 function closeEditor(): void {
   state.editor = state.events.length === 0 ? { kind: "event" } : undefined;
+  render();
+}
+
+function openVolunteerView(scope: "event" | "tournament"): void {
+  const event = currentEvent();
+  if (!event) {
+    return;
+  }
+
+  state.editor = undefined;
+  const volunteerView: VolunteerViewState = { scope, eventId: event.id };
+  if (scope === "tournament") {
+    const tournament = currentTournament(event);
+    if (tournament) {
+      volunteerView.tournamentId = tournament.id;
+    }
+  }
+
+  state.volunteerView = volunteerView;
+  render();
+}
+
+function closeVolunteerView(): void {
+  state.volunteerView = undefined;
+  render();
+}
+
+function toggleEntryMode(): void {
+  const editor = state.editor;
+  if (!editor || editor.kind !== "entry" || editor.id) {
+    return;
+  }
+
+  state.editor = {
+    ...editor,
+    entryMode: editor.entryMode === "bulk" ? "single" : "bulk",
+  };
   render();
 }
 
@@ -1307,6 +1454,35 @@ async function submitEditor(form: HTMLFormElement): Promise<void> {
   }
 }
 
+async function submitVolunteerUpdate(form: HTMLFormElement): Promise<void> {
+  const userId = form.dataset.userId;
+  if (!userId) {
+    return;
+  }
+
+  const event = currentEvent();
+  if (!event) {
+    return;
+  }
+
+  const volunteer = findVolunteerEntry(event, userId, state.volunteerView?.tournamentId);
+  if (!volunteer) {
+    return;
+  }
+
+  state.loading = true;
+  render();
+
+  try {
+    await saveVolunteerPreferences(userId, new FormData(form), volunteer.user.skills ?? []);
+    await bootstrap();
+  } catch (error) {
+    state.loading = false;
+    state.error = toErrorMessage(error);
+    render();
+  }
+}
+
 async function saveEditor(
   kind: EditorKind,
   id: string | undefined,
@@ -1352,19 +1528,44 @@ async function saveEditor(
       return;
     }
     case "entry": {
-      const username = requireFormString(formData.get("username"), "Naam");
       const tournamentId = id
         ? requireFormString(formData.get("tournamentId"), "Tournament")
         : tournament?.id ?? (() => { throw new Error("Select a tournament first."); })();
       const entryKind = requireFormString(formData.get("entryKind"), "Entry type") as EntryKind;
-      const seed = optionalFormNumber(formData.get("seed"), "Seed");
       if (id) {
+        const username = requireFormString(formData.get("username"), "Naam");
+        const seed = optionalFormNumber(formData.get("seed"), "Seed");
         const entry = findEntryInEvent(event, id);
         if (!entry) throw new Error("Inschrijving niet gevonden.");
         await api.updateUser(entry.userId, { username });
         await api.updateEntry(id, { tournamentId, kind: entryKind, seed: seed ?? null });
         await saveVolunteerPreferences(entry.userId, formData, entry.user.skills ?? []);
       } else {
+        const entryMode = optionalFormString(formData.get("entryMode")) === "bulk" ? "bulk" : "single";
+        if (entryMode === "bulk") {
+          const usernames = parseBulkUsernames(requireFormString(formData.get("usernames"), "Namen"));
+          const users = await api.listUsers();
+          for (const username of usernames) {
+            let user = findUserByUsername(users, username);
+            if (!user) {
+              user = await api.createUser({ username });
+              users.push(user);
+            }
+            const role = entryKind === "FIGHTER" && (formData.get("alsoVolunteer") === "on" || event?.allFightersAreVolunteers)
+              ? "BOTH"
+              : entryKind;
+            const existingEntry = tournament?.entries.find((entry) => entry.userId === user.id);
+            if (existingEntry) {
+              await api.updateEntry(existingEntry.id, { tournamentId, kind: role });
+            } else {
+              await api.createEntry({ tournamentId, userId: user.id, kind: role });
+            }
+            await saveVolunteerPreferences(user.id, formData, user.skills ?? []);
+          }
+          return;
+        }
+
+        const username = requireFormString(formData.get("username"), "Naam");
         const existingUser = (await api.listUsers()).find(
           (candidate) => candidate.username.localeCompare(username, undefined, { sensitivity: "accent" }) === 0,
         );
@@ -1374,9 +1575,9 @@ async function saveEditor(
           : entryKind;
         const existingEntry = tournament?.entries.find((entry) => entry.userId === user.id);
         if (existingEntry) {
-          await api.updateEntry(existingEntry.id, { kind: role, ...(seed !== undefined ? { seed } : {}) });
+          await api.updateEntry(existingEntry.id, { tournamentId, kind: role });
         } else {
-          await api.createEntry({ tournamentId, userId: user.id, kind: role, ...(seed !== undefined ? { seed } : {}) });
+          await api.createEntry({ tournamentId, userId: user.id, kind: role });
         }
         if (!existingUser) {
           await saveVolunteerPreferences(user.id, formData, []);
@@ -1424,6 +1625,22 @@ function renderTextFields(fields: Array<[string, string, string, string, boolean
     .join("");
 }
 
+function renderTextAreaField(
+  name: string,
+  label: string,
+  value: string,
+  placeholder: string,
+  required: boolean,
+  rows = 6,
+): string {
+  return `
+    <label class="field">
+      <span>${escapeHtml(label)}</span>
+      <textarea class="text-input bulk-text-input" name="${escapeHtml(name)}" rows="${rows}" placeholder="${escapeHtml(placeholder)}" ${required ? "required" : ""}>${escapeHtml(value)}</textarea>
+    </label>
+  `;
+}
+
 function renderTournamentSelect(event: ApiEvent | undefined, selectedTournamentId: string): string {
   return renderSelect(
     "tournamentId",
@@ -1455,6 +1672,34 @@ function renderVolunteerPreferences(skills: ApiSkill[]): string {
       </div>
     </div>
   `;
+}
+
+function renderVolunteerSummary(skills: ApiSkill[]): string {
+  const judge = skills.find((skill) => skill.skillName === "JUDGE" && skill.skillLevel > 0);
+  const jury = skills.find((skill) => skill.skillName === "JURY" && skill.skillLevel > 0);
+  const wishes = renderVolunteerWishBadges(skills);
+  const skillSummary = [judge, jury]
+    .filter((skill): skill is ApiSkill => Boolean(skill))
+    .map((skill) => `${escapeHtml(skill.skillName === "JUDGE" ? "Judge" : "Jury")} ${"&#9733;".repeat(skill.skillLevel)}`)
+    .join(" · ");
+
+  return `
+    <div class="volunteer-summary">
+      <div class="volunteer-summary-line">${skillSummary || "Geen skills"}</div>
+      ${wishes ? `<div class="badge-row">${wishes}</div>` : ""}
+    </div>
+  `;
+}
+
+function renderVolunteerWishBadges(skills: ApiSkill[]): string {
+  return ([
+    ["JUDGE", "Judge"],
+    ["JURY", "Jury"],
+    ["TABLE", "Table"],
+  ] as Array<[string, string]>)
+    .filter(([skillName]) => skills.some((skill) => skill.skillName === skillName))
+    .map(([, label]) => `<span class="badge badge-muted">${escapeHtml(label)}</span>`)
+    .join("");
 }
 
 function renderSkillRating(name: string, label: string, selectedLevel: number): string {
@@ -1531,6 +1776,45 @@ function editorLabel(kind: EditorKind, entryKind?: EntryKind): string {
   }
 }
 
+function collectVolunteerCards(event: ApiEvent, tournament: ApiTournament | undefined): ApiEntry[] {
+  const entries = tournament ? tournament.entries : event.tournaments.flatMap((candidate) => candidate.entries);
+  const cards = new Map<string, ApiEntry>();
+  for (const entry of entries) {
+    if (entry.kind === "FIGHTER") {
+      continue;
+    }
+
+    const existing = cards.get(entry.userId);
+    if (!existing || (existing.kind !== "BOTH" && entry.kind === "BOTH")) {
+      cards.set(entry.userId, entry);
+    }
+  }
+
+  return [...cards.values()].sort((left, right) => left.user.username.localeCompare(right.user.username));
+}
+
+function renderVolunteerCard(entry: ApiEntry): string {
+  return `
+    <article class="editor-card volunteer-card">
+      <header class="editor-card-header">
+        <div>
+          <div class="eyebrow">${escapeHtml(entry.user.username)}</div>
+          <p class="editor-note">${escapeHtml(roleLabel(entry.kind))}</p>
+        </div>
+        ${renderVolunteerSummary(entry.user.skills ?? [])}
+      </header>
+      <form class="editor-form volunteer-update-form" data-action="volunteer-update" data-user-id="${escapeHtml(entry.userId)}">
+        ${renderVolunteerPreferences(entry.user.skills ?? [])}
+      </form>
+    </article>
+  `;
+}
+
+function findVolunteerEntry(event: ApiEvent, userId: string, tournamentId?: string): ApiEntry | undefined {
+  const tournaments = tournamentId ? event.tournaments.filter((candidate) => candidate.id === tournamentId) : event.tournaments;
+  return tournaments.flatMap((tournament) => tournament.entries).find((entry) => entry.userId === userId && entry.kind !== "FIGHTER");
+}
+
 function findEntryInEvent(event: ApiEvent | undefined, id: string | undefined): ApiEntry | undefined {
   if (!id) return undefined;
   return event?.tournaments.flatMap((candidate) => candidate.entries).find((entry) => entry.id === id);
@@ -1548,6 +1832,14 @@ function optionalFormNumber(value: FormDataEntryValue | null, label: string): nu
   const number = Number(text);
   if (!Number.isInteger(number) || number < 0) throw new Error(`${label} moet een positief geheel getal zijn.`);
   return number;
+}
+
+function parseBulkUsernames(value: string): string[] {
+  return [...new Set(value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0))];
+}
+
+function findUserByUsername(users: ApiUser[], username: string): ApiUser | undefined {
+  return users.find((candidate) => candidate.username.localeCompare(username, undefined, { sensitivity: "accent" }) === 0);
 }
 
 function currentEvent(): ApiEvent | undefined {

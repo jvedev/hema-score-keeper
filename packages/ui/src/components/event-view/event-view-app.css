@@ -239,6 +239,10 @@ button {
   width: 100%;
 }
 
+.volunteer-modal-card {
+  max-width: 1200px;
+}
+
 .modal-header {
   align-items: start;
   display: flex;
@@ -292,6 +296,13 @@ button {
   color: rgba(255, 255, 255, 0.38);
 }
 
+textarea.text-input {
+  min-height: 10rem;
+  resize: vertical;
+  padding-top: 0.6rem;
+  padding-bottom: 0.6rem;
+}
+
 .tabs {
   background: #20283a;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -338,6 +349,10 @@ button {
 
 .button.secondary {
   background: #20283a;
+}
+
+.button.secondary:hover {
+  background: #28324a;
 }
 
 .icon-button {
@@ -480,6 +495,32 @@ button {
 .empty-card {
   color: rgba(255, 255, 255, 0.72);
   padding: 16px;
+}
+
+.volunteer-view-body {
+  min-height: 0;
+}
+
+.volunteer-view-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.volunteer-card {
+  margin-bottom: 0;
+}
+
+.volunteer-card .volunteer-summary {
+  display: grid;
+  gap: 8px;
+  max-width: 320px;
+}
+
+.volunteer-summary-line {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .error-state h1,
