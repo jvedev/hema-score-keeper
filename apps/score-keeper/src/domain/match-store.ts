@@ -2,6 +2,7 @@ import type { MatchEventDetail } from "@hema/ui";
 import type { MatchParameters } from "./rule-set";
 import {
   createInitialMatchState,
+  createMatchState,
   type MatchState,
 } from "./match-state";
 import { reduceMatchEvent, replayMatchEvents } from "./match-reducer";
@@ -14,13 +15,16 @@ export type MatchEventListener = (
 
 export class MatchStore {
   readonly #rules: MatchParameters;
+  readonly #initialState: MatchState;
   readonly #events: MatchEventDetail[] = [];
   readonly #stateListeners = new Set<MatchStateListener>();
   readonly #eventListeners = new Set<MatchEventListener>();
-  #state = createInitialMatchState();
+  #state: MatchState;
 
-  constructor(rules: MatchParameters) {
+  constructor(rules: MatchParameters, initialState: MatchState = createInitialMatchState()) {
     this.#rules = structuredClone(rules);
+    this.#initialState = createMatchState(initialState);
+    this.#state = this.#initialState;
   }
 
   get state(): MatchState {
@@ -56,7 +60,7 @@ export class MatchStore {
 
   replay(events: readonly MatchEventDetail[]): void {
     const storedEvents = events.map((event) => structuredClone(event));
-    const nextState = replayMatchEvents(storedEvents, this.#rules);
+    const nextState = replayMatchEvents(storedEvents, this.#rules, this.#initialState);
     this.#events.splice(0, this.#events.length, ...storedEvents);
     this.#state = nextState;
     for (const listener of this.#stateListeners) listener(this.#state);
@@ -64,7 +68,7 @@ export class MatchStore {
 
   reset(): void {
     this.#events.splice(0);
-    this.#state = createInitialMatchState();
+    this.#state = this.#initialState;
     for (const listener of this.#stateListeners) listener(this.#state);
   }
 }

@@ -1,7 +1,16 @@
 import "@hema/ui";
-import { createArenaRepository } from "./data/create-arena-repository";
+import "@hema/ui/start-screen-view";
+import type {
+  ApiArena,
+  ApiEvent,
+  ApiMatch,
+  ApiStage,
+  ApiTournament,
+} from "@hema/event-admin-api";
+import { createEventRepository } from "./data/create-event-repository";
 import { createRuleSetRepository } from "./data/create-rule-set-repository";
 import { MatchStore } from "./domain/match-store";
+import { createMatchState } from "./domain/match-state";
 import "./styles.css";
 
 type OrientationLockType =
@@ -20,6 +29,18 @@ declare global {
   }
 }
 
+interface ActiveStageSelection {
+  tournament: ApiTournament;
+  stage: ApiStage;
+  matches: ApiMatch[];
+}
+
+interface CurrentSelection {
+  event: ApiEvent | undefined;
+  arena: ApiArena | undefined;
+  stageSelection: ActiveStageSelection | undefined;
+}
+
 function requireElement<ElementType extends Element>(
   selector: string,
 ): ElementType {
@@ -28,6 +49,10 @@ function requireElement<ElementType extends Element>(
   return element;
 }
 
+const startScreenView =
+  requireElement<HTMLElementTagNameMap["start-screen-view"]>(
+    "#start-screen-view",
+  );
 const fightView =
   requireElement<HTMLElementTagNameMap["fight-view"]>("#fight-view");
 const scoreView =
@@ -37,19 +62,33 @@ const warningView =
 const forfeitDialog =
   requireElement<HTMLElementTagNameMap["action-dialog"]>("#forfeit-dialog");
 
-const selectBoutView =
-  requireElement<HTMLElementTagNameMap["select-bout-view"]>("#select-bout-view");
-
-const arenaRepository = createArenaRepository();
+const eventRepository = createEventRepository();
 const ruleSetRepository = createRuleSetRepository();
-let matchStore: MatchStore | undefined;
-let selectedBoutId: string | undefined;
-let enterSelectedBout: ((boutId: string) => Promise<void>) | undefined;
-fightView.setMatchActive(false);
+const selectionStorageKey = "hema-score-keeper.start-selection";
 
-selectBoutView.addEventListener("bout-selected", (event) => {
-  if (!enterSelectedBout) throw new Error("Arena is not initialized.");
-  void enterSelectedBout(event.detail.boutId);
+let events: readonly ApiEvent[] = [];
+let selectedEventId: string | undefined;
+let selectedArenaId: string | undefined;
+let selectedMatchId: string | undefined;
+let matchStore: MatchStore | undefined;
+let wakeLock: WakeLockSentinel | undefined;
+let wakeLockRequested = false;
+
+fightView.setMatchActive(false);
+showStartScreen();
+startScreenView.configure(buildLoadingConfig());
+
+startScreenView.addEventListener("event-selected", (event) => {
+  selectEvent(event.detail.eventId);
+});
+startScreenView.addEventListener("arena-selected", (event) => {
+  selectArena(event.detail.arenaId);
+});
+startScreenView.addEventListener("fight-selected", (event) => {
+  void beginFightMode(event.detail.matchId, false);
+});
+startScreenView.addEventListener("reload-requested", () => {
+  void loadEvents();
 });
 
 fightView.addEventListener("hit-requested", (event) => {
@@ -82,101 +121,206 @@ window.addEventListener("match-event", (event) => {
   matchStore.dispatch(event.detail);
 });
 
-async function loadArena(): Promise<void> {
-  const arenaId =
-    new URLSearchParams(window.location.search).get("arenaId") ?? "arena-1";
-  const [arena, ruleSet] = await Promise.all([
-    arenaRepository.getArena(arenaId),
-    ruleSetRepository.getRuleSet("rule-set-1"),
-  ]);
-  const fighters = new Map(
-    arena.fighters.map((fighter) => [fighter.id, fighter]),
-  );
-  fightView.configureArena({
-    name: arena.name,
-    fighterAName: "Fighter A",
-    fighterBName: "Fighter B",
-    leftFighterStyle: arena.fighterStyles.left,
-    rightFighterStyle: arena.fighterStyles.right,
-  });
-  fightView.setMatchDuration(ruleSet.matchParameters.maxDurationSeconds);
-  const expectedBouts = arena.bouts.filter(
-    (bout) => bout.status === "expected",
-  );
-  selectBoutView.configure({
-    arenaName: arena.name,
-    fighterCount: arena.fighters.length,
-    bouts: expectedBouts.map((bout, index) => {
-      const fighterA = fighters.get(bout.fighterAId);
-      const fighterB = fighters.get(bout.fighterBId);
-      if (!fighterA || !fighterB) {
-        throw new Error(`Bout "${bout.id}" references an unknown fighter.`);
-      }
-      return {
-        id: bout.id,
-        sequenceNumber: index + 1,
-        round: bout.round,
-        fighterAName: fighterA.name,
-        fighterBName: fighterB.name,
-      };
-    }),
-  });
+window.addEventListener("popstate", () => {
+  applyLocationSelection();
+  if (isFightRoute()) {
+    void beginFightMode(selectedMatchId, true);
+    return;
+  }
 
-  enterSelectedBout = async (boutId) => {
-    const bout = expectedBouts.find((item) => item.id === boutId);
-    if (!bout) throw new Error(`Expected bout "${boutId}" does not exist.`);
-    const fighterA = fighters.get(bout.fighterAId);
-    const fighterB = fighters.get(bout.fighterBId);
-    if (!fighterA || !fighterB) {
-      throw new Error(`Bout "${bout.id}" references an unknown fighter.`);
-    }
-
-    selectedBoutId = bout.id;
-    fightView.configureArena({
-      name: arena.name,
-      fighterAName: fighterA.name,
-      fighterBName: fighterB.name,
-      leftFighterStyle: arena.fighterStyles.left,
-      rightFighterStyle: arena.fighterStyles.right,
-    });
-    scoreView.configure({
-        scores: ruleSet.matchParameters.scores,
-        fighterA: {
-          name: fighterA.name,
-          score: 0,
-          ...arena.fighterStyles.left,
-        },
-        fighterB: {
-          name: fighterB.name,
-          score: 0,
-          ...arena.fighterStyles.right,
-        },
-    });
-    warningView.configure({
-        fighterA: { name: fighterA.name, ...arena.fighterStyles.left },
-        fighterB: { name: fighterB.name, ...arena.fighterStyles.right },
-        penalties: ruleSet.matchParameters.penalties,
-    });
-
-    matchStore = new MatchStore(ruleSet.matchParameters);
-    matchStore.subscribe((state) => {
-        fightView.setScores(state);
-        fightView.setMatchActive(!state.disqualifiedFighter);
-        scoreView.setScores(state.fighterAScore, state.fighterBScore);
-    });
-    matchStore.subscribeToEvents((event) => {
-        console.info("Match event:", { arenaId, boutId: selectedBoutId, event });
-    });
-    await enterBoutMode();
-  };
-}
-
-void loadArena().catch((error: unknown) => {
-  console.error("Unable to load arena.", error);
+  void exitFightMode();
+  showStartScreen();
+  renderStartScreen();
 });
 
-let wakeLock: WakeLockSentinel | undefined;
-let wakeLockRequested = false;
+void loadEvents();
+
+async function loadEvents(): Promise<void> {
+  startScreenView.configure(buildLoadingConfig());
+  try {
+    events = await eventRepository.listEvents();
+    applyLocationSelection();
+    if (isFightRoute()) {
+      await beginFightMode(selectedMatchId, true);
+      return;
+    }
+
+    await exitFightMode();
+    showStartScreen();
+    syncStartUrl();
+    renderStartScreen();
+  } catch (error) {
+    await exitFightMode();
+    showStartScreen();
+    startScreenView.configure({
+      ...buildLoadingConfig(),
+      loading: false,
+      error: error instanceof Error ? error.message : "Unable to load events.",
+    });
+  }
+}
+
+async function beginFightMode(
+  matchId?: string,
+  replaceUrl = false,
+): Promise<void> {
+  const selection = resolveCurrentSelection();
+  const stageSelection = selection.stageSelection;
+  if (!selection.event || !selection.arena || !stageSelection) {
+    await exitFightMode();
+    syncStartUrl();
+    showStartScreen();
+    renderStartScreen("Event not active for the selected arena.");
+    return;
+  }
+
+  const match =
+    resolveMatch(stageSelection, selection.arena.id, matchId) ??
+    stageSelection.matches[0];
+  if (!match) {
+    await exitFightMode();
+    syncStartUrl();
+    showStartScreen();
+    renderStartScreen("No fights are assigned to the selected arena.");
+    return;
+  }
+
+  const ruleSetId =
+    match.ruleset?.id ??
+    stageSelection.stage.ruleset?.id ??
+    stageSelection.tournament.ruleset?.id ??
+    selection.event.ruleset?.id;
+  if (!ruleSetId) {
+    throw new Error("A ruleset is required to start the fight view.");
+  }
+
+  const ruleSet = await ruleSetRepository.getRuleSet(ruleSetId);
+  const fighterA = resolveEntry(stageSelection.tournament, match.entryAId);
+  const fighterB = resolveEntry(stageSelection.tournament, match.entryBId);
+  if (!fighterA || !fighterB) {
+    throw new Error(`Match "${match.id}" references an unknown fighter.`);
+  }
+
+  selectedMatchId = match.id;
+  syncFightUrl(match.id, replaceUrl);
+  showFightScreen();
+
+  matchStore = new MatchStore(
+    ruleSet.matchParameters,
+    createMatchState({
+      fighterAScore: match.scoreA ?? 0,
+      fighterBScore: match.scoreB ?? 0,
+      elapsedTimeSeconds: 0,
+      warnings: { A: 0, B: 0 },
+    }),
+  );
+  matchStore.subscribe((state) => {
+    fightView.setScores(state);
+    fightView.setMatchActive(!state.disqualifiedFighter);
+    scoreView.setScores(state.fighterAScore, state.fighterBScore);
+  });
+  matchStore.subscribeToEvents((event) => {
+    console.info("Match event:", {
+      eventId: selection.event?.id,
+      arenaId: selection.arena?.id,
+      matchId: selectedMatchId,
+      event,
+    });
+  });
+
+  fightView.configureArena({
+    name: `${selection.arena.name} · ${stageDisplayName(stageSelection.stage)}`,
+    fighterAName: fighterA.user.username,
+    fighterBName: fighterB.user.username,
+    leftFighterStyle: {
+      backgroundColor: stageSelection.tournament.color,
+      textColor: "#071a0d",
+    },
+    rightFighterStyle: {
+      backgroundColor: "#2f7dfa",
+      textColor: "#ffffff",
+    },
+  });
+  fightView.setMatchDuration(ruleSet.matchParameters.maxDurationSeconds);
+  fightView.setScores({
+    fighterAScore: match.scoreA ?? 0,
+    fighterBScore: match.scoreB ?? 0,
+  });
+  scoreView.configure({
+    scores: ruleSet.matchParameters.scores,
+    fighterA: {
+      name: fighterA.user.username,
+      score: match.scoreA ?? 0,
+      backgroundColor: stageSelection.tournament.color,
+      textColor: "#071a0d",
+    },
+    fighterB: {
+      name: fighterB.user.username,
+      score: match.scoreB ?? 0,
+      backgroundColor: "#2f7dfa",
+      textColor: "#ffffff",
+    },
+  });
+  warningView.configure({
+    fighterA: {
+      name: fighterA.user.username,
+      backgroundColor: stageSelection.tournament.color,
+      textColor: "#071a0d",
+    },
+    fighterB: {
+      name: fighterB.user.username,
+      backgroundColor: "#2f7dfa",
+      textColor: "#ffffff",
+    },
+    penalties: ruleSet.matchParameters.penalties,
+  });
+
+  await enterFightMode();
+}
+
+async function enterFightMode(): Promise<void> {
+  wakeLockRequested = true;
+  void requestWakeLock();
+
+  try {
+    await document.documentElement.requestFullscreen();
+  } catch (error) {
+    console.warn("Fullscreen mode is unavailable.", error);
+  }
+
+  try {
+    await screen.orientation.lock("portrait");
+  } catch (error) {
+    console.warn("Portrait orientation lock is unavailable.", error);
+  }
+
+  await requestWakeLock();
+}
+
+async function exitFightMode(): Promise<void> {
+  wakeLockRequested = false;
+  if (wakeLock && wakeLock.released === false) {
+    try {
+      await wakeLock.release();
+    } catch (error) {
+      console.warn("Unable to release the screen wake lock.", error);
+    }
+  }
+  wakeLock = undefined;
+  matchStore = undefined;
+  fightView.setWakeLockActive(false);
+  if (document.fullscreenElement) {
+    try {
+      await document.exitFullscreen();
+    } catch (error) {
+      console.warn("Unable to exit fullscreen mode.", error);
+    }
+  }
+  fightView.setMatchStarted(false);
+  fightView.hidden = true;
+  startScreenView.hidden = false;
+  document.body.dataset.mode = "start";
+}
 
 async function requestWakeLock(): Promise<void> {
   if (!wakeLockRequested) return;
@@ -197,15 +341,13 @@ async function requestWakeLock(): Promise<void> {
   try {
     wakeLock = await navigator.wakeLock.request("screen");
     fightView.setWakeLockActive(true);
-    wakeLock.addEventListener("release", () =>
-      {
-        wakeLock = undefined;
-        fightView.setWakeLockActive(false);
-        if (wakeLockRequested && document.visibilityState === "visible") {
-          void requestWakeLock();
-        }
-      },
-    );
+    wakeLock.addEventListener("release", () => {
+      wakeLock = undefined;
+      fightView.setWakeLockActive(false);
+      if (wakeLockRequested && document.visibilityState === "visible") {
+        void requestWakeLock();
+      }
+    });
   } catch (error) {
     fightView.setWakeLockActive(false);
     console.warn("Unable to acquire a screen wake lock.", error);
@@ -218,42 +360,341 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-async function enterBoutMode(): Promise<void> {
-  wakeLockRequested = true;
-  void requestWakeLock();
-
-  try {
-    await document.documentElement.requestFullscreen();
-  } catch (error) {
-    console.warn("Fullscreen mode is unavailable.", error);
-  }
-
-  try {
-    await screen.orientation.lock("portrait");
-  } catch (error) {
-    console.warn("Portrait orientation lock is unavailable.", error);
-  }
-  await requestWakeLock();
-  selectBoutView.hidden = true;
-  fightView.hidden = false;
+function renderStartScreen(inactiveMessage?: string): void {
+  startScreenView.configure(buildStartScreenConfig(inactiveMessage));
 }
 
-if (import.meta.env.DEV && "serviceWorker" in navigator) {
-  void navigator.serviceWorker.getRegistrations().then(async (registrations) => {
-    await Promise.all(registrations.map((registration) => registration.unregister()));
-    const cacheKeys = await caches.keys();
-    await Promise.all(
-      cacheKeys
-        .filter((key) => key.startsWith("hema-scorebox-"))
-        .map((key) => caches.delete(key)),
+function buildLoadingConfig() {
+  return {
+    loading: true,
+    error: null,
+    eventOptions: [],
+    selectedEventId: null,
+    arenaOptions: [],
+    selectedArenaId: null,
+    activeStageLabel: null,
+    fightSummary: null,
+    inactiveMessage: null,
+    fights: [],
+  };
+}
+
+function buildStartScreenConfig(inactiveMessage?: string) {
+  const selection = resolveCurrentSelection();
+  const fights = selection.stageSelection
+    ? buildFightCards(selection.stageSelection, selection.arena?.id)
+    : [];
+  const activeStageLabel = selection.stageSelection
+    ? `${selection.stageSelection.tournament.name} · ${stageDisplayName(selection.stageSelection.stage)}`
+    : null;
+  const fightSummary = selection.stageSelection
+    ? `${fights.length} fight${fights.length === 1 ? "" : "s"}`
+    : null;
+
+  return {
+    loading: false,
+    error: null,
+    eventOptions: events.map((event) => ({
+      id: event.id,
+      name: event.eventName,
+    })),
+    selectedEventId: selection.event?.id ?? null,
+    arenaOptions: selection.event
+      ? selection.event.arenas.map((arena) => ({ id: arena.id, name: arena.name }))
+      : [],
+    selectedArenaId: selection.arena?.id ?? null,
+    activeStageLabel,
+    fightSummary,
+    inactiveMessage:
+      inactiveMessage ??
+      (selection.stageSelection
+        ? fights.length === 0
+          ? "No fights are assigned to this arena yet."
+          : null
+        : "Event not active for the selected arena."),
+    fights,
+  };
+}
+
+function resolveCurrentSelection(): CurrentSelection {
+  const event =
+    events.find((candidate) => candidate.id === selectedEventId) ?? events[0];
+  if (!event) {
+    return {
+      event: undefined,
+      arena: undefined,
+      stageSelection: undefined,
+    };
+  }
+
+  const arena =
+    event.arenas.find((candidate) => candidate.id === selectedArenaId) ??
+    event.arenas[0];
+  const stageSelection = arena ? findActiveStage(event, arena.id) : undefined;
+  return { event, arena, stageSelection };
+}
+
+function findActiveStage(
+  event: ApiEvent,
+  arenaId: string,
+): ActiveStageSelection | undefined {
+  for (const tournament of event.tournaments) {
+    for (const stage of tournament.stages) {
+      const matches = collectMatches(stage, arenaId);
+      if (matches.length > 0) {
+        return { tournament, stage, matches };
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function collectMatches(stage: ApiStage, arenaId: string): ApiMatch[] {
+  const matches: ApiMatch[] = [];
+  for (const round of stage.rounds) {
+    for (const match of round.matches) {
+      if (match.arenaId === arenaId) {
+        matches.push(match);
+      }
+    }
+  }
+  return matches;
+}
+
+function buildFightCards(
+  stageSelection: ActiveStageSelection,
+  arenaId?: string,
+): Array<{
+  id: string;
+  roundLabel: string;
+  fighterAName: string;
+  fighterBName: string;
+  statusLabel: string;
+}> {
+  if (!arenaId) {
+    return [];
+  }
+
+  const cards: Array<{
+    id: string;
+    roundLabel: string;
+    fighterAName: string;
+    fighterBName: string;
+    statusLabel: string;
+  }> = [];
+
+  for (const round of stageSelection.stage.rounds) {
+    for (const match of round.matches) {
+      if (match.arenaId !== arenaId) {
+        continue;
+      }
+      const fighterA = resolveEntry(stageSelection.tournament, match.entryAId);
+      const fighterB = resolveEntry(stageSelection.tournament, match.entryBId);
+      if (!fighterA || !fighterB) {
+        continue;
+      }
+      cards.push({
+        id: match.id,
+        roundLabel: `Round ${round.roundNumber}`,
+        fighterAName: fighterA.user.username,
+        fighterBName: fighterB.user.username,
+        statusLabel: matchStatusLabel(match),
+      });
+    }
+  }
+
+  return cards;
+}
+
+function resolveMatch(
+  stageSelection: ActiveStageSelection,
+  arenaId: string,
+  matchId?: string,
+): ApiMatch | undefined {
+  if (matchId) {
+    const explicit = stageSelection.matches.find((match) => match.id === matchId);
+    if (explicit) {
+      return explicit;
+    }
+  }
+
+  return stageSelection.matches.find((match) => match.arenaId === arenaId);
+}
+
+function resolveEntry(
+  tournament: ApiTournament,
+  entryId: string | null,
+): ApiTournament["entries"][number] | undefined {
+  if (!entryId) {
+    return undefined;
+  }
+
+  return tournament.entries.find((entry) => entry.id === entryId);
+}
+
+function matchStatusLabel(match: ApiMatch): string {
+  if (match.winnerEntryId) {
+    return "Completed";
+  }
+  if (match.scoreA !== null || match.scoreB !== null) {
+    return "In progress";
+  }
+  return "Ready";
+}
+
+function stageDisplayName(stage: ApiStage): string {
+  return stage.name ?? stage.type.replaceAll("_", " ").toLowerCase();
+}
+
+function selectEvent(eventId: string): void {
+  selectedEventId = eventId;
+  const event = events.find((candidate) => candidate.id === eventId);
+  selectedArenaId = event?.arenas[0]?.id;
+  selectedMatchId = undefined;
+  persistSelection();
+  syncStartUrl();
+  showStartScreen();
+  renderStartScreen();
+}
+
+function selectArena(arenaId: string): void {
+  selectedArenaId = arenaId;
+  selectedMatchId = undefined;
+  persistSelection();
+  syncStartUrl();
+  showStartScreen();
+  renderStartScreen();
+}
+
+function syncStartUrl(): void {
+  const url = new URL(window.location.href);
+  url.pathname = "/";
+  if (selectedEventId) {
+    url.searchParams.set("eventId", selectedEventId);
+  } else {
+    url.searchParams.delete("eventId");
+  }
+  if (selectedArenaId) {
+    url.searchParams.set("arenaId", selectedArenaId);
+  } else {
+    url.searchParams.delete("arenaId");
+  }
+  url.searchParams.delete("matchId");
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+function syncFightUrl(matchId: string, replaceUrl: boolean): void {
+  const url = new URL(window.location.href);
+  url.pathname = "/match";
+  if (selectedEventId) {
+    url.searchParams.set("eventId", selectedEventId);
+  } else {
+    url.searchParams.delete("eventId");
+  }
+  if (selectedArenaId) {
+    url.searchParams.set("arenaId", selectedArenaId);
+  } else {
+    url.searchParams.delete("arenaId");
+  }
+  url.searchParams.set("matchId", matchId);
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  if (replaceUrl) {
+    window.history.replaceState({}, "", nextUrl);
+  } else {
+    window.history.pushState({}, "", nextUrl);
+  }
+}
+
+function applyLocationSelection(): void {
+  const params = new URLSearchParams(window.location.search);
+  const savedSelection = loadSavedSelection();
+  const requestedEventId = params.get("eventId");
+  const selectedEvent =
+    events.find((candidate) => candidate.id === requestedEventId) ??
+    events.find((candidate) => candidate.id === savedSelection?.eventId) ??
+    events[0];
+  selectedEventId = selectedEvent?.id;
+
+  const requestedArenaId = params.get("arenaId");
+  const selectedArena =
+    selectedEvent?.arenas.find((candidate) => candidate.id === requestedArenaId) ??
+    selectedEvent?.arenas.find((candidate) => candidate.id === savedSelection?.arenaId) ??
+    selectedEvent?.arenas[0];
+  selectedArenaId = selectedArena?.id;
+
+  const requestedMatchId = params.get("matchId") ?? undefined;
+  selectedMatchId = requestedMatchId && selectedArenaId
+    ? selectedEvent?.tournaments.some((tournament) =>
+        tournament.stages.some((stage) =>
+          stage.rounds.some((round) =>
+            round.matches.some(
+              (match) =>
+                match.id === requestedMatchId &&
+                match.arenaId === selectedArenaId,
+            ),
+          ),
+        ),
+      )
+      ? requestedMatchId
+      : undefined
+    : undefined;
+  if (!selectedMatchId && requestedMatchId) {
+    selectedMatchId = undefined;
+  }
+}
+
+function loadSavedSelection(): { eventId?: string; arenaId?: string } | undefined {
+  try {
+    const raw = window.localStorage.getItem(selectionStorageKey);
+    if (!raw) {
+      return undefined;
+    }
+    const parsed = JSON.parse(raw) as Partial<{ eventId: string; arenaId: string }>;
+    const savedSelection: { eventId?: string; arenaId?: string } = {};
+    if (typeof parsed.eventId === "string") {
+      savedSelection.eventId = parsed.eventId;
+    }
+    if (typeof parsed.arenaId === "string") {
+      savedSelection.arenaId = parsed.arenaId;
+    }
+    return savedSelection;
+  } catch (error) {
+    console.warn("Unable to read the saved start selection.", error);
+    return undefined;
+  }
+}
+
+function persistSelection(): void {
+  try {
+    window.localStorage.setItem(
+      selectionStorageKey,
+      JSON.stringify({
+        eventId: selectedEventId,
+        arenaId: selectedArenaId,
+      }),
     );
-  });
-} else if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    void navigator.serviceWorker
-      .register("/sw.js")
-      .catch((error: unknown) =>
-        console.error("Service worker registration failed.", error),
-      );
-  });
+  } catch (error) {
+    console.warn("Unable to save the start selection.", error);
+  }
+}
+
+function isFightRoute(): boolean {
+  return normalizePath(window.location.pathname) === "/match";
+}
+
+function showStartScreen(): void {
+  startScreenView.hidden = false;
+  fightView.hidden = true;
+  document.body.dataset.mode = "start";
+}
+
+function showFightScreen(): void {
+  startScreenView.hidden = true;
+  fightView.hidden = false;
+  document.body.dataset.mode = "fight";
+}
+
+function normalizePath(pathname: string): string {
+  return pathname.replace(/\/+$/, "") || "/";
 }

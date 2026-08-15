@@ -42,17 +42,21 @@ button {
   width: 64px;
 }
 
-select-bout-view[hidden],
+start-screen-view[hidden],
 fight-view[hidden] {
   display: none;
 }
 
+body[data-mode="fight"] #rotate-overlay {
+  display: none;
+}
+
 @media (orientation: landscape) and (pointer: coarse) {
-  #rotate-overlay {
+  body[data-mode="fight"] #rotate-overlay {
     display: flex;
   }
 
-  fight-view {
+  body[data-mode="fight"] fight-view {
     display: none;
   }
 }

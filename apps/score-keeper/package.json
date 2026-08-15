@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@hema/event-admin-api": "*",
     "@hema/ui": "*"
   },
   "devDependencies": {

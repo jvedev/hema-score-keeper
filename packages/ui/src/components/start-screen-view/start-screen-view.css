@@ -1,0 +1,193 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+.start-screen-view {
+  box-sizing: border-box;
+  min-height: 100%;
+  padding: 24px 20px 28px;
+}
+
+.hero,
+.content {
+  margin: 0 auto;
+  max-width: 820px;
+}
+
+.hero {
+  align-items: end;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 20px;
+}
+
+.hero p,
+.hero h1,
+.section-header h2,
+.section-header p {
+  margin: 0;
+}
+
+.hero p {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  font-size: 28px;
+  letter-spacing: 0.04em;
+  margin-top: 6px;
+  text-transform: uppercase;
+}
+
+#status-copy {
+  color: rgba(255, 255, 255, 0.7);
+  display: block;
+  font-size: 14px;
+  margin-top: 6px;
+}
+
+.is-error {
+  color: #ff9b9b;
+}
+
+.hero-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.badge {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 6px;
+  line-height: 1;
+  padding: 8px 12px;
+}
+
+.content {
+  display: grid;
+  gap: 14px;
+}
+
+.panel {
+  background: #111723;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.field-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field span {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+select,
+button {
+  font: inherit;
+}
+
+select {
+  background: #0f1623;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  color: inherit;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.section-header h2 {
+  font-size: 18px;
+  text-transform: uppercase;
+}
+
+.section-header p {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.message {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14px;
+}
+
+.message.is-error {
+  color: #ff9b9b;
+}
+
+.fight-list {
+  display: grid;
+  gap: 10px;
+}
+
+.fight-button {
+  background: #0f1623;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  color: inherit;
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  text-align: left;
+  width: 100%;
+}
+
+.fight-button:hover,
+.fight-button:focus-visible {
+  border-color: var(--hema-left-color);
+  outline: none;
+}
+
+.fight-meta,
+.fight-status {
+  color: rgba(255, 255, 255, 0.68);
+  display: block;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fight-title {
+  display: block;
+  font-size: 16px;
+  margin-top: 6px;
+}
+
+.fight-status {
+  margin-top: 6px;
+}
+
+@media (max-width: 680px) {
+  .hero {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .field-grid {
+    grid-template-columns: 1fr;
+  }
+}
