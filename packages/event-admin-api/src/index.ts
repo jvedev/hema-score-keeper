@@ -6,6 +6,10 @@ export type ScheduleRole = "JUDGE" | "JURY" | "TABLE";
 export interface ApiUser {
   id: string;
   username: string;
+  judgeVolunteer: boolean;
+  juryVolunteer: boolean;
+  tableVolunteer: boolean;
+  otherVolunteer: boolean;
   skills?: ApiSkill[];
 }
 
@@ -149,7 +153,16 @@ export interface ApiEventMutationResult {
 export interface ApiClient {
   listUsers(): Promise<ApiUser[]>;
   createUser(body: { username: string }): Promise<ApiUser>;
-  updateUser(id: string, body: { username?: string }): Promise<ApiUser>;
+  updateUser(
+    id: string,
+    body: {
+      username?: string;
+      judgeVolunteer?: boolean;
+      juryVolunteer?: boolean;
+      tableVolunteer?: boolean;
+      otherVolunteer?: boolean;
+    },
+  ): Promise<ApiUser>;
   createSkill(body: { userId: string; skillName: string; skillLevel: number }): Promise<ApiSkill>;
   updateSkill(id: string, body: { skillName?: string; skillLevel?: number }): Promise<ApiSkill>;
   deleteSkill(id: string): Promise<void>;

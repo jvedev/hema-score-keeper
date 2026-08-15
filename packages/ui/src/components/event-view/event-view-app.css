@@ -511,6 +511,13 @@ textarea.text-input {
   margin-bottom: 0;
 }
 
+.volunteer-card .volunteer-name {
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
 .volunteer-card .volunteer-summary {
   display: grid;
   gap: 8px;

@@ -273,10 +273,28 @@ async function getUser(_request: IncomingMessage, params: Record<string, string>
 
 async function updateUser(request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
   const body = ensureObject(await readJsonBody(request), "User");
-  const data: { username?: string } = {};
+  const data: {
+    username?: string;
+    judgeVolunteer?: boolean;
+    juryVolunteer?: boolean;
+    tableVolunteer?: boolean;
+    otherVolunteer?: boolean;
+  } = {};
 
   if (body.username !== undefined) {
     data.username = requireString(body.username, "Username");
+  }
+  if (body.judgeVolunteer !== undefined) {
+    data.judgeVolunteer = requireBoolean(body.judgeVolunteer, "Judge volunteer");
+  }
+  if (body.juryVolunteer !== undefined) {
+    data.juryVolunteer = requireBoolean(body.juryVolunteer, "Jury volunteer");
+  }
+  if (body.tableVolunteer !== undefined) {
+    data.tableVolunteer = requireBoolean(body.tableVolunteer, "Table volunteer");
+  }
+  if (body.otherVolunteer !== undefined) {
+    data.otherVolunteer = requireBoolean(body.otherVolunteer, "Other volunteer");
   }
 
   return prisma.user.update({

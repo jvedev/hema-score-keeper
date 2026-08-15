@@ -25,6 +25,31 @@ interface EditorState {
   entryMode?: "single" | "bulk";
 }
 
+function captureScrollState(): ScrollState | undefined {
+  const workspace = app.querySelector<HTMLElement>(".workspace");
+  const modal = app.querySelector<HTMLElement>(".modal-card");
+  if (!workspace && !modal) {
+    return undefined;
+  }
+
+  return {
+    workspaceTop: workspace?.scrollTop ?? 0,
+    modalTop: modal?.scrollTop ?? 0,
+  };
+}
+
+function restoreScrollState(scrollState: ScrollState): void {
+  const workspace = app.querySelector<HTMLElement>(".workspace");
+  if (workspace) {
+    workspace.scrollTop = scrollState.workspaceTop;
+  }
+
+  const modal = app.querySelector<HTMLElement>(".modal-card");
+  if (modal) {
+    modal.scrollTop = scrollState.modalTop;
+  }
+}
+
 interface VolunteerViewState {
   scope: "event" | "tournament";
   eventId: string;
@@ -45,8 +70,14 @@ interface AppState {
   stageTab: StageTab;
 }
 
+interface ScrollState {
+  workspaceTop: number;
+  modalTop: number;
+}
+
 const api = createApiClient();
 let app: HTMLElement;
+let pendingScrollState: ScrollState | undefined;
 
 const state: AppState = {
   loading: true,
@@ -64,6 +95,7 @@ const state: AppState = {
 
 export function mountEventView(host: HTMLElement): void {
   app = host;
+  pendingScrollState = undefined;
   app.addEventListener("click", onAppClick);
   app.addEventListener("change", onAppChange);
   app.addEventListener("submit", onAppSubmit);
@@ -95,7 +127,8 @@ async function bootstrap(): Promise<void> {
 }
 
 function onAppClick(event: MouseEvent): void {
-  const target = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-action]") : null;
+  const origin = event.composedPath()[0];
+  const target = origin instanceof Element ? origin.closest<HTMLElement>("[data-action]") : null;
   if (!target) {
     return;
   }
@@ -163,8 +196,8 @@ function onAppClick(event: MouseEvent): void {
 }
 
 function onAppChange(event: Event): void {
-  const target = event.target instanceof Element ? event.target : null;
-  if (!target) {
+  const target = event.composedPath()[0];
+  if (!(target instanceof Element)) {
     return;
   }
 
@@ -175,7 +208,8 @@ function onAppChange(event: Event): void {
 }
 
 function onAppSubmit(event: SubmitEvent): void {
-  const form = event.target instanceof HTMLFormElement ? event.target : null;
+  const origin = event.composedPath()[0];
+  const form = origin instanceof HTMLFormElement ? origin : null;
   if (!form || (form.dataset.action !== "editor" && form.dataset.action !== "volunteer-update")) {
     return;
   }
@@ -189,6 +223,10 @@ function onAppSubmit(event: SubmitEvent): void {
 }
 
 function render(): void {
+  if (pendingScrollState === undefined) {
+    pendingScrollState = captureScrollState();
+  }
+
   if (state.loading) {
     app.innerHTML = renderLoading();
     return;
@@ -200,6 +238,10 @@ function render(): void {
   }
 
   app.innerHTML = renderShell();
+  if (pendingScrollState) {
+    restoreScrollState(pendingScrollState);
+    pendingScrollState = undefined;
+  }
 }
 
 function renderLoading(): string {
@@ -760,7 +802,7 @@ function renderEditorFields(
           ${isBulkEntry
             ? renderTextAreaField("usernames", "Namen", "", "Een naam per regel", true, 6)
             : renderTextFields([["username", "Name", "", "For example, Jane Doe", true]])}
-          ${renderVolunteerPreferences([])}
+          ${renderVolunteerPreferences(emptyVolunteerPreferences(), [], "entry-new")}
           ${kind === "FIGHTER" && !event?.allFightersAreVolunteers
             ? `<label class="checkbox-field"><input name="alsoVolunteer" type="checkbox" /> <span>Also Volunteer</span></label>`
             : ""}
@@ -768,7 +810,7 @@ function renderEditorFields(
       }
       return `
         ${renderTextFields([["username", "Name", item.user.username, "For example, Jane Doe", true]])}
-        ${renderVolunteerPreferences(item.user.skills ?? [])}
+        ${renderVolunteerPreferences(item.user, item.user.skills ?? [], `entry-${item.id}`)}
         ${renderTournamentSelect(event, item.tournamentId ?? selectedTournamentId)}
         <label class="field">
           <span>Entry type</span>
@@ -1474,7 +1516,9 @@ async function submitVolunteerUpdate(form: HTMLFormElement): Promise<void> {
   render();
 
   try {
-    await saveVolunteerPreferences(userId, new FormData(form), volunteer.user.skills ?? []);
+    const formData = new FormData(form);
+    await saveVolunteerPreferences(userId, formData);
+    await saveVolunteerSkills(userId, formData, volunteer.user.skills ?? []);
     await bootstrap();
   } catch (error) {
     state.loading = false;
@@ -1539,7 +1583,8 @@ async function saveEditor(
         if (!entry) throw new Error("Inschrijving niet gevonden.");
         await api.updateUser(entry.userId, { username });
         await api.updateEntry(id, { tournamentId, kind: entryKind, seed: seed ?? null });
-        await saveVolunteerPreferences(entry.userId, formData, entry.user.skills ?? []);
+        await saveVolunteerPreferences(entry.userId, formData);
+        await saveVolunteerSkills(entry.userId, formData, entry.user.skills ?? []);
       } else {
         const entryMode = optionalFormString(formData.get("entryMode")) === "bulk" ? "bulk" : "single";
         if (entryMode === "bulk") {
@@ -1547,6 +1592,7 @@ async function saveEditor(
           const users = await api.listUsers();
           for (const username of usernames) {
             let user = findUserByUsername(users, username);
+            const isNewUser = !user;
             if (!user) {
               user = await api.createUser({ username });
               users.push(user);
@@ -1560,7 +1606,10 @@ async function saveEditor(
             } else {
               await api.createEntry({ tournamentId, userId: user.id, kind: role });
             }
-            await saveVolunteerPreferences(user.id, formData, user.skills ?? []);
+            if (isNewUser) {
+              await saveVolunteerPreferences(user.id, formData);
+              await saveVolunteerSkills(user.id, formData, user.skills ?? []);
+            }
           }
           return;
         }
@@ -1580,7 +1629,8 @@ async function saveEditor(
           await api.createEntry({ tournamentId, userId: user.id, kind: role });
         }
         if (!existingUser) {
-          await saveVolunteerPreferences(user.id, formData, []);
+          await saveVolunteerPreferences(user.id, formData);
+          await saveVolunteerSkills(user.id, formData, user.skills ?? []);
         }
       }
       return;
@@ -1651,33 +1701,36 @@ function renderTournamentSelect(event: ApiEvent | undefined, selectedTournamentI
   );
 }
 
-function renderVolunteerPreferences(skills: ApiSkill[]): string {
-  const judge = skills.find((skill) => skill.skillName === "JUDGE");
-  const jury = skills.find((skill) => skill.skillName === "JURY");
-  const table = skills.some((skill) => skill.skillName === "TABLE");
-  const other = skills.some((skill) => skill.skillName === "OTHER");
+function renderVolunteerPreferences(
+  preferences: Pick<ApiUser, "judgeVolunteer" | "juryVolunteer" | "tableVolunteer" | "otherVolunteer">,
+  skills: ApiSkill[],
+  idPrefix: string,
+): string {
   return `
     <div class="volunteer-preferences">
-      <span>This participant would like to volunteer as:</span>
+      <span>Volunteer preferences:</span>
       <div class="volunteer-checkboxes">
-        <label class="checkbox-field"><input name="judgeVolunteer" type="checkbox" ${judge ? "checked" : ""} /><span>Judge</span></label>
-        <label class="checkbox-field"><input name="juryVolunteer" type="checkbox" ${jury ? "checked" : ""} /><span>Jury</span></label>
-        <label class="checkbox-field"><input name="tableVolunteer" type="checkbox" ${table ? "checked" : ""} /><span>Table</span></label>
-        <label class="checkbox-field"><input name="otherVolunteer" type="checkbox" ${other ? "checked" : ""} /><span>Other volunteer work</span></label>
+        <label class="checkbox-field"><input name="judgeVolunteer" type="checkbox" ${preferences.judgeVolunteer ? "checked" : ""} /><span>Judge</span></label>
+        <label class="checkbox-field"><input name="juryVolunteer" type="checkbox" ${preferences.juryVolunteer ? "checked" : ""} /><span>Jury</span></label>
+        <label class="checkbox-field"><input name="tableVolunteer" type="checkbox" ${preferences.tableVolunteer ? "checked" : ""} /><span>Table</span></label>
+        <label class="checkbox-field"><input name="otherVolunteer" type="checkbox" ${preferences.otherVolunteer ? "checked" : ""} /><span>Other volunteer work</span></label>
       </div>
       <div class="volunteer-skills">
         <span>Skills</span>
-        ${renderSkillRating("judgeSkill", "Judge", judge?.skillLevel ?? 1)}
-        ${renderSkillRating("jurySkill", "Jury", jury?.skillLevel ?? 1)}
+        ${renderSkillRating(idPrefix, "judgeSkill", "Judge", skillLevelFor(skills, "JUDGE"))}
+        ${renderSkillRating(idPrefix, "jurySkill", "Jury", skillLevelFor(skills, "JURY"))}
       </div>
     </div>
   `;
 }
 
-function renderVolunteerSummary(skills: ApiSkill[]): string {
+function renderVolunteerSummary(
+  preferences: Pick<ApiUser, "judgeVolunteer" | "juryVolunteer" | "tableVolunteer" | "otherVolunteer">,
+  skills: ApiSkill[],
+): string {
   const judge = skills.find((skill) => skill.skillName === "JUDGE" && skill.skillLevel > 0);
   const jury = skills.find((skill) => skill.skillName === "JURY" && skill.skillLevel > 0);
-  const wishes = renderVolunteerWishBadges(skills);
+  const wishes = renderVolunteerPreferenceBadges(preferences);
   const skillSummary = [judge, jury]
     .filter((skill): skill is ApiSkill => Boolean(skill))
     .map((skill) => `${escapeHtml(skill.skillName === "JUDGE" ? "Judge" : "Jury")} ${"&#9733;".repeat(skill.skillLevel)}`)
@@ -1691,27 +1744,31 @@ function renderVolunteerSummary(skills: ApiSkill[]): string {
   `;
 }
 
-function renderVolunteerWishBadges(skills: ApiSkill[]): string {
+function renderVolunteerPreferenceBadges(
+  preferences: Pick<ApiUser, "judgeVolunteer" | "juryVolunteer" | "tableVolunteer" | "otherVolunteer">,
+): string {
   return ([
-    ["JUDGE", "Judge"],
-    ["JURY", "Jury"],
-    ["TABLE", "Table"],
-  ] as Array<[string, string]>)
-    .filter(([skillName]) => skills.some((skill) => skill.skillName === skillName))
+    [preferences.judgeVolunteer, "Judge"],
+    [preferences.juryVolunteer, "Jury"],
+    [preferences.tableVolunteer, "Table"],
+    [preferences.otherVolunteer, "Other volunteer work"],
+  ] as Array<[boolean, string]>)
+    .filter(([selected]) => selected)
     .map(([, label]) => `<span class="badge badge-muted">${escapeHtml(label)}</span>`)
     .join("");
 }
 
-function renderSkillRating(name: string, label: string, selectedLevel: number): string {
+function renderSkillRating(idPrefix: string, name: string, label: string, selectedLevel: number): string {
   return `
     <fieldset class="field skill-rating">
-      <span>${escapeHtml(label)} vaardigheid</span>
-      <div class="star-picker" role="radiogroup" aria-label="${escapeHtml(label)} vaardigheid">
+      <span>${escapeHtml(label)} skill</span>
+      <div class="star-picker" role="radiogroup" aria-label="${escapeHtml(label)} skill">
         ${Array.from({ length: 5 }, (_value, index) => {
           const level = 5 - index;
+          const id = `${idPrefix}-${name}-${level}`;
           return `
-            <input id="${escapeHtml(name)}-${level}" name="${escapeHtml(name)}" type="radio" value="${level}" ${level === selectedLevel ? "checked" : ""} />
-            <label for="${escapeHtml(name)}-${level}" title="${level} ${level === 1 ? "star" : "stars"}" aria-label="${level} ${level === 1 ? "star" : "stars"}">&#9733;</label>
+            <input id="${escapeHtml(id)}" name="${escapeHtml(name)}" type="radio" value="${level}" ${level === selectedLevel ? "checked" : ""} />
+            <label for="${escapeHtml(id)}" title="${level} ${level === 1 ? "star" : "stars"}" aria-label="${level} ${level === 1 ? "star" : "stars"}">&#9733;</label>
           `;
         }).join("")}
       </div>
@@ -1719,28 +1776,55 @@ function renderSkillRating(name: string, label: string, selectedLevel: number): 
   `;
 }
 
-async function saveVolunteerPreferences(userId: string, formData: FormData, skills: ApiSkill[]): Promise<void> {
-  const preferences: Array<[string, string, string?]> = [
-    ["JUDGE", "judgeVolunteer", "judgeSkill"],
-    ["JURY", "juryVolunteer", "jurySkill"],
-    ["TABLE", "tableVolunteer"],
-    ["OTHER", "otherVolunteer"],
+function emptyVolunteerPreferences(): Pick<ApiUser, "judgeVolunteer" | "juryVolunteer" | "tableVolunteer" | "otherVolunteer"> {
+  return {
+    judgeVolunteer: false,
+    juryVolunteer: false,
+    tableVolunteer: false,
+    otherVolunteer: false,
+  };
+}
+
+function skillLevelFor(skills: ApiSkill[], skillName: ApiSkill["skillName"]): number {
+  const skill = skills.find((candidate) => candidate.skillName === skillName && candidate.skillLevel > 0);
+  return skill?.skillLevel ?? 0;
+}
+
+async function saveVolunteerPreferences(userId: string, formData: FormData): Promise<void> {
+  await api.updateUser(userId, {
+    judgeVolunteer: formData.get("judgeVolunteer") === "on",
+    juryVolunteer: formData.get("juryVolunteer") === "on",
+    tableVolunteer: formData.get("tableVolunteer") === "on",
+    otherVolunteer: formData.get("otherVolunteer") === "on",
+  });
+}
+
+async function saveVolunteerSkills(userId: string, formData: FormData, skills: ApiSkill[]): Promise<void> {
+  const skillMappings: Array<[ApiSkill["skillName"], string]> = [
+    ["JUDGE", "judgeSkill"],
+    ["JURY", "jurySkill"],
   ];
 
-  for (const [skillName, checkboxName, ratingName] of preferences) {
-    const existing = skills.find((skill) => skill.skillName === skillName);
-    const selected = formData.get(checkboxName) === "on";
-    if (!selected && existing) {
-      await api.deleteSkill(existing.id);
+  for (const [skillName, ratingName] of skillMappings) {
+    const existingSkills = skills.filter((skill) => skill.skillName === skillName);
+    const existing = existingSkills[0];
+    const rating = optionalFormNumber(formData.get(ratingName), `${skillName} skill`);
+    if (rating === undefined) {
+      if (existingSkills.length > 1) {
+        for (const skill of existingSkills.slice(1)) {
+          await api.deleteSkill(skill.id);
+        }
+      }
       continue;
     }
-    if (selected) {
-      const skillLevel = ratingName ? requireFormNumber(formData.get(ratingName), `${skillName} skill`) : 1;
-      if (existing) {
-        if (existing.skillLevel !== skillLevel) await api.updateSkill(existing.id, { skillLevel });
-      } else {
-        await api.createSkill({ userId, skillName, skillLevel });
+
+    if (existing) {
+      if (existing.skillLevel !== rating) await api.updateSkill(existing.id, { skillLevel: rating });
+      for (const skill of existingSkills.slice(1)) {
+        await api.deleteSkill(skill.id);
       }
+    } else {
+      await api.createSkill({ userId, skillName, skillLevel: rating });
     }
   }
 }
@@ -1798,13 +1882,13 @@ function renderVolunteerCard(entry: ApiEntry): string {
     <article class="editor-card volunteer-card">
       <header class="editor-card-header">
         <div>
-          <div class="eyebrow">${escapeHtml(entry.user.username)}</div>
+          <div class="volunteer-name">${escapeHtml(entry.user.username)}</div>
           <p class="editor-note">${escapeHtml(roleLabel(entry.kind))}</p>
         </div>
-        ${renderVolunteerSummary(entry.user.skills ?? [])}
+        ${renderVolunteerSummary(entry.user, entry.user.skills ?? [])}
       </header>
       <form class="editor-form volunteer-update-form" data-action="volunteer-update" data-user-id="${escapeHtml(entry.userId)}">
-        ${renderVolunteerPreferences(entry.user.skills ?? [])}
+        ${renderVolunteerPreferences(entry.user, entry.user.skills ?? [], `volunteer-${entry.userId}`)}
       </form>
     </article>
   `;

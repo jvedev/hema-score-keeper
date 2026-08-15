@@ -10,6 +10,10 @@ datasource db {
 model User {
   id       String  @id @default(cuid())
   username String  @unique
+  judgeVolunteer Boolean @default(false)
+  juryVolunteer  Boolean @default(false)
+  tableVolunteer Boolean @default(false)
+  otherVolunteer Boolean @default(false)
   skills   Skill[]
   entries  Entry[]
   scheduledAssignments ScheduledAssignment[]
