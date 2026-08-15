@@ -7,6 +7,7 @@ erDiagram
 
   Event ||--o{ Tournament : contains
   Event ||--o{ Arena : has
+  Event ||--o{ Ruleset : defines
 
   Tournament ||--o{ Entry : groups
   Tournament ||--o{ Stage : contains
@@ -28,6 +29,10 @@ erDiagram
 
   Match ||--o{ Exchange : has
 
+  Ruleset ||--o{ Tournament : selected_by
+  Ruleset ||--o{ Stage : selected_by
+  Ruleset ||--o{ Match : selected_by
+
   User {
     string id PK
     string username UK
@@ -43,14 +48,21 @@ erDiagram
   Event {
     string id PK
     string eventName
-    string ruleset
+    string rulesetId FK
+  }
+
+  Ruleset {
+    string id PK
+    string eventId FK
+    string name
+    int version
   }
 
   Tournament {
     string id PK
     string eventId FK
     string name
-    string ruleset
+    string rulesetId FK
     int order
   }
 
@@ -74,7 +86,12 @@ erDiagram
     string tournamentId FK
     string type
     string name
-    string ruleset
+    string rulesetId FK
+    int minPoolSize
+    int maxPoolSize
+    int preferredPoolSize
+    int eliminationParticipantCount
+    int timeBetweenMatchesMinutes
   }
 
   StageArena {
@@ -105,7 +122,7 @@ erDiagram
     string winnerEntryId FK
     int scoreA
     int scoreB
-    string ruleset
+    string rulesetId FK
   }
 
   Exchange {
@@ -122,3 +139,4 @@ erDiagram
 - One event can contain multiple tournaments.
 - Entries are unique per tournament, so the same user can appear in multiple tournaments inside one event.
 - Stages belong to a tournament, while arenas still belong to an event.
+- Rulesets are event-scoped and versioned; stages own pool sizing and timing, and matches reference a specific ruleset version snapshot.

@@ -14,3 +14,4 @@ export * from "./components/stage-view/stage-view.js";
 export * from "./components/event-view/event-view.js";
 export * from "./components/event-editor-view/event-editor-view.js";
 export * from "./components/event-planner-view/event-planner-view.js";
+export * from "./components/ruleset-view/ruleset-view.js";

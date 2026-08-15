@@ -4,6 +4,7 @@ import {
   type ApiEntry,
   type ApiEvent,
   type ApiEventMutationResult,
+  type ApiRuleset,
   type ApiUser,
   type ApiSkill,
   type ApiStage,
@@ -13,7 +14,7 @@ import {
 } from "@hema/event-admin-api";
 import "./event-view-app.css";
 
-type EventTab = "tournaments" | "arenas" | "officials";
+type EventTab = "tournaments" | "arenas" | "officials" | "rulesets";
 type TournamentTab = "entries" | "officials" | "stages";
 type StageTab = "overview" | "arenas" | "officials" | "rounds" | "matches";
 type EditorKind = "event" | "tournament" | "arena" | "entry" | "stage" | "stage-arena" | "stage-official";
@@ -23,6 +24,7 @@ interface EditorState {
   id?: string;
   entryKind?: EntryKind;
   entryMode?: "single" | "bulk";
+  stageType?: ApiStage["type"];
 }
 
 function captureScrollState(): ScrollState | undefined {
@@ -99,6 +101,7 @@ export function mountEventView(host: HTMLElement): void {
   app.addEventListener("click", onAppClick);
   app.addEventListener("change", onAppChange);
   app.addEventListener("submit", onAppSubmit);
+  app.addEventListener("rulesets-changed", onRulesetsChanged);
   void bootstrap();
 }
 
@@ -106,6 +109,7 @@ export function unmountEventView(host: HTMLElement): void {
   host.removeEventListener("click", onAppClick);
   host.removeEventListener("change", onAppChange);
   host.removeEventListener("submit", onAppSubmit);
+  host.removeEventListener("rulesets-changed", onRulesetsChanged);
 }
 
 async function bootstrap(): Promise<void> {
@@ -158,6 +162,9 @@ function onAppClick(event: MouseEvent): void {
     case "open-volunteer-view":
       openVolunteerView(target.dataset.scope === "tournament" ? "tournament" : "event");
       return;
+    case "open-rulesets":
+      openRulesets();
+      return;
     case "close-volunteer-view":
       closeVolunteerView();
       return;
@@ -204,6 +211,16 @@ function onAppChange(event: Event): void {
   const volunteerForm = target.closest<HTMLFormElement>("[data-action=\"volunteer-update\"]");
   if (volunteerForm) {
     void submitVolunteerUpdate(volunteerForm);
+    return;
+  }
+
+  const editorForm = target.closest<HTMLFormElement>("[data-action=\"editor\"]");
+  if (editorForm && target instanceof HTMLSelectElement && target.name === "type") {
+    const editorKind = editorForm.querySelector<HTMLInputElement>('input[name="editorKind"]')?.value;
+    if (editorKind === "stage" && state.editor?.kind === "stage") {
+      state.editor = { ...state.editor, stageType: target.value as ApiStage["type"] };
+      render();
+    }
   }
 }
 
@@ -220,6 +237,10 @@ function onAppSubmit(event: SubmitEvent): void {
   } else {
     void submitVolunteerUpdate(form);
   }
+}
+
+function onRulesetsChanged(): void {
+  void bootstrap();
 }
 
 function render(): void {
@@ -258,7 +279,7 @@ function renderLoading(): string {
 
 function renderTournamentCreateForm(event: ApiEvent, tournament: ApiTournament | undefined): string {
   const name = tournament?.name ?? "";
-  const ruleset = tournament?.ruleset ?? event.ruleset ?? "";
+  const rulesetId = tournament?.ruleset?.id ?? event.ruleset?.id ?? "";
   const order = tournament ? String(tournament.order) : String(event.tournaments.length);
 
   return `
@@ -277,7 +298,7 @@ function renderTournamentCreateForm(event: ApiEvent, tournament: ApiTournament |
         </label>
         <label class="field">
           <span>Ruleset</span>
-          <input class="text-input" name="ruleset" type="text" value="${escapeHtml(ruleset)}" placeholder="Optioneel" />
+          ${renderRulesetField(event, rulesetId, "Erft van event")}
         </label>
         <label class="field">
           <span>Volgorde</span>
@@ -381,9 +402,9 @@ function renderEntryCreateForm(
   `;
 }
 
-function renderStageCreateForm(tournament: ApiTournament, stage?: ApiStage): string {
+function renderStageCreateForm(event: ApiEvent, tournament: ApiTournament, stage?: ApiStage): string {
   const name = stage?.name ?? "";
-  const ruleset = stage?.ruleset ?? tournament.ruleset ?? "";
+  const rulesetId = stage?.ruleset?.id ?? tournament.ruleset?.id ?? "";
   const type = stage?.type ?? "POOL";
   const title = stage ? "Stage bijwerken" : "Stage toevoegen";
   const buttonLabel = stage ? "Stage bijwerken" : "Stage toevoegen";
@@ -413,13 +434,40 @@ function renderStageCreateForm(tournament: ApiTournament, stage?: ApiStage): str
         </label>
         <label class="field">
           <span>Ruleset</span>
-          <input class="text-input" name="ruleset" type="text" value="${escapeHtml(ruleset)}" placeholder="Optioneel" />
+          ${renderRulesetField(event, rulesetId, "Erft van tournament")}
         </label>
         <div class="field-actions">
           <button type="submit" class="button">${escapeHtml(buttonLabel)}</button>
         </div>
       </form>
     </section>
+  `;
+}
+
+function renderRulesetSelect(event: ApiEvent, selectedRulesetId: string, inheritLabel: string): string {
+  const rulesets = event.rulesets;
+  return `
+    <select class="text-input" name="rulesetId" ${rulesets.length === 0 ? "disabled" : ""}>
+      <option value="" ${selectedRulesetId === "" ? "selected" : ""}>${escapeHtml(inheritLabel)}</option>
+      ${rulesets.map((ruleset) => `
+        <option value="${escapeHtml(ruleset.id)}" ${ruleset.id === selectedRulesetId ? "selected" : ""}>
+          ${escapeHtml(rulesetLabel(ruleset))}
+        </option>
+      `).join("")}
+    </select>
+  `;
+}
+
+function renderRulesetField(event: ApiEvent | undefined, selectedRulesetId: string, inheritLabel: string): string {
+  if (!event) {
+    return `<div class="empty-card">Maak eerst een event aan om rulesets te kiezen.</div>`;
+  }
+
+  return `
+    <div class="field-inline">
+      ${renderRulesetSelect(event, selectedRulesetId, inheritLabel)}
+      <button type="button" class="button secondary icon-button" data-action="open-rulesets" title="Nieuwe ruleset" aria-label="Nieuwe ruleset">+</button>
+    </div>
   `;
 }
 
@@ -585,8 +633,9 @@ function renderShell(): string {
               { value: "tournaments", label: "Toernooien" },
               { value: "arenas", label: "Arenas" },
               { value: "officials", label: "Vrijwilligers" },
+              { value: "rulesets", label: "Rulesets" },
             ],
-          )}
+          )} 
           <div class="panel-body">
             ${event ? renderEventTab(event) : renderEmptyCard("Maak eerst een event aan.")}
           </div>
@@ -769,8 +818,11 @@ function renderEditorFields(
       const item = state.events.find((candidate) => candidate.id === editor.id);
       return renderTextFields([
         ["eventName", "Event naam", item?.eventName ?? "", "Bijv. HEMA Open 2026", true],
-        ["ruleset", "Ruleset", item?.ruleset ?? "", "Optioneel", false],
       ]) + `
+        <label class="field">
+          <span>Ruleset</span>
+          ${renderRulesetField(event, item?.ruleset?.id ?? "", "Geen ruleset")}
+        </label>
         <label class="checkbox-field">
           <input name="allFightersAreVolunteers" type="checkbox" ${item?.allFightersAreVolunteers ? "checked" : ""} />
           <span>All fighters are volunteers</span>
@@ -781,9 +833,13 @@ function renderEditorFields(
       const item = event?.tournaments.find((candidate) => candidate.id === editor.id);
       return renderTextFields([
         ["name", "Naam", item?.name ?? "", "Bijv. Heren staal", true],
-        ["ruleset", "Ruleset", item?.ruleset ?? event?.ruleset ?? "", "Optioneel", false],
         ["order", "Volgorde", String(item?.order ?? event?.tournaments.length ?? 0), "", true, "number"],
-      ]);
+      ]) + `
+        <label class="field">
+          <span>Ruleset</span>
+          ${renderRulesetField(event, item?.ruleset?.id ?? event?.ruleset?.id ?? "", "Erft van event")}
+        </label>
+      `;
     }
     case "arena": {
       const item = event?.arenas.find((candidate) => candidate.id === editor.id);
@@ -828,7 +884,7 @@ function renderEditorFields(
     }
     case "stage": {
       const item = tournament?.stages.find((candidate) => candidate.id === editor.id);
-      const type = item?.type ?? "POOL";
+      const type = editor.stageType ?? item?.type ?? "POOL";
       return `
         <label class="field"><span>Type</span><select class="text-input" name="type">
           <option value="POOL" ${type === "POOL" ? "selected" : ""}>POOL</option>
@@ -838,8 +894,12 @@ function renderEditorFields(
         </select></label>
         ${renderTextFields([
           ["name", "Naam", item?.name ?? "", "Optioneel", false],
-          ["ruleset", "Ruleset", item?.ruleset ?? tournament?.ruleset ?? "", "Optioneel", false],
         ])}
+        <label class="field">
+          <span>Ruleset</span>
+          ${renderRulesetField(event, item?.ruleset?.id ?? tournament?.ruleset?.id ?? event?.ruleset?.id ?? "", "Erft van tournament")}
+        </label>
+        ${renderStageTypeFields(type, item, tournament)}
       `;
     }
     case "stage-arena": {
@@ -866,6 +926,8 @@ function renderEventTab(event: ApiEvent): string {
       return renderArenaList(event, event.arenas);
     case "officials":
       return renderEventOfficials(event);
+    case "rulesets":
+      return `<ruleset-view event-id="${escapeHtml(event.id)}"></ruleset-view>`;
   }
 }
 
@@ -877,6 +939,8 @@ function renderEventCreateAction(): string {
       return renderCreateButton("arena", "Nieuwe arena");
     case "officials":
       return `${renderVolunteerViewButton("event")}${renderCreateButton("entry", "Nieuwe vrijwilliger", "VOLUNTEER")}`;
+    case "rulesets":
+      return "";
   }
 }
 
@@ -1147,6 +1211,10 @@ function renderStageOverview(event: ApiEvent, tournament: ApiTournament, stage: 
         <div class="metric-value">${escapeHtml(summary.ruleset)}</div>
       </div>
       <div class="metric-card">
+        <div class="metric-label">Tussen matches</div>
+        <div class="metric-value">${stage.timeBetweenMatchesMinutes} min</div>
+      </div>
+      <div class="metric-card">
         <div class="metric-label">Arenas</div>
         <div class="metric-value">${summary.arenas}</div>
       </div>
@@ -1169,6 +1237,12 @@ function renderStageOverview(event: ApiEvent, tournament: ApiTournament, stage: 
       <div class="badge-row">
         <span class="badge badge-muted">${escapeHtml(stage.type)}</span>
         <span class="badge badge-muted">${summary.matches} matches</span>
+        ${stage.type === "POOL"
+          ? `<span class="badge badge-muted">Pool ${stage.minPoolSize ?? 4}-${stage.maxPoolSize ?? 6} · voorkeur ${stage.preferredPoolSize ?? 5}</span>`
+          : ""}
+        ${stage.type === "ELIMINATION"
+          ? `<span class="badge badge-muted">Naar eliminatie ${stage.eliminationParticipantCount ?? 5}</span>`
+          : ""}
       </div>
     </div>
   `;
@@ -1311,9 +1385,16 @@ function openEditor(editor: EditorState): void {
   }
 
   state.volunteerView = undefined;
-  state.editor = editor.kind === "entry" && !editor.id && !editor.entryMode
-    ? { ...editor, entryMode: "single" }
-    : editor;
+  if (editor.kind === "entry" && !editor.id && !editor.entryMode) {
+    state.editor = { ...editor, entryMode: "single" };
+  } else if (editor.kind === "stage" && !editor.stageType) {
+    const event = currentEvent();
+    const tournament = event ? currentTournament(event) : undefined;
+    const stage = currentStage(tournament);
+    state.editor = { ...editor, stageType: stage?.type ?? "POOL" };
+  } else {
+    state.editor = editor;
+  }
   render();
 }
 
@@ -1338,6 +1419,18 @@ function openVolunteerView(scope: "event" | "tournament"): void {
   }
 
   state.volunteerView = volunteerView;
+  render();
+}
+
+function openRulesets(): void {
+  const event = currentEvent();
+  if (!event) {
+    return;
+  }
+
+  state.editor = undefined;
+  state.volunteerView = undefined;
+  state.eventTab = "rulesets";
   render();
 }
 
@@ -1538,11 +1631,11 @@ async function saveEditor(
   switch (kind) {
     case "event": {
       const eventName = requireFormString(formData.get("eventName"), "Event naam");
-      const ruleset = optionalFormString(formData.get("ruleset"));
+      const rulesetId = optionalFormString(formData.get("rulesetId")) ?? null;
       const allFightersAreVolunteers = formData.get("allFightersAreVolunteers") === "on";
       const result = id
-        ? await api.updateEvent(id, { eventName, ruleset: ruleset ?? null, allFightersAreVolunteers })
-        : await api.createEvent({ eventName, ...(ruleset ? { ruleset } : {}), allFightersAreVolunteers });
+        ? await api.updateEvent(id, { eventName, rulesetId, allFightersAreVolunteers })
+        : await api.createEvent({ eventName, rulesetId, allFightersAreVolunteers });
       state.selectedEventId = result.id;
       state.selectedTournamentId = null;
       state.selectedStageId = null;
@@ -1554,7 +1647,7 @@ async function saveEditor(
         eventId,
         name: requireFormString(formData.get("name"), "Naam"),
         order: requireFormNumber(formData.get("order"), "Volgorde"),
-        ruleset: optionalFormString(formData.get("ruleset")) ?? null,
+        rulesetId: optionalFormString(formData.get("rulesetId")) ?? null,
       };
       const result = id ? await api.updateTournament(id, body) : await api.createTournament(body);
       state.selectedTournamentId = result.id;
@@ -1638,11 +1731,19 @@ async function saveEditor(
     case "stage": {
       const tournamentId = tournament?.id;
       if (!tournamentId) throw new Error("Selecteer eerst een toernooi.");
+      const stageType = requireFormString(formData.get("type"), "Type") as ApiStage["type"];
       const body = {
         tournamentId,
-        type: requireFormString(formData.get("type"), "Type") as ApiStage["type"],
+        type: stageType,
         name: optionalFormString(formData.get("name")) ?? null,
-        ruleset: optionalFormString(formData.get("ruleset")) ?? null,
+        rulesetId: optionalFormString(formData.get("rulesetId")) ?? null,
+        timeBetweenMatchesMinutes: requireFormNumber(formData.get("timeBetweenMatchesMinutes"), "Time between matches"),
+        minPoolSize: stageType === "POOL" ? requireFormNumber(formData.get("minPoolSize"), "Minimum pool size") : null,
+        maxPoolSize: stageType === "POOL" ? requireFormNumber(formData.get("maxPoolSize"), "Maximum pool size") : null,
+        preferredPoolSize: stageType === "POOL" ? requireFormNumber(formData.get("preferredPoolSize"), "Preferred pool size") : null,
+        eliminationParticipantCount: stageType === "ELIMINATION"
+          ? requireFormNumber(formData.get("eliminationParticipantCount"), "Deelnemers naar eliminatie")
+          : null,
       };
       const result = id ? await api.updateStage(id, body) : await api.createStage(body);
       state.selectedStageId = result.id;
@@ -1848,6 +1949,69 @@ function renderSelect(
   `;
 }
 
+function renderStageTypeFields(
+  type: ApiStage["type"],
+  stage: ApiStage | undefined,
+  tournament: ApiTournament | undefined,
+): string {
+  const timeBetweenMatchesMinutes = stage?.timeBetweenMatchesMinutes ?? 2;
+  const poolMin = stage?.minPoolSize ?? 4;
+  const poolMax = stage?.maxPoolSize ?? 6;
+  const poolPreferred = stage?.preferredPoolSize ?? 5;
+  const eliminationParticipants = stage?.eliminationParticipantCount
+    ?? defaultEliminationParticipantCount(tournament, stage)
+    ?? 5;
+
+  return `
+    <label class="field">
+      <span>Time between matches (minutes)</span>
+      <input class="text-input" name="timeBetweenMatchesMinutes" type="number" min="0" step="1" value="${timeBetweenMatchesMinutes}" required />
+    </label>
+    ${type === "POOL"
+      ? `
+        <div class="field-grid">
+          <label class="field">
+            <span>Min pool size</span>
+            <input class="text-input" name="minPoolSize" type="number" min="1" step="1" value="${poolMin}" required />
+          </label>
+          <label class="field">
+            <span>Max pool size</span>
+            <input class="text-input" name="maxPoolSize" type="number" min="1" step="1" value="${poolMax}" required />
+          </label>
+          <label class="field">
+            <span>Preferred pool size</span>
+            <input class="text-input" name="preferredPoolSize" type="number" min="1" step="1" value="${poolPreferred}" required />
+          </label>
+        </div>
+      `
+      : ""}
+    ${type === "ELIMINATION"
+      ? `
+        <label class="field">
+          <span>Deelnemers naar eliminatie</span>
+          <input class="text-input" name="eliminationParticipantCount" type="number" min="1" step="1" value="${eliminationParticipants}" required />
+        </label>
+      `
+      : ""}
+  `;
+}
+
+function defaultEliminationParticipantCount(
+  tournament: ApiTournament | undefined,
+  stage: ApiStage | undefined,
+): number | undefined {
+  if (stage?.type === "POOL" && stage.preferredPoolSize !== null) {
+    return stage.preferredPoolSize;
+  }
+
+  const poolStage = tournament?.stages.find((candidate) => candidate.type === "POOL" && candidate.preferredPoolSize !== null);
+  if (poolStage?.preferredPoolSize !== null && poolStage?.preferredPoolSize !== undefined) {
+    return poolStage.preferredPoolSize;
+  }
+
+  return undefined;
+}
+
 function editorLabel(kind: EditorKind, entryKind?: EntryKind): string {
   switch (kind) {
     case "event": return "event";
@@ -1952,7 +2116,7 @@ function summarizeEvent(event: ApiEvent): {
   const fighters = event.tournaments.flatMap((tournament) => tournament.entries.filter((entry) => entry.kind !== "VOLUNTEER"));
   const officials = collectEventOfficials(event);
   return {
-    ruleset: rulesetLabel(event.ruleset),
+    ruleset: event.ruleset ? rulesetLabel(event.ruleset) : "Geen ruleset",
     tournaments: event.tournaments.length,
     arenas: event.arenas.length,
     fighters: fighters.length,
@@ -2035,8 +2199,8 @@ function entryName(entry: ApiEntry | undefined): string | undefined {
   return entry?.user.username;
 }
 
-function rulesetLabel(value: string | null | undefined): string {
-  return value ? value : "Erft ruleset";
+function rulesetLabel(value: ApiRuleset | null | undefined): string {
+  return value ? `${value.name} v${value.version}` : "Erft ruleset";
 }
 
 function roleLabel(kind: EntryKind): string {

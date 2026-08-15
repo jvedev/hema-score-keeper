@@ -2,6 +2,7 @@ import css from "./event-view.css?raw";
 import html from "./event-view.html?raw";
 import { BaseComponent } from "../base-component/base-component.js";
 import "../event-editor-view/event-editor-view.js";
+import "../ruleset-view/ruleset-view.js";
 import { mountEventView, unmountEventView } from "./event-view-controller.js";
 
 export class EventView extends BaseComponent {

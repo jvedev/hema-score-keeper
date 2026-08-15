@@ -19,6 +19,10 @@
     "./event-planner-view": {
       "types": "./src/components/event-planner-view/event-planner-view.ts",
       "default": "./src/components/event-planner-view/event-planner-view.ts"
+    },
+    "./ruleset-view": {
+      "types": "./src/components/ruleset-view/ruleset-view.ts",
+      "default": "./src/components/ruleset-view/ruleset-view.ts"
     }
   },
   "dependencies": {

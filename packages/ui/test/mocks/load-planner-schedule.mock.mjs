@@ -4,6 +4,7 @@ export const loadPlannerScheduleResponse = {
     "eventName": "Test event",
     "ruleset": null,
     "allFightersAreVolunteers": false,
+    "rulesets": [],
     "tournaments": [],
     "arenas": []
   },

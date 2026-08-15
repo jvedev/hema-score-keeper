@@ -7,3 +7,13 @@
   box-sizing: border-box;
   height: 100%;
 }
+
+.field-inline {
+  display: flex;
+  gap: 8px;
+  align-items: start;
+}
+
+.field-inline .text-input {
+  flex: 1 1 auto;
+}

@@ -3,6 +3,13 @@ export type EntryKind = "FIGHTER" | "VOLUNTEER" | "BOTH";
 export type StageOfficialRole = "JUDGE" | "JURY" | "TELLER" | "TABLE";
 export type ScheduleRole = "JUDGE" | "JURY" | "TABLE";
 
+export interface ApiRuleset {
+  id: string;
+  eventId: string;
+  name: string;
+  version: number;
+}
+
 export interface ApiUser {
   id: string;
   username: string;
@@ -59,7 +66,7 @@ export interface ApiMatch {
   winnerEntryId: string | null;
   scoreA: number | null;
   scoreB: number | null;
-  ruleset: string | null;
+  ruleset: ApiRuleset | null;
 }
 
 export interface ApiRound {
@@ -74,7 +81,12 @@ export interface ApiStage {
   tournamentId: string;
   type: StageType;
   name: string | null;
-  ruleset: string | null;
+  ruleset: ApiRuleset | null;
+  minPoolSize: number | null;
+  maxPoolSize: number | null;
+  preferredPoolSize: number | null;
+  eliminationParticipantCount: number | null;
+  timeBetweenMatchesMinutes: number;
   rounds: ApiRound[];
   arenas: ApiStageArena[];
   officials: ApiStageOfficial[];
@@ -127,7 +139,7 @@ export interface ApiTournament {
   id: string;
   eventId: string;
   name: string;
-  ruleset: string | null;
+  ruleset: ApiRuleset | null;
   order: number;
   color: string;
   entries: ApiEntry[];
@@ -137,17 +149,23 @@ export interface ApiTournament {
 export interface ApiEvent {
   id: string;
   eventName: string;
-  ruleset: string | null;
+  ruleset: ApiRuleset | null;
   allFightersAreVolunteers: boolean;
   tournaments: ApiTournament[];
   arenas: ApiArena[];
+  rulesets: ApiRuleset[];
 }
 
 export interface ApiEventMutationResult {
   id: string;
   eventName: string;
-  ruleset: string | null;
+  ruleset: ApiRuleset | null;
   allFightersAreVolunteers: boolean;
+}
+
+export interface ApiRulesetDetail extends ApiRuleset {
+  matchCount: number;
+  locked: boolean;
 }
 
 export interface ApiClient {
@@ -168,8 +186,8 @@ export interface ApiClient {
   deleteSkill(id: string): Promise<void>;
   listEvents(): Promise<ApiEvent[]>;
   getEvent(id: string): Promise<ApiEvent>;
-  createEvent(body: { eventName: string; ruleset?: string | null; allFightersAreVolunteers?: boolean }): Promise<ApiEventMutationResult>;
-  updateEvent(id: string, body: { eventName?: string; ruleset?: string | null; allFightersAreVolunteers?: boolean }): Promise<ApiEventMutationResult>;
+  createEvent(body: { eventName: string; rulesetId?: string | null; allFightersAreVolunteers?: boolean }): Promise<ApiEventMutationResult>;
+  updateEvent(id: string, body: { eventName?: string; rulesetId?: string | null; allFightersAreVolunteers?: boolean }): Promise<ApiEventMutationResult>;
   deleteEvent(id: string): Promise<void>;
   getEventSchedule(eventId: string): Promise<ApiEventScheduleResponse>;
   updateEventSchedule(eventId: string, body: { startTimeMinutes: number }): Promise<ApiEventSchedule>;
@@ -182,6 +200,21 @@ export interface ApiClient {
     body: { durationMinutes?: number; label?: string; color?: string | null; isBreak?: boolean },
   ): Promise<ApiScheduleTimeSlot>;
   deleteScheduleTimeSlot(id: string): Promise<void>;
+  listRulesets(eventId: string): Promise<ApiRulesetDetail[]>;
+  getRuleset(id: string): Promise<ApiRulesetDetail>;
+  createRuleset(
+    eventId: string,
+    body: {
+      name: string;
+      baseRulesetId?: string;
+    },
+  ): Promise<ApiRulesetDetail>;
+  updateRuleset(
+    id: string,
+    body: {
+      name?: string;
+    },
+  ): Promise<ApiRulesetDetail>;
   createScheduledPhase(body: {
     stageId: string;
     arenaId: string;
@@ -201,7 +234,7 @@ export interface ApiClient {
     eventId: string;
     name: string;
     order?: number;
-    ruleset?: string | null;
+    rulesetId?: string | null;
   }): Promise<ApiTournament>;
   updateTournament(
     id: string,
@@ -209,7 +242,7 @@ export interface ApiClient {
       eventId?: string;
       name?: string;
       order?: number;
-      ruleset?: string | null;
+      rulesetId?: string | null;
     },
   ): Promise<ApiTournament>;
   listTournaments(): Promise<ApiTournament[]>;
@@ -240,7 +273,12 @@ export interface ApiClient {
     tournamentId: string;
     type: StageType;
     name?: string | null;
-    ruleset?: string | null;
+    rulesetId?: string | null;
+    minPoolSize?: number | null;
+    maxPoolSize?: number | null;
+    preferredPoolSize?: number | null;
+    eliminationParticipantCount?: number | null;
+    timeBetweenMatchesMinutes?: number | null;
   }): Promise<ApiStage>;
   updateStage(
     id: string,
@@ -248,7 +286,12 @@ export interface ApiClient {
       tournamentId?: string;
       type?: StageType;
       name?: string | null;
-      ruleset?: string | null;
+      rulesetId?: string | null;
+      minPoolSize?: number | null;
+      maxPoolSize?: number | null;
+      preferredPoolSize?: number | null;
+      eliminationParticipantCount?: number | null;
+      timeBetweenMatchesMinutes?: number | null;
     },
   ): Promise<ApiStage>;
   listStages(): Promise<ApiStage[]>;
@@ -285,6 +328,12 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
       body,
     }),
     deleteEvent: (id) => requestJson<void>(baseUrl, `/events/${id}`, { method: "DELETE" }),
+    listRulesets: (eventId) => requestJson<ApiRulesetDetail[]>(baseUrl, `/events/${eventId}/rulesets`),
+    getRuleset: (id) => requestJson<ApiRulesetDetail>(baseUrl, `/rulesets/${id}`),
+    createRuleset: (eventId, body) =>
+      requestJson<ApiRulesetDetail>(baseUrl, `/events/${eventId}/rulesets`, { method: "POST", body }),
+    updateRuleset: (id, body) =>
+      requestJson<ApiRulesetDetail>(baseUrl, `/rulesets/${id}`, { method: "PATCH", body }),
     getEventSchedule: (eventId) =>
       requestJson<ApiEventScheduleResponse>(baseUrl, `/events/${eventId}/schedule`),
     updateEventSchedule: (eventId, body) =>

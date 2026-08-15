@@ -62,6 +62,12 @@ macOS). Dat past bij "veel tegelijk zien" op een desktop.
   (stage + rol), beschikbaarheid indicator (vrij / ingedeeld / conflict).
 - Filter op rol (Scheids / Tafel / Jury).
 
+### Tab "Rulesets"
+- Overzicht van event-gebonden rulesetversies.
+- Elke versie toont de versie- en gebruiksstatus; stage-instellingen staan
+  op de stage zelf.
+- Nieuwe versie of nieuwe ruleset aanmaken vanuit dezelfde beheerweergave.
+
 ### Tab "Inschrijvingen"
 - Alle `Entry` (fighters) voor het hele event, met filter per
   tournooi.
@@ -97,6 +103,7 @@ macOS). Dat past bij "veel tegelijk zien" op een desktop.
 
 **Sub-tab "Indeling"**
 - Drag-and-drop poule-indeling: deelnemers links, poule-vakken rechts.
+- Pool stages tonen min/max/preferred pool size en tijd tussen matches.
 - Knop **"⚡ Automatisch indelen"** (bv. op seed, snake-verdeling over
   N poules — N instelbaar).
 - Knop **"⚡ Automatisch staff toewijzen"**: wijst per arena/poule een
@@ -119,6 +126,8 @@ gekoppeld is)
 **Sub-tab "Bracket"**
 - Visuele bracket-boom (rondes horizontaal, matches verticaal
   verbonden met lijnen).
+- Eliminatie stages tonen het aantal deelnemers dat uit de pool doorgaat,
+  plus tijd tussen matches.
 - Namen worden automatisch doorgezet: zodra een `Match.winnerEntryId`
   is ingevuld, verschijnt die naam automatisch in de volgende ronde
   se slot (client-side of via server logica die `Round`/`Match`

@@ -11,7 +11,7 @@ skills
 event
   eventID
   eventName
-  ruleset
+  rulesetID
 
 arena
   arenaID
@@ -31,7 +31,7 @@ stage
   eventID
   type pool | elimination | final
   name
-  ruleset
+  rulesetID
 
 stageOfficial
   stageOfficialID
@@ -56,13 +56,31 @@ match
   winnerEntryID
   scoreA
   scoreB
-  ruleset
+  rulesetID
+
+ruleset
+  rulesetID
+  eventID
+  name
+  version
 
 
 round
   roundID
   stageID
   roundNumber
+
+stage
+  stageID
+  tournamentID
+  type pool | elimination | final
+  name
+  rulesetID
+  minPoolSize
+  maxPoolSize
+  preferredPoolSize
+  eliminationParticipantCount
+  timeBetweenMatchesMinutes
 
 
 exchange

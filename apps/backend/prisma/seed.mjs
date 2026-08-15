@@ -11,16 +11,28 @@ async function main() {
   await prisma.stage.deleteMany();
   await prisma.entry.deleteMany();
   await prisma.arena.deleteMany();
+  await prisma.ruleset.deleteMany();
   await prisma.skill.deleteMany();
   await prisma.tournament.deleteMany();
   await prisma.event.deleteMany();
   await prisma.user.deleteMany();
 
   const event = await prisma.event.create({
-    data: { eventName: "Example tournament", ruleset: "Round robin", allFightersAreVolunteers: true },
+    data: { eventName: "Example tournament", allFightersAreVolunteers: true },
+  });
+  const ruleset = await prisma.ruleset.create({
+    data: {
+      eventId: event.id,
+      name: "Round robin",
+      version: 1,
+    },
+  });
+  await prisma.event.update({
+    where: { id: event.id },
+    data: { rulesetId: ruleset.id },
   });
   const tournament = await prisma.tournament.create({
-    data: { eventId: event.id, name: "Open steel", order: 0 },
+    data: { eventId: event.id, name: "Open steel", order: 0, rulesetId: ruleset.id },
   });
   const arena = await prisma.arena.create({
     data: { eventId: event.id, name: "Arena A", order: 0 },
@@ -40,7 +52,16 @@ async function main() {
     ],
   });
   const stage = await prisma.stage.create({
-    data: { tournamentId: tournament.id, type: "POOL", name: "Pool phase", ruleset: "Round robin" },
+    data: {
+      tournamentId: tournament.id,
+      type: "POOL",
+      name: "Pool phase",
+      rulesetId: ruleset.id,
+      minPoolSize: 4,
+      maxPoolSize: 6,
+      preferredPoolSize: 5,
+      timeBetweenMatchesMinutes: 2,
+    },
   });
   await prisma.stageArena.create({ data: { stageId: stage.id, arenaId: arena.id } });
   await prisma.stageOfficial.createMany({

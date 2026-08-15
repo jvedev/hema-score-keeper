@@ -39,6 +39,10 @@ const routes: Route[] = [
   { method: "GET", pattern: /^\/api\/v1\/events\/([^/]+)$/, handler: getEvent },
   { method: "PATCH", pattern: /^\/api\/v1\/events\/([^/]+)$/, handler: updateEvent },
   { method: "DELETE", pattern: /^\/api\/v1\/events\/([^/]+)$/, handler: deleteEvent },
+  { method: "GET", pattern: /^\/api\/v1\/events\/([^/]+)\/rulesets$/, handler: listRulesets },
+  { method: "POST", pattern: /^\/api\/v1\/events\/([^/]+)\/rulesets$/, handler: createRuleset },
+  { method: "GET", pattern: /^\/api\/v1\/rulesets\/([^/]+)$/, handler: getRuleset },
+  { method: "PATCH", pattern: /^\/api\/v1\/rulesets\/([^/]+)$/, handler: updateRuleset },
   { method: "GET", pattern: /^\/api\/v1\/events\/([^/]+)\/schedule$/, handler: getEventSchedule },
   { method: "PATCH", pattern: /^\/api\/v1\/events\/([^/]+)\/schedule$/, handler: updateEventSchedule },
   { method: "POST", pattern: /^\/api\/v1\/events\/([^/]+)\/schedule\/slots$/, handler: createScheduleTimeSlot },
@@ -100,12 +104,18 @@ const tournamentOrderBy: Prisma.TournamentOrderByWithRelationInput[] = [
 const tournamentColors = ["#5B8CFF", "#E06C75", "#98C379", "#E5C07B", "#C678DD", "#56B6C2"];
 
 const eventDetailInclude: Prisma.EventInclude = {
+  ruleset: true,
+  rulesets: {
+    orderBy: [{ name: "asc" }, { version: "desc" }],
+  },
   tournaments: {
     orderBy: tournamentOrderBy,
     include: {
+      ruleset: true,
       entries: { include: { user: { include: { skills: true } } } },
       stages: {
         include: {
+          ruleset: true,
           tournament: { include: { event: true } },
           rounds: true,
           arenas: { include: { arena: true } },
@@ -119,9 +129,11 @@ const eventDetailInclude: Prisma.EventInclude = {
 
 const tournamentDetailInclude = {
   event: true,
+  ruleset: true,
   entries: { include: { user: { include: { skills: true } }, stageOfficials: { include: { stage: { include: { tournament: { include: { event: true } } } } } } } },
   stages: {
     include: {
+      ruleset: true,
       tournament: { include: { event: true } },
       rounds: true,
       arenas: { include: { arena: true } },
@@ -138,6 +150,7 @@ const entryDetailInclude = {
 
 const stageDetailInclude = {
   tournament: { include: { event: true } },
+  ruleset: true,
   rounds: true,
   arenas: { include: { arena: true } },
   officials: { include: { entry: { include: { user: true } } } },
@@ -182,6 +195,7 @@ const matchDetailInclude = {
   entryA: { include: { user: true, tournament: { include: { event: true } } } },
   entryB: { include: { user: true, tournament: { include: { event: true } } } },
   winnerEntry: { include: { user: true, tournament: { include: { event: true } } } },
+  ruleset: true,
   exchanges: { orderBy: { id: "asc" } },
 } as const;
 
@@ -371,7 +385,9 @@ async function listEvents(): Promise<unknown> {
 async function createEvent(request: IncomingMessage): Promise<unknown> {
   const body = ensureObject(await readJsonBody(request), "Event");
   const eventName = requireString(body.eventName, "Event name");
-  const ruleset = body.ruleset === undefined ? undefined : optionalString(body.ruleset);
+  if (body.rulesetId !== undefined && body.rulesetId !== null) {
+    throw new HttpError(400, "Event ruleset can only be selected after the event has been created.");
+  }
   const allFightersAreVolunteers =
     body.allFightersAreVolunteers === undefined
       ? undefined
@@ -380,9 +396,9 @@ async function createEvent(request: IncomingMessage): Promise<unknown> {
   return prisma.event.create({
     data: {
       eventName,
-      ...(ruleset !== undefined ? { ruleset } : {}),
       ...(allFightersAreVolunteers !== undefined ? { allFightersAreVolunteers } : {}),
     },
+    include: { ruleset: true },
   });
 }
 
@@ -401,10 +417,16 @@ async function createTournament(request: IncomingMessage): Promise<unknown> {
   const body = ensureObject(await readJsonBody(request), "Tournament");
   const eventId = requireString(body.eventId, "Event ID");
   const name = requireString(body.name, "Tournament name");
-  const ruleset = body.ruleset === undefined ? undefined : optionalString(body.ruleset);
-  const order = body.order === undefined ? 0 : requirePositiveInteger(body.order, "Tournament order");
-
   const event = await requireEvent(eventId);
+  const rulesetId = body.rulesetId === undefined
+    ? event.rulesetId ?? undefined
+    : body.rulesetId === null
+      ? null
+      : requireString(body.rulesetId, "Ruleset ID");
+  if (rulesetId) {
+    await requireRulesetForEvent(rulesetId, eventId, "Tournament ruleset");
+  }
+  const order = body.order === undefined ? 0 : requirePositiveInteger(body.order, "Tournament order");
   const usedColors = new Set(event.tournaments.map((tournament) => tournament.color));
   const color = tournamentColors.find((candidate) => !usedColors.has(candidate))
     ?? tournamentColors[event.tournaments.length % tournamentColors.length]
@@ -416,7 +438,7 @@ async function createTournament(request: IncomingMessage): Promise<unknown> {
       name,
       order,
       color,
-      ...(ruleset !== undefined ? { ruleset } : {}),
+      ...(rulesetId !== undefined ? { rulesetId } : {}),
       stages: {
         create: [
           { type: "POOL" },
@@ -436,7 +458,8 @@ async function getTournament(_request: IncomingMessage, params: Record<string, s
 
 async function updateTournament(request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
   const body = ensureObject(await readJsonBody(request), "Tournament");
-  const data: { eventId?: string; name?: string; ruleset?: string | null; order?: number } = {};
+  const currentTournament = await requireTournament(routeId(params));
+  const data: { eventId?: string; name?: string; rulesetId?: string | null; order?: number } = {};
 
   if (body.eventId !== undefined) {
     const eventId = requireString(body.eventId, "Event ID");
@@ -446,11 +469,23 @@ async function updateTournament(request: IncomingMessage, params: Record<string,
   if (body.name !== undefined) {
     data.name = requireString(body.name, "Tournament name");
   }
-  if (body.ruleset !== undefined) {
-    data.ruleset = optionalString(body.ruleset) ?? null;
+  if (body.rulesetId !== undefined) {
+    if (body.rulesetId === null) {
+      data.rulesetId = null;
+    } else {
+      const eventId = body.eventId === undefined ? currentTournament.eventId : requireString(body.eventId, "Event ID");
+      const rulesetId = requireString(body.rulesetId, "Ruleset ID");
+      await requireRulesetForEvent(rulesetId, eventId, "Tournament ruleset");
+      data.rulesetId = rulesetId;
+    }
   }
   if (body.order !== undefined) {
     data.order = requirePositiveInteger(body.order, "Tournament order");
+  }
+  const nextEventId = data.eventId ?? currentTournament.eventId;
+  const nextRulesetId = data.rulesetId === undefined ? currentTournament.rulesetId : data.rulesetId;
+  if (nextRulesetId) {
+    await requireRulesetForEvent(nextRulesetId, nextEventId, "Tournament ruleset");
   }
 
   return prisma.tournament.update({
@@ -467,13 +502,19 @@ async function deleteTournament(_request: IncomingMessage, params: Record<string
 
 async function updateEvent(request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
   const body = ensureObject(await readJsonBody(request), "Event");
-  const data: { eventName?: string; ruleset?: string | null; allFightersAreVolunteers?: boolean } = {};
+  const data: { eventName?: string; rulesetId?: string | null; allFightersAreVolunteers?: boolean } = {};
 
   if (body.eventName !== undefined) {
     data.eventName = requireString(body.eventName, "Event name");
   }
-  if (body.ruleset !== undefined) {
-    data.ruleset = optionalString(body.ruleset) ?? null;
+  if (body.rulesetId !== undefined) {
+    if (body.rulesetId === null) {
+      data.rulesetId = null;
+    } else {
+      const rulesetId = requireString(body.rulesetId, "Ruleset ID");
+      await requireRulesetForEvent(rulesetId, routeId(params), "Event ruleset");
+      data.rulesetId = rulesetId;
+    }
   }
   if (body.allFightersAreVolunteers !== undefined) {
     data.allFightersAreVolunteers = requireBoolean(body.allFightersAreVolunteers, "All fighters are volunteers");
@@ -482,12 +523,90 @@ async function updateEvent(request: IncomingMessage, params: Record<string, stri
   return prisma.event.update({
     where: { id: routeId(params) },
     data,
+    include: { ruleset: true },
   });
 }
 
 async function deleteEvent(_request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
   await prisma.event.delete({ where: { id: routeId(params) } });
   return undefined;
+}
+
+async function listRulesets(_request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
+  const eventId = routeId(params);
+  await requireEvent(eventId);
+  const rulesets = await prisma.ruleset.findMany({
+    where: { eventId },
+    orderBy: [{ name: "asc" }, { version: "desc" }],
+    include: { _count: { select: { matches: true } } },
+  });
+  return rulesets.map(toRulesetDetail);
+}
+
+async function createRuleset(request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
+  const eventId = routeId(params);
+  await requireEvent(eventId);
+  const body = ensureObject(await readJsonBody(request), "Ruleset");
+  const sourceRulesetId = body.baseRulesetId === undefined ? undefined : optionalString(body.baseRulesetId);
+  const source = sourceRulesetId ? await requireRulesetForEvent(sourceRulesetId, eventId, "Ruleset template") : undefined;
+  const name = body.name !== undefined
+    ? requireString(body.name, "Ruleset name")
+    : source?.name ?? "Nieuwe ruleset";
+  const version = await nextRulesetVersion(eventId, name);
+
+  const ruleset = await prisma.ruleset.create({
+    data: {
+      eventId,
+      name,
+      version,
+    },
+    include: { _count: { select: { matches: true } } },
+  });
+
+  return toRulesetDetail(ruleset);
+}
+
+async function getRuleset(_request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
+  return requireRulesetDetail(routeId(params));
+}
+
+async function updateRuleset(request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
+  const existing = await requireRulesetDetail(routeId(params));
+  if (existing.locked) {
+    throw new HttpError(409, "A ruleset that is already used in a match cannot be altered.");
+  }
+
+  const body = ensureObject(await readJsonBody(request), "Ruleset");
+  const data: {
+    name?: string;
+  } = {};
+
+  if (body.name !== undefined) {
+    data.name = requireString(body.name, "Ruleset name");
+  }
+
+  if (data.name !== undefined && data.name !== existing.name) {
+    const conflict = await prisma.ruleset.findFirst({
+      where: {
+        eventId: existing.eventId,
+        name: data.name,
+        version: existing.version,
+        id: { not: existing.id },
+      },
+      select: { id: true },
+    });
+    if (conflict) {
+      throw new HttpError(409, "A ruleset with this name and version already exists in this event.");
+    }
+  }
+
+  const ruleset = await prisma.ruleset.update({
+    where: { id: existing.id },
+    data,
+    include: { _count: { select: { matches: true } } },
+  });
+
+  return toRulesetDetail(ruleset);
 }
 
 async function getEventSchedule(_request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
@@ -824,16 +943,51 @@ async function createStage(request: IncomingMessage): Promise<unknown> {
   const tournamentId = requireString(body.tournamentId, "Tournament ID");
   const type = parseStageType(body.type);
   const name = body.name === undefined ? undefined : optionalString(body.name);
-  const ruleset = body.ruleset === undefined ? undefined : optionalString(body.ruleset);
+  const tournament = await requireTournament(tournamentId);
+  const rulesetId = body.rulesetId === undefined
+    ? tournament.rulesetId ?? tournament.event.rulesetId ?? undefined
+    : body.rulesetId === null
+      ? null
+      : requireString(body.rulesetId, "Ruleset ID");
+  if (rulesetId) {
+    await requireRulesetForEvent(rulesetId, tournament.eventId, "Stage ruleset");
+  }
+  const timeBetweenMatchesMinutes = body.timeBetweenMatchesMinutes === undefined || body.timeBetweenMatchesMinutes === null
+    ? 2
+    : requirePositiveInteger(body.timeBetweenMatchesMinutes, "Time between matches");
 
-  await requireTournament(tournamentId);
+  let minPoolSize: number | null = null;
+  let maxPoolSize: number | null = null;
+  let preferredPoolSize: number | null = null;
+  if (type === "POOL") {
+    minPoolSize = body.minPoolSize === undefined || body.minPoolSize === null
+      ? 4
+      : requireStagePoolSize(body.minPoolSize, "Minimum pool size");
+    maxPoolSize = body.maxPoolSize === undefined || body.maxPoolSize === null
+      ? 6
+      : requireStagePoolSize(body.maxPoolSize, "Maximum pool size");
+    preferredPoolSize = body.preferredPoolSize === undefined || body.preferredPoolSize === null
+      ? 5
+      : requireStagePoolSize(body.preferredPoolSize, "Preferred pool size");
+    validateStagePoolRange(minPoolSize, maxPoolSize, preferredPoolSize);
+  }
+  const eliminationParticipantCount = type === "ELIMINATION"
+    ? body.eliminationParticipantCount === undefined || body.eliminationParticipantCount === null
+      ? resolveEliminationParticipantCount(tournament)
+      : requireStagePoolSize(body.eliminationParticipantCount, "Elimination participant count")
+    : null;
 
   return prisma.stage.create({
     data: {
       tournamentId,
       type,
       ...(name !== undefined ? { name } : {}),
-      ...(ruleset !== undefined ? { ruleset } : {}),
+      ...(rulesetId !== undefined ? { rulesetId } : {}),
+      minPoolSize,
+      maxPoolSize,
+      preferredPoolSize,
+      eliminationParticipantCount,
+      timeBetweenMatchesMinutes,
     },
     include: stageDetailInclude,
   });
@@ -845,26 +999,91 @@ async function getStage(_request: IncomingMessage, params: Record<string, string
 
 async function updateStage(request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
   const body = ensureObject(await readJsonBody(request), "Stage");
+  const currentStage = await requireStage(routeId(params));
+  const nextType = body.type === undefined ? currentStage.type : parseStageType(body.type);
+  const nextTournamentId = body.tournamentId === undefined ? currentStage.tournamentId : requireString(body.tournamentId, "Tournament ID");
+  const nextTournament = await requireTournament(nextTournamentId);
   const data: {
     tournamentId?: string;
     type?: "POOL" | "ELIMINATION" | "SEMI_FINAL" | "FINAL";
     name?: string | null;
-    ruleset?: string | null;
+    rulesetId?: string | null;
+    minPoolSize?: number | null;
+    maxPoolSize?: number | null;
+    preferredPoolSize?: number | null;
+    eliminationParticipantCount?: number | null;
+    timeBetweenMatchesMinutes?: number;
   } = {};
 
   if (body.tournamentId !== undefined) {
-    const tournamentId = requireString(body.tournamentId, "Tournament ID");
-    await requireTournament(tournamentId);
-    data.tournamentId = tournamentId;
+    data.tournamentId = nextTournamentId;
   }
   if (body.type !== undefined) {
-    data.type = parseStageType(body.type);
+    data.type = nextType;
   }
   if (body.name !== undefined) {
     data.name = optionalString(body.name) ?? null;
   }
-  if (body.ruleset !== undefined) {
-    data.ruleset = optionalString(body.ruleset) ?? null;
+  if (body.rulesetId !== undefined) {
+    if (body.rulesetId === null) {
+      data.rulesetId = null;
+    } else {
+      const eventId = body.tournamentId === undefined
+        ? currentStage.tournament.eventId
+        : (await requireTournament(requireString(body.tournamentId, "Tournament ID"))).eventId;
+      const rulesetId = requireString(body.rulesetId, "Ruleset ID");
+      await requireRulesetForEvent(rulesetId, eventId, "Stage ruleset");
+      data.rulesetId = rulesetId;
+    }
+  }
+  if (body.timeBetweenMatchesMinutes !== undefined) {
+    data.timeBetweenMatchesMinutes = body.timeBetweenMatchesMinutes === null
+      ? 2
+      : requirePositiveInteger(body.timeBetweenMatchesMinutes, "Time between matches");
+  } else {
+    data.timeBetweenMatchesMinutes = currentStage.timeBetweenMatchesMinutes;
+  }
+  if (nextType === "POOL") {
+    const minPoolSize = body.minPoolSize === undefined
+      ? currentStage.type === "POOL" ? (currentStage.minPoolSize ?? 4) : 4
+      : body.minPoolSize === null
+        ? 4
+        : requireStagePoolSize(body.minPoolSize, "Minimum pool size");
+    const maxPoolSize = body.maxPoolSize === undefined
+      ? currentStage.type === "POOL" ? (currentStage.maxPoolSize ?? 6) : 6
+      : body.maxPoolSize === null
+        ? 6
+        : requireStagePoolSize(body.maxPoolSize, "Maximum pool size");
+    const preferredPoolSize = body.preferredPoolSize === undefined
+      ? currentStage.type === "POOL" ? (currentStage.preferredPoolSize ?? 5) : 5
+      : body.preferredPoolSize === null
+        ? 5
+        : requireStagePoolSize(body.preferredPoolSize, "Preferred pool size");
+    validateStagePoolRange(minPoolSize, maxPoolSize, preferredPoolSize);
+    data.minPoolSize = minPoolSize;
+    data.maxPoolSize = maxPoolSize;
+    data.preferredPoolSize = preferredPoolSize;
+    data.eliminationParticipantCount = null;
+  } else if (nextType === "ELIMINATION") {
+    data.minPoolSize = null;
+    data.maxPoolSize = null;
+    data.preferredPoolSize = null;
+    data.eliminationParticipantCount = body.eliminationParticipantCount === undefined
+      ? currentStage.type === "ELIMINATION"
+        ? currentStage.eliminationParticipantCount ?? resolveEliminationParticipantCount(nextTournament, currentStage)
+        : resolveEliminationParticipantCount(nextTournament, currentStage)
+      : body.eliminationParticipantCount === null
+        ? resolveEliminationParticipantCount(nextTournament, currentStage)
+        : requireStagePoolSize(body.eliminationParticipantCount, "Elimination participant count");
+  } else {
+    data.minPoolSize = null;
+    data.maxPoolSize = null;
+    data.preferredPoolSize = null;
+    data.eliminationParticipantCount = null;
+  }
+  const nextRulesetId = data.rulesetId === undefined ? currentStage.rulesetId : data.rulesetId;
+  if (nextRulesetId) {
+    await requireRulesetForEvent(nextRulesetId, nextTournament.eventId, "Stage ruleset");
   }
 
   return prisma.stage.update({
@@ -1026,7 +1245,11 @@ async function createMatch(request: IncomingMessage): Promise<unknown> {
     body.winnerEntryId === undefined ? undefined : optionalString(body.winnerEntryId);
   const scoreA = body.scoreA === undefined ? undefined : requirePositiveInteger(body.scoreA, "Score A");
   const scoreB = body.scoreB === undefined ? undefined : requirePositiveInteger(body.scoreB, "Score B");
-  const ruleset = body.ruleset === undefined ? undefined : optionalString(body.ruleset);
+  const rulesetId = body.rulesetId === undefined
+    ? undefined
+    : body.rulesetId === null
+      ? null
+      : requireString(body.rulesetId, "Ruleset ID");
 
   const round = await requireRound(roundId);
   const stage = round.stage;
@@ -1041,6 +1264,12 @@ async function createMatch(request: IncomingMessage): Promise<unknown> {
   if (entryAId) await requireEntryInTournament(entryAId, tournamentId, "Entry A");
   if (entryBId) await requireEntryInTournament(entryBId, tournamentId, "Entry B");
   if (winnerEntryId) await requireEntryInTournament(winnerEntryId, tournamentId, "Winner entry");
+  const resolvedRulesetId = rulesetId === undefined
+    ? stage.rulesetId ?? stage.tournament.rulesetId ?? stage.tournament.event.rulesetId ?? null
+    : rulesetId;
+  if (resolvedRulesetId) {
+    await requireRulesetForEvent(resolvedRulesetId, eventId, "Match ruleset");
+  }
 
   return prisma.match.create({
     data: {
@@ -1051,7 +1280,7 @@ async function createMatch(request: IncomingMessage): Promise<unknown> {
       ...(winnerEntryId !== undefined ? { winnerEntryId } : {}),
       ...(scoreA !== undefined ? { scoreA } : {}),
       ...(scoreB !== undefined ? { scoreB } : {}),
-      ...(ruleset !== undefined ? { ruleset } : {}),
+      ...(resolvedRulesetId !== undefined ? { rulesetId: resolvedRulesetId } : {}),
     },
     include: matchDetailInclude,
   });
@@ -1063,6 +1292,7 @@ async function getMatch(_request: IncomingMessage, params: Record<string, string
 
 async function updateMatch(request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
   const body = ensureObject(await readJsonBody(request), "Match");
+  const currentMatch = await requireMatch(routeId(params));
   const data: {
     roundId?: string;
     arenaId?: string | null;
@@ -1071,7 +1301,7 @@ async function updateMatch(request: IncomingMessage, params: Record<string, stri
     winnerEntryId?: string | null;
     scoreA?: number | null;
     scoreB?: number | null;
-    ruleset?: string | null;
+    rulesetId?: string | null;
   } = {};
 
   if (body.roundId !== undefined) {
@@ -1105,11 +1335,22 @@ async function updateMatch(request: IncomingMessage, params: Record<string, stri
   if (body.scoreB !== undefined) {
     data.scoreB = body.scoreB === null ? null : requirePositiveInteger(body.scoreB, "Score B");
   }
-  if (body.ruleset !== undefined) {
-    data.ruleset = optionalString(body.ruleset) ?? null;
+  if (body.rulesetId !== undefined) {
+    if (body.rulesetId === null) {
+      data.rulesetId = null;
+    } else {
+      const rulesetId = requireString(body.rulesetId, "Ruleset ID");
+      const nextRoundId = data.roundId ?? currentMatch.roundId;
+      const nextRound = data.roundId !== undefined ? await requireRound(nextRoundId) : currentMatch.round;
+      const nextEventId = nextRound.stage.tournament.eventId;
+      if (currentMatch.rulesetId && currentMatch.rulesetId !== rulesetId) {
+        throw new HttpError(409, "A match ruleset cannot be altered once it has been set.");
+      }
+      await requireRulesetForEvent(rulesetId, nextEventId, "Match ruleset");
+      data.rulesetId = rulesetId;
+    }
   }
   if (data.roundId !== undefined || data.arenaId !== undefined || data.entryAId !== undefined || data.entryBId !== undefined || data.winnerEntryId !== undefined) {
-    const currentMatch = await requireMatch(routeId(params));
     const nextRoundId = data.roundId ?? currentMatch.roundId;
     const nextRound = data.roundId !== undefined ? await requireRound(nextRoundId) : currentMatch.round;
     const nextStage = nextRound.stage;
@@ -1135,6 +1376,12 @@ async function updateMatch(request: IncomingMessage, params: Record<string, stri
     if (nextWinnerEntryId) {
       await requireEntryInTournament(nextWinnerEntryId, nextTournamentId, "Winner entry");
     }
+  }
+  const nextRound = data.roundId === undefined ? currentMatch.round : await requireRound(data.roundId);
+  const nextEventId = nextRound.stage.tournament.eventId;
+  const nextRulesetId = data.rulesetId === undefined ? currentMatch.rulesetId : data.rulesetId;
+  if (nextRulesetId) {
+    await requireRulesetForEvent(nextRulesetId, nextEventId, "Match ruleset");
   }
 
   return prisma.match.update({
@@ -1247,6 +1494,30 @@ async function requireEvent(id: string) {
     throw new HttpError(404, `Event "${id}" not found.`);
   }
   return event;
+}
+
+async function requireRuleset(id: string) {
+  const ruleset = await prisma.ruleset.findUnique({
+    where: { id },
+    include: { _count: { select: { matches: true } } },
+  });
+  if (!ruleset) {
+    throw new HttpError(404, `Ruleset "${id}" not found.`);
+  }
+  return ruleset;
+}
+
+async function requireRulesetDetail(id: string) {
+  const ruleset = await requireRuleset(id);
+  return toRulesetDetail(ruleset);
+}
+
+async function requireRulesetForEvent(id: string, eventId: string, label: string) {
+  const ruleset = await requireRuleset(id);
+  if (ruleset.eventId !== eventId) {
+    throw new HttpError(400, `${label} must belong to the same event.`);
+  }
+  return ruleset;
 }
 
 async function requireTournament(id: string) {
@@ -1407,6 +1678,69 @@ async function requireEntryInTournament(id: string, tournamentId: string, label:
     throw new HttpError(400, `${label} must belong to the same tournament as the stage.`);
   }
   return entry;
+}
+
+function requireStagePoolSize(value: unknown, label: string): number {
+  const size = requirePositiveInteger(value, label);
+  if (size < 1) {
+    throw new HttpError(400, `${label} must be at least 1.`);
+  }
+  return size;
+}
+
+function validateStagePoolRange(minPoolSize: number, maxPoolSize: number, preferredPoolSize: number): void {
+  if (minPoolSize > maxPoolSize) {
+    throw new HttpError(400, "Minimum pool size cannot exceed maximum pool size.");
+  }
+  if (preferredPoolSize < minPoolSize || preferredPoolSize > maxPoolSize) {
+    throw new HttpError(400, "Preferred pool size must be between the minimum and maximum pool size.");
+  }
+}
+
+function resolveEliminationParticipantCount(
+  tournament: { stages?: Array<{ type: string; preferredPoolSize: number | null }> },
+  currentStage?: { type: string; preferredPoolSize: number | null; eliminationParticipantCount: number | null },
+): number {
+  if (currentStage?.type === "POOL" && currentStage.preferredPoolSize !== null) {
+    return currentStage.preferredPoolSize;
+  }
+
+  const poolStage = tournament.stages?.find((stage) => stage.type === "POOL" && stage.preferredPoolSize !== null);
+  if (poolStage?.preferredPoolSize !== null && poolStage?.preferredPoolSize !== undefined) {
+    return poolStage.preferredPoolSize;
+  }
+
+  if (currentStage && currentStage.eliminationParticipantCount !== null) {
+    return currentStage.eliminationParticipantCount;
+  }
+
+  return 5;
+}
+
+function toRulesetDetail(ruleset: {
+  id: string;
+  eventId: string;
+  name: string;
+  version: number;
+  _count: { matches: number };
+}) {
+  return {
+    id: ruleset.id,
+    eventId: ruleset.eventId,
+    name: ruleset.name,
+    version: ruleset.version,
+    matchCount: ruleset._count.matches,
+    locked: ruleset._count.matches > 0,
+  };
+}
+
+async function nextRulesetVersion(eventId: string, name: string): Promise<number> {
+  const current = await prisma.ruleset.findFirst({
+    where: { eventId, name },
+    orderBy: { version: "desc" },
+    select: { version: true },
+  });
+  return (current?.version ?? 0) + 1;
 }
 
 function requireTimeSlotDuration(value: unknown): number {

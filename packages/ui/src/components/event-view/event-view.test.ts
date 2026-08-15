@@ -292,6 +292,7 @@ function installEventViewMock() {
       eventName: "Test event",
       ruleset: null,
       allFightersAreVolunteers: false,
+      rulesets: [],
       tournaments: [
         {
           id: tournamentId,

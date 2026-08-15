@@ -16,13 +16,19 @@
 
 ## Regelsysteem
 
-De ruleset is hiërarchisch:
+De ruleset is hiërarchisch en versieerbaar:
 
 1. `Stage.ruleset`
 2. `Tournament.ruleset`
 3. `Event.ruleset`
 
 Als een stage een ruleset heeft, wint die dus altijd van tournament- of event-niveau. Als een tournament een ruleset heeft en de stage niet, dan wint het tournament. Event is alleen de fallback.
+
+Een ruleset is event-gebonden, versieerbaar en alleen nog de basis voor
+naam + versie. Stage-specifieke instellingen (pool sizes, eliminatie-aantal,
+tijd tussen matches) zitten op `Stage` en hangen af van `StageType`.
+
+Een rulesetversie die al in een match gebruikt is, blijft readonly. Voor aanpassingen maak je een nieuwe versie.
 
 ## Navigatievoorstel
 
@@ -31,7 +37,7 @@ Als een stage een ruleset heeft, wint die dus altijd van tournament- of event-ni
 - `/events` - event-overzicht met aanmaken, bewerken en verwijderen.
 - `/events/:eventId` - event detail met arenas en tournaments op 1 pagina.
 - `/events/:eventId/tournaments/:tournamentId` - tournament detail met entries, officials en stages.
-- `/events/:eventId/tournaments/:tournamentId/stages/:stageId` - stage detail met tijdslot, ruleset, arena-koppelingen en live data.
+- `/events/:eventId/tournaments/:tournamentId/stages/:stageId` - stage detail met type-afhankelijke instellingen, arena-koppelingen en live data.
 
 ### `score-keeper`
 
@@ -47,5 +53,3 @@ De term "vrijwilligers" in het oude ontwerp past beter als "officials". Als er e
 
 # event admin
 in deze admin app kan je events beheren en alle bijbehoorende
-
-
