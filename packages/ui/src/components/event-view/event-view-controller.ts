@@ -81,6 +81,9 @@ const api = createApiClient();
 let app: HTMLElement;
 let pendingScrollState: ScrollState | undefined;
 
+const defaultArenaLeftColor = "#21c15b";
+const defaultArenaRightColor = "#2f7dfa";
+
 const state: AppState = {
   loading: true,
   error: null,
@@ -330,14 +333,12 @@ function renderArenaCreateForm(event: ApiEvent): string {
       </header>
       <form class="editor-form" data-action="arena-create">
         <input type="hidden" name="eventId" value="${escapeHtml(event.id)}" />
-        <label class="field">
-          <span>Naam</span>
-          <input class="text-input" name="name" type="text" placeholder="Bijv. Arena 1" required />
-        </label>
-        <label class="field">
-          <span>Volgorde</span>
-          <input class="text-input" name="order" type="number" min="0" step="1" value="${escapeHtml(order)}" />
-        </label>
+        ${renderTextFields([
+          ["name", "Naam", "", "Bijv. Arena 1", true],
+          ["order", "Volgorde", order, "", true, "number"],
+          ["leftColor", "Linker kleur", defaultArenaLeftColor, "", true, "color"],
+          ["rightColor", "Rechter kleur", defaultArenaRightColor, "", true, "color"],
+        ])}
         <div class="field-actions">
           <button type="submit" class="button">Arena toevoegen</button>
         </div>
@@ -856,6 +857,8 @@ function renderEditorFields(
       return renderTextFields([
         ["name", "Naam", item?.name ?? "", "Bijv. Arena 1", true],
         ["order", "Volgorde", String(item?.order ?? event?.arenas.length ?? 0), "", true, "number"],
+        ["leftColor", "Linker kleur", item?.leftColor ?? defaultArenaLeftColor, "", true, "color"],
+        ["rightColor", "Rechter kleur", item?.rightColor ?? defaultArenaRightColor, "", true, "color"],
       ]);
     }
     case "entry": {
@@ -1090,9 +1093,13 @@ function renderArenaList(event: ApiEvent, arenas: ApiArena[]): string {
               <div class="info-card-title">${escapeHtml(arena.name)}</div>
               <div class="info-card-subtitle">Volgorde ${arena.order + 1}</div>
               <div class="badge-row">
-                ${usages.length > 0
-                  ? usages.map((usage) => `<span class="badge badge-muted">${escapeHtml(usage)}</span>`).join("")
-                  : `<span class="badge badge-muted">Nog niet gekoppeld</span>`}
+              <span class="tournament-color" style="background-color: ${escapeHtml(arena.leftColor ?? defaultArenaLeftColor)}" title="Linker kleur"></span>
+              <span class="tournament-color" style="background-color: ${escapeHtml(arena.rightColor ?? defaultArenaRightColor)}" title="Rechter kleur"></span>
+            </div>
+            <div class="badge-row">
+              ${usages.length > 0
+                ? usages.map((usage) => `<span class="badge badge-muted">${escapeHtml(usage)}</span>`).join("")
+                : `<span class="badge badge-muted">Nog niet gekoppeld</span>`}
               </div>
               ${renderResourceActions("arena", arena.id, arena.name)}
             </div>
@@ -1726,6 +1733,8 @@ async function saveEditor(
         eventId,
         name: requireFormString(formData.get("name"), "Naam"),
         order: requireFormNumber(formData.get("order"), "Volgorde"),
+        leftColor: requireFormString(formData.get("leftColor"), "Linker kleur"),
+        rightColor: requireFormString(formData.get("rightColor"), "Rechter kleur"),
       };
       await (id ? api.updateArena(id, body) : api.createArena(body));
       return;

@@ -13,6 +13,8 @@ const ringOne = {
   eventId: "event-1",
   name: "Ring 1",
   order: 1,
+  leftColor: "#3a8cf8",
+  rightColor: "#ec0b29",
 };
 
 const ringTwo = {
@@ -20,6 +22,8 @@ const ringTwo = {
   eventId: "event-1",
   name: "Ring 2",
   order: 2,
+  leftColor: "#21c15b",
+  rightColor: "#2f7dfa",
 };
 
 const openTournamentMeta = {

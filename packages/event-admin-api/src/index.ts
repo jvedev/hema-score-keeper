@@ -57,6 +57,8 @@ export interface ApiArena {
   eventId: string;
   name: string;
   order: number;
+  leftColor?: string;
+  rightColor?: string;
 }
 
 export interface ApiEntry {
@@ -279,8 +281,11 @@ export interface ApiClient {
   listTournaments(): Promise<ApiTournament[]>;
   getTournament(id: string): Promise<ApiTournament>;
   deleteTournament(id: string): Promise<void>;
-  createArena(body: { eventId: string; name: string; order?: number }): Promise<ApiArena>;
-  updateArena(id: string, body: { eventId?: string; name?: string; order?: number }): Promise<ApiArena>;
+  createArena(body: { eventId: string; name: string; order?: number; leftColor?: string; rightColor?: string }): Promise<ApiArena>;
+  updateArena(
+    id: string,
+    body: { eventId?: string; name?: string; order?: number; leftColor?: string; rightColor?: string },
+  ): Promise<ApiArena>;
   listArenas(): Promise<ApiArena[]>;
   deleteArena(id: string): Promise<void>;
   createEntry(body: {

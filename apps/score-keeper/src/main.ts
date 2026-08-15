@@ -67,6 +67,8 @@ const forfeitDialog =
 const eventRepository = createEventRepository();
 const ruleSetRepository = createRuleSetRepository();
 const selectionStorageKey = "hema-score-keeper.start-selection";
+const defaultArenaLeftColor = "#21c15b";
+const defaultArenaRightColor = "#2f7dfa";
 
 let events: readonly ApiEvent[] = [];
 let selectedEventId: string | undefined;
@@ -234,14 +236,8 @@ async function beginFightMode(
     name: `${selection.arena.name} · ${timeSlotSelection.timeSlot.label}`,
     fighterAName: fighterA.user.username,
     fighterBName: fighterB.user.username,
-    leftFighterStyle: {
-      backgroundColor: timeSlotSelection.tournament.color,
-      textColor: "#071a0d",
-    },
-    rightFighterStyle: {
-      backgroundColor: "#2f7dfa",
-      textColor: "#ffffff",
-    },
+    leftFighterStyle: createFighterStyle(selection.arena.leftColor ?? defaultArenaLeftColor),
+    rightFighterStyle: createFighterStyle(selection.arena.rightColor ?? defaultArenaRightColor),
   });
   fightView.setMatchDuration(ruleSet.matchParameters.maxDurationSeconds);
   fightView.setScores({
@@ -253,26 +249,22 @@ async function beginFightMode(
     fighterA: {
       name: fighterA.user.username,
       score: match.scoreA ?? 0,
-      backgroundColor: timeSlotSelection.tournament.color,
-      textColor: "#071a0d",
+      ...createFighterStyle(selection.arena.leftColor ?? defaultArenaLeftColor),
     },
     fighterB: {
       name: fighterB.user.username,
       score: match.scoreB ?? 0,
-      backgroundColor: "#2f7dfa",
-      textColor: "#ffffff",
+      ...createFighterStyle(selection.arena.rightColor ?? defaultArenaRightColor),
     },
   });
   warningView.configure({
     fighterA: {
       name: fighterA.user.username,
-      backgroundColor: timeSlotSelection.tournament.color,
-      textColor: "#071a0d",
+      ...createFighterStyle(selection.arena.leftColor ?? defaultArenaLeftColor),
     },
     fighterB: {
       name: fighterB.user.username,
-      backgroundColor: "#2f7dfa",
-      textColor: "#ffffff",
+      ...createFighterStyle(selection.arena.rightColor ?? defaultArenaRightColor),
     },
     penalties: ruleSet.matchParameters.penalties,
   });
@@ -364,6 +356,30 @@ document.addEventListener("visibilitychange", () => {
 
 function renderStartScreen(inactiveMessage?: string): void {
   startScreenView.configure(buildStartScreenConfig(inactiveMessage));
+}
+
+function createFighterStyle(backgroundColor: string): { backgroundColor: string; textColor: string } {
+  return {
+    backgroundColor,
+    textColor: getContrastTextColor(backgroundColor),
+  };
+}
+
+function getContrastTextColor(backgroundColor: string): string {
+  const hex = backgroundColor.trim().replace(/^#/, "");
+  const expanded = hex.length === 3
+    ? hex.split("").map((character) => `${character}${character}`).join("")
+    : hex;
+  if (!/^[0-9a-fA-F]{6}$/.test(expanded)) {
+    return "#ffffff";
+  }
+
+  const red = Number.parseInt(expanded.slice(0, 2), 16);
+  const green = Number.parseInt(expanded.slice(2, 4), 16);
+  const blue = Number.parseInt(expanded.slice(4, 6), 16);
+  const luminance = (red * 0.299 + green * 0.587 + blue * 0.114) / 255;
+
+  return luminance > 0.6 ? "#071a0d" : "#ffffff";
 }
 
 function buildLoadingConfig() {

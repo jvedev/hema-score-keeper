@@ -107,6 +107,8 @@ model Arena {
   eventId         String
   name            String
   order           Int              @default(0)
+  leftColor       String           @default("#21c15b")
+  rightColor      String           @default("#2f7dfa")
   event           Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
   matches         Match[]
   scheduledPhases ScheduledPhase[]

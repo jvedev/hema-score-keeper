@@ -102,6 +102,8 @@ const tournamentOrderBy: Prisma.TournamentOrderByWithRelationInput[] = [
 ];
 
 const tournamentColors = ["#5B8CFF", "#E06C75", "#98C379", "#E5C07B", "#C678DD", "#56B6C2"];
+const arenaLeftColor = "#21c15b";
+const arenaRightColor = "#2f7dfa";
 
 const eventDetailInclude: Prisma.EventInclude = {
   ruleset: true,
@@ -917,6 +919,8 @@ async function createArena(request: IncomingMessage): Promise<unknown> {
       eventId,
       name,
       order,
+      ...(body.leftColor !== undefined ? { leftColor: requireString(body.leftColor, "Left arena color") } : {}),
+      ...(body.rightColor !== undefined ? { rightColor: requireString(body.rightColor, "Right arena color") } : {}),
     },
     include: arenaDetailInclude,
   });
@@ -928,7 +932,7 @@ async function getArena(_request: IncomingMessage, params: Record<string, string
 
 async function updateArena(request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
   const body = ensureObject(await readJsonBody(request), "Arena");
-  const data: { eventId?: string; name?: string; order?: number } = {};
+  const data: { eventId?: string; name?: string; order?: number; leftColor?: string; rightColor?: string } = {};
 
   if (body.eventId !== undefined) {
     const eventId = requireString(body.eventId, "Event ID");
@@ -940,6 +944,12 @@ async function updateArena(request: IncomingMessage, params: Record<string, stri
   }
   if (body.order !== undefined) {
     data.order = requirePositiveInteger(body.order, "Arena order");
+  }
+  if (body.leftColor !== undefined) {
+    data.leftColor = requireString(body.leftColor, "Left arena color");
+  }
+  if (body.rightColor !== undefined) {
+    data.rightColor = requireString(body.rightColor, "Right arena color");
   }
 
   return prisma.arena.update({
