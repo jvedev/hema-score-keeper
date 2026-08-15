@@ -918,7 +918,7 @@ export class EventPlannerView extends BaseComponent {
   }
 
   private getFighterLimit(placement: ApiScheduledPhase): number {
-    return Math.max(1, placement.stage.maxPoolSize ?? placement.stage.preferredPoolSize ?? 1);
+    return Math.max(1, placement.stage.maxPoolSize ?? placement.stage.preferredPoolSize ?? 6);
   }
 
   private renderFighterAssignmentSlots(assignments: NonNullable<ApiScheduledPhase["assignments"]>, limit: number): string {
@@ -1012,6 +1012,9 @@ export class EventPlannerView extends BaseComponent {
         this.addAssignmentToSchedule(target.scheduledPhaseId, assignment);
         target.assignedCount += 1;
         usedFighterIds.add(fighter.entry.userId);
+        const timeSlotsForUser = blockedTimeSlotsByUserId.get(fighter.entry.userId) ?? new Set<string>();
+        timeSlotsForUser.add(target.timeSlotId);
+        blockedTimeSlotsByUserId.set(fighter.entry.userId, timeSlotsForUser);
       }
 
       await this.load();

@@ -13,10 +13,11 @@ import {
   type StageOfficialRole,
 } from "@hema/event-admin-api";
 import "./event-view-app.css";
+import "../pool-results/pool-results.js";
 
 type EventTab = "tournaments" | "arenas" | "officials" | "rulesets";
 type TournamentTab = "entries" | "officials" | "stages";
-type StageTab = "overview" | "arenas" | "officials" | "rounds" | "matches";
+type StageTab = "overview" | "arenas" | "officials" | "rounds" | "matches" | "pool-results";
 type EditorKind = "event" | "tournament" | "arena" | "entry" | "stage" | "stage-arena" | "stage-official";
 
 interface EditorState {
@@ -70,6 +71,7 @@ interface AppState {
   eventTab: EventTab;
   tournamentTab: TournamentTab;
   stageTab: StageTab;
+  poolResultsFullscreen: boolean;
 }
 
 interface ScrollState {
@@ -96,6 +98,7 @@ const state: AppState = {
   eventTab: "tournaments",
   tournamentTab: "stages",
   stageTab: "overview",
+  poolResultsFullscreen: false,
 };
 
 export function mountEventView(host: HTMLElement): void {
@@ -206,6 +209,14 @@ function onAppClick(event: MouseEvent): void {
     case "advance-stage":
       void setTournamentCurrentStage(target.dataset.nextStageId);
       return;
+    case "open-pool-results-fullscreen":
+      state.poolResultsFullscreen = true;
+      render();
+      return;
+    case "close-pool-results-fullscreen":
+      state.poolResultsFullscreen = false;
+      render();
+      return;
     default:
       return;
   }
@@ -268,9 +279,25 @@ function render(): void {
   }
 
   app.innerHTML = renderShell();
+  hydratePoolResults();
   if (pendingScrollState) {
     restoreScrollState(pendingScrollState);
     pendingScrollState = undefined;
+  }
+}
+
+function hydratePoolResults(): void {
+  const event = currentEvent();
+  const tournament = event ? currentTournament(event) : undefined;
+  const stage = currentStage(tournament);
+
+  for (const element of app.querySelectorAll("pool-results")) {
+    const poolResults = element as HTMLElement & {
+      setData?: (event: ApiEvent, stage: ApiStage, tournament?: ApiTournament) => void;
+    };
+    if (event && stage) {
+      poolResults.setData?.(event, stage, tournament);
+    }
   }
 }
 
@@ -680,6 +707,7 @@ function renderShell(): string {
       </section>
       ${renderEditor()}
       ${renderVolunteerView()}
+      ${renderPoolResultsFullscreen()}
     </main>
   `;
 }
@@ -1008,6 +1036,7 @@ function renderTournamentTab(event: ApiEvent, tournament: ApiTournament): string
                     { value: "officials", label: "Vrijwilligers" },
                     { value: "rounds", label: "Rondes" },
                     { value: "matches", label: "Matches" },
+                    { value: "pool-results", label: "Pool resultaten" },
                   ],
                 ) + `<div class="panel-body">${renderStageTab(event, tournament, currentStage(tournament)!)}</div>`
               : renderEmptyCard("Selecteer een stage.")}
@@ -1044,7 +1073,54 @@ function renderStageTab(event: ApiEvent, tournament: ApiTournament, stage: ApiSt
       return renderRounds(stage);
     case "matches":
       return renderMatches(tournament, stage);
+    case "pool-results":
+      return renderPoolResults(event, tournament, stage);
   }
+}
+
+function renderPoolResults(event: ApiEvent, tournament: ApiTournament, stage: ApiStage): string {
+  return `
+    <div class="section-actions">
+      <div class="badge badge-muted">Overzicht per pool</div>
+      <button type="button" class="button secondary" data-action="open-pool-results-fullscreen">Volledig scherm</button>
+    </div>
+    <div class="info-card">
+      <div class="info-card-title">Pool uitslagen</div>
+      <div class="info-card-subtitle">Bekijk per pool alle gespeelde wedstrijden en resultaten.</div>
+    </div>
+    <pool-results></pool-results>
+  `;
+}
+
+function renderPoolResultsFullscreen(): string {
+  if (!state.poolResultsFullscreen) {
+    return "";
+  }
+
+  const event = currentEvent();
+  const tournament = event ? currentTournament(event) : undefined;
+  const stage = currentStage(tournament);
+
+  if (!event || !stage) {
+    return "";
+  }
+
+  return `
+    <div class="pool-results-fullscreen-overlay" role="dialog" aria-modal="true" aria-label="Pool resultaten volledig scherm">
+      <div class="pool-results-fullscreen-panel">
+        <div class="pool-results-fullscreen-header">
+          <div>
+            <div class="eyebrow">Pool resultaten</div>
+            <h2>${escapeHtml(stageLabel(stage))}</h2>
+          </div>
+          <button type="button" class="button secondary" data-action="close-pool-results-fullscreen">Sluiten</button>
+        </div>
+        <div class="pool-results-fullscreen-body">
+          <pool-results></pool-results>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function renderTournamentList(event: ApiEvent, selectedTournament: ApiTournament | undefined): string {

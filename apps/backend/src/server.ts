@@ -461,7 +461,7 @@ async function createTournament(request: IncomingMessage): Promise<unknown> {
       ...(rulesetId !== undefined ? { rulesetId } : {}),
       stages: {
         create: [
-          { type: "POOL" },
+          { type: "POOL", minPoolSize: 4, maxPoolSize: 6, preferredPoolSize: 5 },
           { type: "ELIMINATION" },
           { type: "SEMI_FINAL" },
           { type: "FINAL" },
@@ -873,7 +873,7 @@ async function createScheduledAssignment(request: IncomingMessage, params: Recor
   const roleLimit = role === "JURY"
     ? 4
     : role === "FIGHTER"
-      ? Math.max(1, scheduledPhase.stage.maxPoolSize ?? scheduledPhase.stage.preferredPoolSize ?? 1)
+      ? Math.max(1, scheduledPhase.stage.maxPoolSize ?? scheduledPhase.stage.preferredPoolSize ?? 6)
       : 1;
   if (assignedRoleCount >= roleLimit) {
     throw new HttpError(409, `${role} already has the maximum of ${roleLimit} assignment${roleLimit === 1 ? "" : "s"}.`);
