@@ -45,7 +45,9 @@ model EventSchedule {
   id               String             @id @default(cuid())
   eventId          String             @unique
   startTimeMinutes Int                @default(540)
+  currentTimeSlotId String?           @unique
   event            Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  currentTimeSlot  ScheduleTimeSlot?  @relation("EventScheduleCurrentTimeSlot", fields: [currentTimeSlotId], references: [id], onDelete: SetNull)
   timeSlots        ScheduleTimeSlot[]
 }
 
@@ -57,6 +59,7 @@ model ScheduleTimeSlot {
   label           String
   color           String?
   isBreak         Boolean          @default(false)
+  currentSchedule EventSchedule?   @relation("EventScheduleCurrentTimeSlot")
   schedule        EventSchedule    @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
   scheduledPhases ScheduledPhase[]
 
@@ -65,16 +68,18 @@ model ScheduleTimeSlot {
 }
 
 model Tournament {
-  id        String   @id @default(cuid())
-  eventId   String
-  name      String
-  rulesetId String?
-  order     Int      @default(0)
-  color     String   @default("#5B8CFF")
-  entries   Entry[]
-  stages    Stage[]
-  ruleset   Ruleset? @relation(fields: [rulesetId], references: [id])
-  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  id             String   @id @default(cuid())
+  eventId        String
+  name           String
+  rulesetId      String?
+  currentStageId String?  @unique
+  order          Int      @default(0)
+  color          String   @default("#5B8CFF")
+  entries        Entry[]
+  stages         Stage[]
+  ruleset        Ruleset? @relation(fields: [rulesetId], references: [id])
+  currentStage   Stage?   @relation("TournamentCurrentStage", fields: [currentStageId], references: [id], onDelete: SetNull)
+  event          Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@index([eventId])
 }
@@ -125,6 +130,7 @@ model Stage {
   scheduledPhases             ScheduledPhase[]
   ruleset                     Ruleset?         @relation(fields: [rulesetId], references: [id])
   tournament                  Tournament       @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  currentTournament           Tournament?      @relation("TournamentCurrentStage")
   arenas                      StageArena[]
   officials                   StageOfficial[]
 

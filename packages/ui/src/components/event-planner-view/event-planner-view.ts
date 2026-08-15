@@ -162,6 +162,34 @@ export class EventPlannerView extends BaseComponent {
       this.renderPlanner();
       return;
     }
+    if (actionElement.dataset.clickAction === "set-current-time-slot") {
+      const slotId = actionElement.dataset.id;
+      if (!slotId || !this.#eventId) {
+        return;
+      }
+      try {
+        await this.#api.updateEventSchedule(this.#eventId, { currentTimeSlotId: slotId });
+        await this.load();
+      } catch (error) {
+        this.#error = error instanceof Error ? error.message : "The change could not be saved.";
+        this.renderPlanner();
+      }
+      return;
+    }
+    if (actionElement.dataset.clickAction === "advance-time-slot") {
+      const nextSlotId = actionElement.dataset.nextSlotId;
+      if (!nextSlotId || !this.#eventId) {
+        return;
+      }
+      try {
+        await this.#api.updateEventSchedule(this.#eventId, { currentTimeSlotId: nextSlotId });
+        await this.load();
+      } catch (error) {
+        this.#error = error instanceof Error ? error.message : "The change could not be saved.";
+        this.renderPlanner();
+      }
+      return;
+    }
     if (actionElement.dataset.clickAction === "open-suggestions") {
       this.#showSuggestions = true;
       this.renderPlanner();
@@ -400,6 +428,10 @@ export class EventPlannerView extends BaseComponent {
 
   private renderSchedule(event: ApiEvent, schedule: ApiEventSchedule): string {
     const allSlots = schedule.timeSlots;
+    const activeSlotIndex = schedule.currentTimeSlotId
+      ? allSlots.findIndex((slot) => slot.id === schedule.currentTimeSlotId)
+      : -1;
+    const activeSlot = activeSlotIndex >= 0 ? allSlots[activeSlotIndex] : undefined;
     const slots = this.#mode === "fighters"
       ? allSlots.filter((slot) => slot.scheduledPhases.some((phase) => phase.stage.type === "POOL"))
       : allSlots;
@@ -410,8 +442,9 @@ export class EventPlannerView extends BaseComponent {
     const currentStart = schedule.startTimeMinutes;
     let start = currentStart;
     const slotHeaders = allSlots
-      .map((slot) => {
-        const header = this.renderSlotHeader(slot, start);
+      .map((slot, index) => {
+        const nextSlot = allSlots[index + 1];
+        const header = this.renderSlotHeader(slot, start, schedule.currentTimeSlotId ?? undefined, nextSlot?.id);
         start += slot.durationMinutes;
         return slots.includes(slot) ? header : "";
       })
@@ -423,6 +456,9 @@ export class EventPlannerView extends BaseComponent {
           <label>Start time <input name="startTime" type="time" value="${formatTime(currentStart)}" required></label>
           <button type="submit">Save start time</button>
         </form>
+        <div class="planner-active-slot">
+          <span>Active time slot: <strong>${escapeHtml(activeSlot?.label ?? "None")}</strong></span>
+        </div>
         <form data-action="add-slot" class="slot-form">
           <label>Duration (min.) <input name="durationMinutes" type="number" min="1" max="1440" value="60" required></label>
           <label>Label <input name="label" value="New time slot" required></label>
@@ -569,13 +605,15 @@ export class EventPlannerView extends BaseComponent {
     `;
   }
 
-  private renderSlotHeader(slot: ApiScheduleTimeSlot, startTimeMinutes: number): string {
+  private renderSlotHeader(slot: ApiScheduleTimeSlot, startTimeMinutes: number, currentTimeSlotId?: string, nextSlotId?: string): string {
     const endTimeMinutes = startTimeMinutes + slot.durationMinutes;
     const assignmentCount = slot.scheduledPhases.length;
+    const isActive = slot.id === currentTimeSlotId;
     return `
-      <section class="slot-header${slot.isBreak ? " break-slot" : ""}" style="--slot-color: ${escapeHtml(slot.color ?? "#6b7280")}">
+      <section class="slot-header${slot.isBreak ? " break-slot" : ""}${isActive ? " active-slot" : ""}" style="--slot-color: ${escapeHtml(slot.color ?? "#6b7280")}">
         <p>${formatTime(startTimeMinutes)} - ${formatTime(endTimeMinutes)}</p>
         <strong class="slot-label">${escapeHtml(slot.label)}</strong>
+        ${isActive ? "<span class=\"slot-active-badge\">Active</span>" : ""}
         ${this.#showSlotDetails ? `
           <div class="slot-details">
           <form data-action="update-slot">
@@ -589,6 +627,13 @@ export class EventPlannerView extends BaseComponent {
           <button type="button" class="icon-button" data-click-action="delete-slot" data-id="${escapeHtml(slot.id)}"${assignmentCount > 0 ? " disabled" : ""} aria-label="Delete time slot" title="Delete time slot">×</button>
           </div>
         ` : ""}
+        <div class="slot-actions">
+          ${isActive
+            ? nextSlotId
+              ? `<button type="button" data-click-action="advance-time-slot" data-next-slot-id="${escapeHtml(nextSlotId)}">Next time slot</button>`
+              : ""
+            : `<button type="button" data-click-action="set-current-time-slot" data-id="${escapeHtml(slot.id)}">Make active</button>`}
+        </div>
       </section>
     `;
   }

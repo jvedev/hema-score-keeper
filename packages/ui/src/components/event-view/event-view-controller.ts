@@ -197,6 +197,12 @@ function onAppClick(event: MouseEvent): void {
     case "set-stage-tab":
       setStageTab(target.dataset.tab as StageTab);
       return;
+    case "set-current-stage":
+      void setTournamentCurrentStage(target.dataset.stageId);
+      return;
+    case "advance-stage":
+      void setTournamentCurrentStage(target.dataset.nextStageId);
+      return;
     default:
       return;
   }
@@ -578,6 +584,7 @@ function renderShell(): string {
   const event = currentEvent();
   const tournament = event ? currentTournament(event) : undefined;
   const stage = currentStage(tournament);
+  const activeStage = activeTournamentStage(tournament);
   const eventSummary = event ? summarizeEvent(event) : null;
   const tournamentSummary = event && tournament ? summarizeTournament(event, tournament) : null;
   return `
@@ -593,6 +600,9 @@ function renderShell(): string {
           </p>
         </div>
         <div class="topbar-actions">
+          ${event
+            ? `<div class="badge">${escapeHtml(activeStage ? `Actieve fase: ${stageLabel(activeStage)}` : "Geen actieve fase")}</div>`
+            : ""}
           <div class="badge">${escapeHtml(eventSummary ? eventSummary.ruleset : "Geen ruleset")}</div>
           <div class="badge badge-muted">${eventSummary ? `${eventSummary.tournaments} toernooien` : "0 toernooien"}</div>
           <div class="badge badge-muted">${eventSummary ? `${eventSummary.arenas} arenas` : "0 arenas"}</div>
@@ -981,7 +991,26 @@ function renderTournamentTab(event: ApiEvent, tournament: ApiTournament): string
     case "officials":
       return renderTournamentOfficials(tournament);
     case "stages":
-      return renderStageList(event, tournament, currentStage(tournament));
+      return `
+        <div class="stage-workspace">
+          ${renderStageList(event, tournament, currentStage(tournament))}
+          <div class="stage-detail">
+            ${currentStage(tournament)
+              ? renderTabBar(
+                  "stage",
+                  state.stageTab,
+                  [
+                    { value: "overview", label: "Overzicht" },
+                    { value: "arenas", label: "Arenas" },
+                    { value: "officials", label: "Vrijwilligers" },
+                    { value: "rounds", label: "Rondes" },
+                    { value: "matches", label: "Matches" },
+                  ],
+                ) + `<div class="panel-body">${renderStageTab(event, tournament, currentStage(tournament)!)}</div>`
+              : renderEmptyCard("Selecteer een stage.")}
+          </div>
+        </div>
+      `;
   }
 }
 
@@ -1179,16 +1208,21 @@ function renderStageList(event: ApiEvent, tournament: ApiTournament, selectedSta
     return renderEmptyCard("Geen stages in dit toernooi.");
   }
 
+  const activeStage = activeTournamentStage(tournament);
   return `
     <div class="list">
       ${tournament.stages
         .map((stage) => {
           const summary = summarizeStage(event, tournament, stage);
+          const isActive = activeStage?.id === stage.id;
           return `
             <div class="info-card list-item ${selectedStage?.id === stage.id ? "is-active" : ""}" data-action="select-stage" data-id="${escapeHtml(stage.id)}">
                 <span class="list-title">${escapeHtml(stageLabel(stage))}</span>
                 <span class="list-meta">${escapeHtml(summary.ruleset)}</span>
                 <span class="list-stats">${summary.rounds} rondes · ${summary.matches} matches</span>
+                <div class="badge-row">
+                  ${isActive ? `<span class="badge badge-muted">Huidige fase</span>` : ""}
+                </div>
               ${renderResourceActions("stage", stage.id, stageLabel(stage))}
             </div>
           `;
@@ -1200,6 +1234,8 @@ function renderStageList(event: ApiEvent, tournament: ApiTournament, selectedSta
 
 function renderStageOverview(event: ApiEvent, tournament: ApiTournament, stage: ApiStage): string {
   const summary = summarizeStage(event, tournament, stage);
+  const activeStage = activeTournamentStage(tournament);
+  const nextStage = activeStage?.id === stage.id ? nextTournamentStage(tournament, stage) : undefined;
   return `
     <div class="detail-grid">
       <div class="metric-card">
@@ -1237,12 +1273,20 @@ function renderStageOverview(event: ApiEvent, tournament: ApiTournament, stage: 
       <div class="badge-row">
         <span class="badge badge-muted">${escapeHtml(stage.type)}</span>
         <span class="badge badge-muted">${summary.matches} matches</span>
+        <span class="badge badge-muted">${activeStage?.id === stage.id ? "Huidige fase" : `Actieve fase: ${escapeHtml(stageLabel(activeStage ?? stage))}`}</span>
         ${stage.type === "POOL"
           ? `<span class="badge badge-muted">Pool ${stage.minPoolSize ?? 4}-${stage.maxPoolSize ?? 6} · voorkeur ${stage.preferredPoolSize ?? 5}</span>`
           : ""}
         ${stage.type === "ELIMINATION"
           ? `<span class="badge badge-muted">Naar eliminatie ${stage.eliminationParticipantCount ?? 5}</span>`
           : ""}
+      </div>
+      <div class="card-actions">
+        ${activeStage?.id === stage.id
+          ? nextStage
+            ? `<button type="button" class="button" data-action="advance-stage" data-next-stage-id="${escapeHtml(nextStage.id)}">Volgende fase</button>`
+            : `<span class="badge badge-muted">Laatste fase</span>`
+          : `<button type="button" class="button" data-action="set-current-stage" data-stage-id="${escapeHtml(stage.id)}">Maak actief</button>`}
       </div>
     </div>
   `;
@@ -1551,6 +1595,28 @@ function selectStage(id?: string): void {
 
   state.selectedStageId = id;
   render();
+}
+
+async function setTournamentCurrentStage(stageId?: string): Promise<void> {
+  const event = currentEvent();
+  const tournament = event ? currentTournament(event) : undefined;
+  if (!event || !tournament || !stageId) {
+    return;
+  }
+
+  state.loading = true;
+  state.error = null;
+  render();
+
+  try {
+    await api.updateTournament(tournament.id, { currentStageId: stageId });
+    state.selectedStageId = stageId;
+    await bootstrap();
+  } catch (error) {
+    state.loading = false;
+    state.error = toErrorMessage(error);
+    render();
+  }
 }
 
 function setEventTab(tab: EventTab): void {
@@ -2103,7 +2169,42 @@ function currentStage(tournament: ApiTournament | undefined): ApiStage | undefin
     return undefined;
   }
 
-  return tournament.stages.find((stage) => stage.id === state.selectedStageId) ?? tournament.stages[0];
+  return tournament.stages.find((stage) => stage.id === state.selectedStageId) ?? activeTournamentStage(tournament);
+}
+
+function activeTournamentStage(tournament: ApiTournament | undefined): ApiStage | undefined {
+  if (!tournament) {
+    return undefined;
+  }
+
+  if (tournament.currentStageId) {
+    const active = tournament.stages.find((stage) => stage.id === tournament.currentStageId);
+    if (active) {
+      return active;
+    }
+  }
+
+  for (const type of stageProgression) {
+    const candidate = tournament.stages.find((stage) => stage.type === type);
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return tournament.stages[0];
+}
+
+function nextTournamentStage(tournament: ApiTournament, stage: ApiStage): ApiStage | undefined {
+  const startIndex = stageProgression.indexOf(stage.type);
+  const nextTypes = stageProgression.slice(startIndex + 1);
+  for (const type of nextTypes) {
+    const candidate = tournament.stages.find((item) => item.type === type);
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return undefined;
 }
 
 function summarizeEvent(event: ApiEvent): {
@@ -2143,12 +2244,15 @@ function summarizeStage(event: ApiEvent, tournament: ApiTournament, stage: ApiSt
   rounds: number;
   matches: number;
 } {
+  const arenas = stage.arenas ?? [];
+  const officials = stage.officials ?? [];
+  const rounds = stage.rounds ?? [];
   return {
     ruleset: rulesetLabel(stage.ruleset ?? tournament.ruleset ?? event.ruleset),
-    arenas: stage.arenas.length,
-    officials: stage.officials.length,
-    rounds: stage.rounds.length,
-    matches: stage.rounds.reduce((count, round) => count + round.matches.length, 0),
+    arenas: arenas.length,
+    officials: officials.length,
+    rounds: rounds.length,
+    matches: rounds.reduce((count, round) => count + (round.matches ?? []).length, 0),
   };
 }
 
@@ -2223,6 +2327,8 @@ function roleName(role: StageOfficialRole): string {
 function stageLabel(stage: ApiStage): string {
   return stage.name ? stage.name : stage.type;
 }
+
+const stageProgression: ApiStage["type"][] = ["POOL", "ELIMINATION", "SEMI_FINAL", "FINAL"];
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) {

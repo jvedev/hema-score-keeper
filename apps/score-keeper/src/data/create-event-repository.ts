@@ -1,9 +1,10 @@
 import type { EventRepository } from "./event-repository";
 import { EventApi } from "./api/event-api";
 import { MockEventRepository } from "./mock/mock-event-repository";
+import { shouldUseMockApi } from "./use-mock-api";
 
 export function createEventRepository(): EventRepository {
-  if (import.meta.env.VITE_USE_MOCK_API !== "false") {
+  if (shouldUseMockApi()) {
     return new MockEventRepository();
   }
 

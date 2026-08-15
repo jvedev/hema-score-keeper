@@ -149,6 +149,32 @@ describe("event-view", () => {
     expect((mock.entries[0]?.user.skills ?? []).find((skill) => skill.skillName === "JUDGE")?.skillLevel).toBe(4);
   });
 
+  it("advances the current tournament stage", async () => {
+    const mock = installEventViewMock();
+
+    await import("./event-view");
+    const element = document.createElement("event-view");
+    document.body.appendChild(element);
+    await flush();
+
+    const stageListTab = await waitForElement<HTMLButtonElement>(element, 'button[data-action="set-tournament-tab"][data-tab="stages"]');
+    stageListTab.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    await flush();
+
+    const overviewTab = await waitForElement<HTMLButtonElement>(element, 'button[data-action="set-stage-tab"][data-tab="overview"]');
+    overviewTab.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    await flush();
+
+    const activeStageCard = await waitForElement<HTMLElement>(element, 'div[data-action="select-stage"][data-id="stage-1"]');
+    activeStageCard.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    await flush();
+
+    const advanceButton = await waitForElement<HTMLButtonElement>(element, 'button[data-action="advance-stage"]');
+    advanceButton.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    await waitForCondition(() => mock.event.tournaments[0]?.currentStageId === "stage-2");
+    await waitForText(element, "Actieve fase: Elimination");
+  });
+
   it("keeps judge skills after updating and removes duplicate judge entries", async () => {
     const mock = installEventViewMock();
     mock.entries.push(
@@ -191,13 +217,14 @@ function installEventViewMock() {
   const entries: ApiEntry[] = [];
   const eventId = "event-1";
   const tournamentId = "tournament-1";
+  const event = buildEvent();
 
   globalThis.fetch = async (input, init) => {
     const request = input instanceof Request ? input : new Request(input, init);
     const pathname = new URL(request.url).pathname;
 
     if (request.method === "GET" && pathname.includes("/events")) {
-      return jsonResponse([buildEvent()]);
+      return jsonResponse([event]);
     }
 
     if (request.method === "GET" && pathname.includes("/users")) {
@@ -282,6 +309,18 @@ function installEventViewMock() {
       return jsonResponse(user);
     }
 
+    const tournamentMatch = pathname.match(/^\/api\/v1\/tournaments\/([^/]+)$/);
+    if (tournamentMatch && request.method === "PATCH") {
+      if (tournamentMatch[1] !== tournamentId) {
+        throw new Error(`Unexpected tournament request: ${request.method} ${request.url}`);
+      }
+      const body = (await request.json()) as { currentStageId?: string | null };
+      if (body.currentStageId !== undefined) {
+        event.tournaments[0]!.currentStageId = body.currentStageId;
+      }
+      return jsonResponse(event.tournaments[0]);
+    }
+
     throw new Error(`Unexpected request: ${request.method} ${request.url}`);
   };
   window.fetch = globalThis.fetch;
@@ -299,10 +338,42 @@ function installEventViewMock() {
           eventId,
           name: "Open",
           ruleset: null,
+          currentStageId: "stage-1",
           order: 0,
           color: "#ffcc00",
           entries,
-          stages: [],
+          stages: [
+            {
+              id: "stage-1",
+              tournamentId,
+              type: "POOL",
+              name: "Pools",
+              ruleset: null,
+              minPoolSize: 4,
+              maxPoolSize: 6,
+              preferredPoolSize: 5,
+              eliminationParticipantCount: null,
+              timeBetweenMatchesMinutes: 2,
+              rounds: [],
+              arenas: [],
+              officials: [],
+            },
+            {
+              id: "stage-2",
+              tournamentId,
+              type: "ELIMINATION",
+              name: "Elimination",
+              ruleset: null,
+              minPoolSize: null,
+              maxPoolSize: null,
+              preferredPoolSize: null,
+              eliminationParticipantCount: 8,
+              timeBetweenMatchesMinutes: 2,
+              rounds: [],
+              arenas: [],
+              officials: [],
+            },
+          ],
         },
       ],
       arenas: [],
@@ -310,6 +381,7 @@ function installEventViewMock() {
   }
 
   return {
+    event,
     users,
     entries,
     restore() {

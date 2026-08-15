@@ -152,6 +152,7 @@ export interface ApiEventSchedule {
   id: string;
   eventId: string;
   startTimeMinutes: number;
+  currentTimeSlotId: string | null;
   timeSlots: ApiScheduleTimeSlot[];
 }
 
@@ -165,6 +166,7 @@ export interface ApiTournament {
   eventId: string;
   name: string;
   ruleset: ApiRuleset | null;
+  currentStageId?: string | null;
   order: number;
   color: string;
   entries: ApiEntry[];
@@ -176,6 +178,7 @@ export interface ApiEvent {
   eventName: string;
   ruleset: ApiRuleset | null;
   allFightersAreVolunteers: boolean;
+  schedule?: ApiEventSchedule | null;
   tournaments: ApiTournament[];
   arenas: ApiArena[];
   rulesets: ApiRuleset[];
@@ -215,7 +218,7 @@ export interface ApiClient {
   updateEvent(id: string, body: { eventName?: string; rulesetId?: string | null; allFightersAreVolunteers?: boolean }): Promise<ApiEventMutationResult>;
   deleteEvent(id: string): Promise<void>;
   getEventSchedule(eventId: string): Promise<ApiEventScheduleResponse>;
-  updateEventSchedule(eventId: string, body: { startTimeMinutes: number }): Promise<ApiEventSchedule>;
+  updateEventSchedule(eventId: string, body: { startTimeMinutes?: number; currentTimeSlotId?: string | null }): Promise<ApiEventSchedule>;
   createScheduleTimeSlot(
     eventId: string,
     body: { durationMinutes: number; label: string; color?: string | null; isBreak?: boolean },
@@ -270,6 +273,7 @@ export interface ApiClient {
       name?: string;
       order?: number;
       rulesetId?: string | null;
+      currentStageId?: string | null;
     },
   ): Promise<ApiTournament>;
   listTournaments(): Promise<ApiTournament[]>;

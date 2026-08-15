@@ -22,7 +22,7 @@ describe("start-screen-view", () => {
         { id: "arena-2", name: "Ring 2" },
       ],
       selectedArenaId: "arena-1",
-      activeStageLabel: "Open · Pool",
+      activeTimeSlotLabel: "Open · Block 1",
       fightSummary: "2 fights",
       inactiveMessage: null,
       fights: [
@@ -58,7 +58,7 @@ describe("start-screen-view", () => {
       selectedEventId: "event-1",
       arenaOptions: [{ id: "arena-1", name: "Ring 1" }],
       selectedArenaId: "arena-1",
-      activeStageLabel: null,
+      activeTimeSlotLabel: null,
       fightSummary: null,
       inactiveMessage: null,
       fights: [],
@@ -94,7 +94,7 @@ describe("start-screen-view", () => {
       selectedEventId: "event-1",
       arenaOptions: [{ id: "arena-1", name: "Ring 1" }],
       selectedArenaId: "arena-1",
-      activeStageLabel: "Open · Pool",
+      activeTimeSlotLabel: "Open · Block 1",
       fightSummary: "1 fight",
       inactiveMessage: null,
       fights: [

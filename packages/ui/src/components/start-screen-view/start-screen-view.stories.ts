@@ -17,7 +17,7 @@ const meta = {
         { id: "arena-2", name: "Ring 2" },
       ],
       selectedArenaId: "arena-1",
-      activeStageLabel: "Open · Pool",
+      activeTimeSlotLabel: "Open · Block 1",
       fightSummary: "2 fights",
       inactiveMessage: null,
       fights: [

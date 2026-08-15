@@ -27,7 +27,7 @@ export interface StartScreenConfig {
   selectedEventId: string | null;
   arenaOptions: readonly StartScreenArenaOption[];
   selectedArenaId: string | null;
-  activeStageLabel: string | null;
+  activeTimeSlotLabel: string | null;
   fightSummary: string | null;
   inactiveMessage: string | null;
   fights: readonly StartScreenFight[];
@@ -41,7 +41,7 @@ export class StartScreenView extends BaseComponent {
     selectedEventId: null,
     arenaOptions: [],
     selectedArenaId: null,
-    activeStageLabel: null,
+    activeTimeSlotLabel: null,
     fightSummary: null,
     inactiveMessage: null,
     fights: [],
@@ -97,9 +97,9 @@ export class StartScreenView extends BaseComponent {
       arenaSelect.disabled = true;
       return;
     } else {
-      statusCopy.textContent = config.inactiveMessage ?? "Choose an event and arena to load the active stage fights.";
+      statusCopy.textContent = config.inactiveMessage ?? "Choose an event and arena to load the active time slot fights.";
       statusCopy.classList.toggle("is-error", Boolean(config.inactiveMessage));
-      stageBadge.textContent = config.activeStageLabel ?? "No active stage";
+      stageBadge.textContent = config.activeTimeSlotLabel ?? "No active time slot";
       fightBadge.textContent = config.fightSummary ?? "";
     }
 

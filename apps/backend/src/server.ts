@@ -108,6 +108,22 @@ const eventDetailInclude: Prisma.EventInclude = {
   rulesets: {
     orderBy: [{ name: "asc" }, { version: "desc" }],
   },
+  schedule: {
+    include: {
+      timeSlots: {
+        orderBy: { order: "asc" },
+        include: {
+          scheduledPhases: {
+            include: {
+              stage: { include: { tournament: true } },
+              arena: true,
+              assignments: { include: { user: { include: { skills: true } } } },
+            },
+          },
+        },
+      },
+    },
+  },
   tournaments: {
     orderBy: tournamentOrderBy,
     include: {
@@ -117,7 +133,7 @@ const eventDetailInclude: Prisma.EventInclude = {
         include: {
           ruleset: true,
           tournament: { include: { event: true } },
-          rounds: true,
+          rounds: { include: { matches: true } },
           arenas: { include: { arena: true } },
           officials: { include: { entry: { include: { user: true } } } },
         },
@@ -135,7 +151,7 @@ const tournamentDetailInclude = {
     include: {
       ruleset: true,
       tournament: { include: { event: true } },
-      rounds: true,
+      rounds: { include: { matches: true } },
       arenas: { include: { arena: true } },
       officials: { include: { entry: { include: { user: true } } } },
     },
@@ -151,7 +167,7 @@ const entryDetailInclude = {
 const stageDetailInclude = {
   tournament: { include: { event: true } },
   ruleset: true,
-  rounds: true,
+  rounds: { include: { matches: true } },
   arenas: { include: { arena: true } },
   officials: { include: { entry: { include: { user: true } } } },
 } as const;
@@ -376,6 +392,7 @@ async function deleteSkill(_request: IncomingMessage, params: Record<string, str
 }
 
 async function listEvents(): Promise<unknown> {
+  await syncAllPlannerArtifacts();
   return prisma.event.findMany({
     orderBy: { eventName: "asc" },
     include: eventDetailInclude,
@@ -432,7 +449,7 @@ async function createTournament(request: IncomingMessage): Promise<unknown> {
     ?? tournamentColors[event.tournaments.length % tournamentColors.length]
     ?? "#5B8CFF";
 
-  return prisma.tournament.create({
+  const tournament = await prisma.tournament.create({
     data: {
       eventId,
       name,
@@ -450,6 +467,19 @@ async function createTournament(request: IncomingMessage): Promise<unknown> {
     },
     include: tournamentDetailInclude,
   });
+
+  const currentStageId =
+    tournament.stages.find((stage) => stage.type === "POOL")?.id ??
+    tournament.stages[0]?.id;
+  if (!currentStageId) {
+    return tournament;
+  }
+
+  return prisma.tournament.update({
+    where: { id: tournament.id },
+    data: { currentStageId },
+    include: tournamentDetailInclude,
+  });
 }
 
 async function getTournament(_request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
@@ -459,7 +489,7 @@ async function getTournament(_request: IncomingMessage, params: Record<string, s
 async function updateTournament(request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
   const body = ensureObject(await readJsonBody(request), "Tournament");
   const currentTournament = await requireTournament(routeId(params));
-  const data: { eventId?: string; name?: string; rulesetId?: string | null; order?: number } = {};
+  const data: { eventId?: string; name?: string; rulesetId?: string | null; currentStageId?: string | null; order?: number } = {};
 
   if (body.eventId !== undefined) {
     const eventId = requireString(body.eventId, "Event ID");
@@ -481,6 +511,17 @@ async function updateTournament(request: IncomingMessage, params: Record<string,
   }
   if (body.order !== undefined) {
     data.order = requirePositiveInteger(body.order, "Tournament order");
+  }
+  if (body.currentStageId !== undefined) {
+    if (body.currentStageId === null) {
+      data.currentStageId = null;
+    } else {
+      const currentStage = await requireStage(requireString(body.currentStageId, "Current stage ID"));
+      if (currentStage.tournamentId !== currentTournament.id) {
+        throw new HttpError(400, "Current stage must belong to the same tournament.");
+      }
+      data.currentStageId = currentStage.id;
+    }
   }
   const nextEventId = data.eventId ?? currentTournament.eventId;
   const nextRulesetId = data.rulesetId === undefined ? currentTournament.rulesetId : data.rulesetId;
@@ -621,6 +662,7 @@ async function updateRuleset(request: IncomingMessage, params: Record<string, st
 
 async function getEventSchedule(_request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
   const eventId = routeId(params);
+  await syncEventArtifacts(eventId);
   const event = await requireEvent(eventId);
   const schedule = await getOrCreateSchedule(eventId);
   return { event, schedule };
@@ -632,9 +674,20 @@ async function updateEventSchedule(
 ): Promise<unknown> {
   const body = ensureObject(await readJsonBody(request), "Event schedule");
   const schedule = await getOrCreateSchedule(routeId(params));
-  const data: { startTimeMinutes?: number } = {};
+  const data: { startTimeMinutes?: number; currentTimeSlotId?: string | null } = {};
   if (body.startTimeMinutes !== undefined) {
     data.startTimeMinutes = requireTimeOfDay(body.startTimeMinutes);
+  }
+  if (body.currentTimeSlotId !== undefined) {
+    if (body.currentTimeSlotId === null) {
+      data.currentTimeSlotId = null;
+    } else {
+      const timeSlot = await requireScheduleTimeSlot(requireString(body.currentTimeSlotId, "Current time slot ID"));
+      if (timeSlot.scheduleId !== schedule.id) {
+        throw new HttpError(400, "Current time slot must belong to the same event schedule.");
+      }
+      data.currentTimeSlotId = timeSlot.id;
+    }
   }
 
   return prisma.eventSchedule.update({
@@ -729,6 +782,7 @@ async function deleteScheduleTimeSlot(
   }
 
   await prisma.scheduleTimeSlot.delete({ where: { id: timeSlot.id } });
+  await syncStageArtifacts([...new Set(timeSlot.scheduledPhases.map((phase) => phase.stageId))]);
   return undefined;
 }
 
@@ -739,10 +793,12 @@ async function createScheduledPhase(request: IncomingMessage): Promise<unknown> 
   const timeSlotId = requireString(body.timeSlotId, "Time slot ID");
   await validateScheduledPhase(stageId, arenaId, timeSlotId);
 
-  return prisma.scheduledPhase.create({
+  const scheduledPhase = await prisma.scheduledPhase.create({
     data: { stageId, arenaId, timeSlotId },
     include: scheduledPhaseDetailInclude,
   });
+  await syncStageArtifacts([stageId]);
+  return scheduledPhase;
 }
 
 async function updateScheduledPhase(
@@ -758,15 +814,19 @@ async function updateScheduledPhase(
     : requireString(body.timeSlotId, "Time slot ID");
   await validateScheduledPhase(stageId, arenaId, timeSlotId, existing.id);
 
-  return prisma.scheduledPhase.update({
+  const scheduledPhase = await prisma.scheduledPhase.update({
     where: { id: existing.id },
     data: { stageId, arenaId, timeSlotId },
     include: scheduledPhaseDetailInclude,
   });
+  await syncStageArtifacts([existing.stageId, stageId]);
+  return scheduledPhase;
 }
 
 async function deleteScheduledPhase(_request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
-  await prisma.scheduledPhase.delete({ where: { id: routeId(params) } });
+  const existing = await requireScheduledPhase(routeId(params));
+  await prisma.scheduledPhase.delete({ where: { id: existing.id } });
+  await syncStageArtifacts([existing.stageId]);
   return undefined;
 }
 
@@ -815,14 +875,25 @@ async function createScheduledAssignment(request: IncomingMessage, params: Recor
   if (assignedRoleCount >= roleLimit) {
     throw new HttpError(409, `${role} already has the maximum of ${roleLimit} assignment${roleLimit === 1 ? "" : "s"}.`);
   }
-  return prisma.scheduledAssignment.create({
+  const assignment = await prisma.scheduledAssignment.create({
     data: { scheduledPhaseId: scheduledPhase.id, userId, role },
     include: { user: { include: { skills: true } } },
   });
+  await syncStageArtifacts([scheduledPhase.stageId]);
+  return assignment;
 }
 
 async function deleteScheduledAssignment(_request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
-  await prisma.scheduledAssignment.delete({ where: { id: routeId(params) } });
+  const assignment = await prisma.scheduledAssignment.findUnique({
+    where: { id: routeId(params) },
+    include: { scheduledPhase: true },
+  });
+  if (!assignment) {
+    throw new HttpError(404, `Scheduled assignment "${routeId(params)}" not found.`);
+  }
+
+  await prisma.scheduledAssignment.delete({ where: { id: assignment.id } });
+  await syncStageArtifacts([assignment.scheduledPhase.stageId]);
   return undefined;
 }
 
@@ -1623,6 +1694,263 @@ async function requireScheduledPhase(id: string) {
     throw new HttpError(404, `Scheduled phase "${id}" not found.`);
   }
   return scheduledPhase;
+}
+
+async function syncAllPlannerArtifacts(): Promise<void> {
+  const stages = await prisma.stage.findMany({ select: { id: true } });
+  await syncStageArtifacts(stages.map((stage) => stage.id));
+}
+
+async function syncEventArtifacts(eventId: string): Promise<void> {
+  const stages = await prisma.stage.findMany({
+    where: { tournament: { eventId } },
+    select: { id: true },
+  });
+  await syncStageArtifacts(stages.map((stage) => stage.id));
+}
+
+async function syncStageArtifacts(stageIds: readonly string[]): Promise<void> {
+  for (const stageId of new Set(stageIds)) {
+    await syncStageArtifactsForStage(stageId);
+  }
+}
+
+async function syncStageArtifactsForStage(stageId: string): Promise<void> {
+  const stage = await prisma.stage.findUnique({
+    where: { id: stageId },
+    include: {
+      tournament: { include: { event: true } },
+      scheduledPhases: {
+        include: {
+          arena: true,
+          timeSlot: { include: { schedule: true } },
+          assignments: { include: { user: true } },
+        },
+      },
+      rounds: {
+        include: { matches: true },
+      },
+    },
+  });
+  if (!stage) {
+    return;
+  }
+
+  const desiredArenaIds = [...new Set(stage.scheduledPhases.map((phase) => phase.arenaId))];
+  await syncStageArenas(stage.id, desiredArenaIds);
+
+  if (stage.type !== "POOL") {
+    return;
+  }
+
+  const desiredMatches = await buildDesiredPoolMatches(stage);
+  await syncStageMatches(stage, desiredMatches);
+}
+
+async function syncStageArenas(stageId: string, desiredArenaIds: readonly string[]): Promise<void> {
+  await prisma.stageArena.deleteMany({
+    where: {
+      stageId,
+      ...(desiredArenaIds.length > 0 ? { arenaId: { notIn: [...desiredArenaIds] } } : {}),
+    },
+  });
+
+  const existing = await prisma.stageArena.findMany({
+    where: { stageId },
+    select: { arenaId: true },
+  });
+  const existingArenaIds = new Set(existing.map((assignment) => assignment.arenaId));
+  for (const arenaId of desiredArenaIds) {
+    if (existingArenaIds.has(arenaId)) {
+      continue;
+    }
+    await prisma.stageArena.create({
+      data: { stageId, arenaId },
+    });
+  }
+}
+
+interface GeneratedPoolMatch {
+  key: string;
+  roundNumber: number;
+  arenaId: string;
+  entryAId: string;
+  entryBId: string;
+  rulesetId: string | null;
+}
+
+async function buildDesiredPoolMatches(stage: {
+  id: string;
+  tournamentId: string;
+  tournament: {
+    rulesetId: string | null;
+    event: {
+      rulesetId: string | null;
+    };
+  };
+  rulesetId: string | null;
+  scheduledPhases: Array<{
+    arenaId: string;
+    timeSlot: { order: number };
+    arena: { order: number };
+    assignments: Array<{ role: string; userId: string }>;
+  }>;
+}): Promise<GeneratedPoolMatch[]> {
+  const fighterUserIds = [...new Set(stage.scheduledPhases.flatMap((phase) =>
+    phase.assignments
+      .filter((assignment) => assignment.role === "FIGHTER")
+      .map((assignment) => assignment.userId),
+  ))];
+  if (fighterUserIds.length === 0) {
+    return [];
+  }
+
+  const entries = await prisma.entry.findMany({
+    where: {
+      tournamentId: stage.tournamentId,
+      userId: { in: fighterUserIds },
+    },
+    orderBy: [{ seed: "asc" }, { id: "asc" }],
+  });
+  const entryByUserId = new Map(entries.map((entry) => [entry.userId, entry]));
+  const rulesetId = stage.rulesetId ?? stage.tournament.rulesetId ?? stage.tournament.event.rulesetId ?? null;
+
+  const matches: GeneratedPoolMatch[] = [];
+  const phases = [...stage.scheduledPhases].sort((left, right) =>
+    left.timeSlot.order - right.timeSlot.order ||
+    left.arena.order - right.arena.order ||
+    left.arenaId.localeCompare(right.arenaId),
+  );
+
+  for (const phase of phases) {
+    const fighters = phase.assignments
+      .filter((assignment) => assignment.role === "FIGHTER")
+      .map((assignment) => entryByUserId.get(assignment.userId))
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+      .sort((left, right) =>
+        (left.seed ?? Number.MAX_SAFE_INTEGER) - (right.seed ?? Number.MAX_SAFE_INTEGER) ||
+        left.id.localeCompare(right.id),
+      );
+
+    for (let index = 0; index < fighters.length; index += 1) {
+      for (let opponentIndex = index + 1; opponentIndex < fighters.length; opponentIndex += 1) {
+        const entryA = fighters[index]!;
+        const entryB = fighters[opponentIndex]!;
+        matches.push({
+          key: matchKey(phase.arenaId, entryA.id, entryB.id),
+          roundNumber: phase.timeSlot.order,
+          arenaId: phase.arenaId,
+          entryAId: entryA.id,
+          entryBId: entryB.id,
+          rulesetId,
+        });
+      }
+    }
+  }
+
+  return matches;
+}
+
+async function syncStageMatches(
+  stage: {
+    id: string;
+    rounds: Array<{
+      id: string;
+      roundNumber: number;
+      matches: Array<{
+        id: string;
+        arenaId: string | null;
+        entryAId: string | null;
+        entryBId: string | null;
+      }>;
+    }>;
+  },
+  desiredMatches: GeneratedPoolMatch[],
+): Promise<void> {
+  const desiredRounds = new Map<number, GeneratedPoolMatch[]>();
+  for (const match of desiredMatches) {
+    const roundMatches = desiredRounds.get(match.roundNumber) ?? [];
+    roundMatches.push(match);
+    desiredRounds.set(match.roundNumber, roundMatches);
+  }
+
+  const existingRoundsByNumber = new Map(stage.rounds.map((round) => [round.roundNumber, round] as const));
+  const desiredRoundNumbers = [...desiredRounds.keys()].sort((left, right) => left - right);
+  for (const roundNumber of desiredRoundNumbers) {
+    let round = existingRoundsByNumber.get(roundNumber);
+    if (!round) {
+      round = await prisma.round.create({
+        data: {
+          stageId: stage.id,
+          roundNumber,
+        },
+        include: { matches: true },
+      });
+      existingRoundsByNumber.set(roundNumber, round);
+    }
+    await syncRoundMatches(round, desiredRounds.get(roundNumber) ?? []);
+  }
+}
+
+async function syncRoundMatches(
+  round: {
+    id: string;
+    matches: Array<{
+      id: string;
+      arenaId: string | null;
+      entryAId: string | null;
+      entryBId: string | null;
+    }>;
+  },
+  desiredMatches: GeneratedPoolMatch[],
+): Promise<void> {
+  const existingMatches = await prisma.match.findMany({
+    where: { roundId: round.id },
+  });
+  const existingByKey = new Map<string, (typeof existingMatches)[number]>();
+  for (const match of existingMatches) {
+    existingByKey.set(matchKey(match.arenaId, match.entryAId, match.entryBId), match);
+  }
+
+  const desiredByKey = new Map(desiredMatches.map((match) => [match.key, match] as const));
+  for (const desired of desiredMatches) {
+    const existing = existingByKey.get(desired.key);
+    if (existing) {
+      await prisma.match.update({
+        where: { id: existing.id },
+        data: {
+          arenaId: desired.arenaId,
+          entryAId: desired.entryAId,
+          entryBId: desired.entryBId,
+          rulesetId: desired.rulesetId,
+        },
+      });
+      continue;
+    }
+
+    await prisma.match.create({
+      data: {
+        roundId: round.id,
+        arenaId: desired.arenaId,
+        entryAId: desired.entryAId,
+        entryBId: desired.entryBId,
+        rulesetId: desired.rulesetId,
+      },
+    });
+  }
+
+  for (const existing of existingMatches) {
+    if (!desiredByKey.has(matchKey(existing.arenaId, existing.entryAId, existing.entryBId))) {
+      await prisma.match.delete({ where: { id: existing.id } });
+    }
+  }
+}
+
+function matchKey(arenaId: string | null, entryAId: string | null, entryBId: string | null): string {
+  const left = entryAId ?? "";
+  const right = entryBId ?? "";
+  const [first, second] = [left, right].sort();
+  return `${arenaId ?? ""}:${first}:${second}`;
 }
 
 async function validateScheduledPhase(

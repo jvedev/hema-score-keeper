@@ -29,26 +29,21 @@ Een nieuw component scaffold je met:
 node .github/skills/ui-component/scripts/create-ui-component.mjs --name hema-example
 ```
 
-## Arena API
+## Score-keeper API
 
-De app gebruikt standaard mockdata uit
-`apps/score-keeper/src/data/mock/fixtures/arenas.ts`. Zet voor de echte API de
-volgende variabelen in `apps/score-keeper/.env.local`:
+De app gebruikt standaard de backend via `/api/v1`. De Vite-devserver proxy't
+dat pad naar `http://localhost:3001`.
+
+Zet alleen deze variabelen in `apps/score-keeper/.env.local` als je een andere
+backend wilt gebruiken of bewust mockdata wilt afdwingen:
 
 ```sh
-VITE_USE_MOCK_API=false
 VITE_API_BASE_URL=https://api.example.com
+VITE_USE_MOCK_API=true
 ```
 
-De arena-adapter roept `GET /api/v1/arena/{arenaId}` aan. Het eerste gebruikte
-arena-ID is `arena-1`. De arena-response bevat ook `selectedBout`, inclusief de
-IDs en namen van `fighterA` en `fighterB`; deze namen worden in alle
-wedstrijdweergaven gebruikt.
-
-De rule-set-adapter volgt hetzelfde patroon en roept
-`GET /api/v1/rule-set/{ruleSetId}` aan. De mock bevat voorlopig
-`rule-set-1`; deze repository is nog niet aan de interface gekoppeld. Alle
-API-payloads gebruiken camelCase.
+De event-, arena- en rule-set-adapters gebruiken dezelfde backend als de rest
+van de app. Als backend- en UI-data ooit verschillen, is de backend leidend.
 
 ## Backend
 

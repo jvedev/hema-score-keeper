@@ -4,6 +4,7 @@ import type {
   ApiArena,
   ApiEvent,
   ApiMatch,
+  ApiScheduleTimeSlot,
   ApiStage,
   ApiTournament,
 } from "@hema/event-admin-api";
@@ -29,16 +30,17 @@ declare global {
   }
 }
 
-interface ActiveStageSelection {
+interface ActiveTimeSlotSelection {
   tournament: ApiTournament;
   stage: ApiStage;
+  timeSlot: ApiScheduleTimeSlot;
   matches: ApiMatch[];
 }
 
 interface CurrentSelection {
   event: ApiEvent | undefined;
   arena: ApiArena | undefined;
-  stageSelection: ActiveStageSelection | undefined;
+  timeSlotSelection: ActiveTimeSlotSelection | undefined;
 }
 
 function requireElement<ElementType extends Element>(
@@ -165,8 +167,8 @@ async function beginFightMode(
   replaceUrl = false,
 ): Promise<void> {
   const selection = resolveCurrentSelection();
-  const stageSelection = selection.stageSelection;
-  if (!selection.event || !selection.arena || !stageSelection) {
+  const timeSlotSelection = selection.timeSlotSelection;
+  if (!selection.event || !selection.arena || !timeSlotSelection) {
     await exitFightMode();
     syncStartUrl();
     showStartScreen();
@@ -175,28 +177,28 @@ async function beginFightMode(
   }
 
   const match =
-    resolveMatch(stageSelection, selection.arena.id, matchId) ??
-    stageSelection.matches[0];
+    resolveMatch(timeSlotSelection, selection.arena.id, matchId) ??
+    timeSlotSelection.matches[0];
   if (!match) {
     await exitFightMode();
     syncStartUrl();
     showStartScreen();
-    renderStartScreen("No fights are assigned to the selected arena.");
+    renderStartScreen("No fights are assigned to the selected time slot.");
     return;
   }
 
   const ruleSetId =
     match.ruleset?.id ??
-    stageSelection.stage.ruleset?.id ??
-    stageSelection.tournament.ruleset?.id ??
+    timeSlotSelection.stage.ruleset?.id ??
+    timeSlotSelection.tournament.ruleset?.id ??
     selection.event.ruleset?.id;
   if (!ruleSetId) {
     throw new Error("A ruleset is required to start the fight view.");
   }
 
   const ruleSet = await ruleSetRepository.getRuleSet(ruleSetId);
-  const fighterA = resolveEntry(stageSelection.tournament, match.entryAId);
-  const fighterB = resolveEntry(stageSelection.tournament, match.entryBId);
+  const fighterA = resolveEntry(timeSlotSelection.tournament, match.entryAId);
+  const fighterB = resolveEntry(timeSlotSelection.tournament, match.entryBId);
   if (!fighterA || !fighterB) {
     throw new Error(`Match "${match.id}" references an unknown fighter.`);
   }
@@ -229,11 +231,11 @@ async function beginFightMode(
   });
 
   fightView.configureArena({
-    name: `${selection.arena.name} · ${stageDisplayName(stageSelection.stage)}`,
+    name: `${selection.arena.name} · ${timeSlotSelection.timeSlot.label}`,
     fighterAName: fighterA.user.username,
     fighterBName: fighterB.user.username,
     leftFighterStyle: {
-      backgroundColor: stageSelection.tournament.color,
+      backgroundColor: timeSlotSelection.tournament.color,
       textColor: "#071a0d",
     },
     rightFighterStyle: {
@@ -251,7 +253,7 @@ async function beginFightMode(
     fighterA: {
       name: fighterA.user.username,
       score: match.scoreA ?? 0,
-      backgroundColor: stageSelection.tournament.color,
+      backgroundColor: timeSlotSelection.tournament.color,
       textColor: "#071a0d",
     },
     fighterB: {
@@ -264,7 +266,7 @@ async function beginFightMode(
   warningView.configure({
     fighterA: {
       name: fighterA.user.username,
-      backgroundColor: stageSelection.tournament.color,
+      backgroundColor: timeSlotSelection.tournament.color,
       textColor: "#071a0d",
     },
     fighterB: {
@@ -372,7 +374,7 @@ function buildLoadingConfig() {
     selectedEventId: null,
     arenaOptions: [],
     selectedArenaId: null,
-    activeStageLabel: null,
+    activeTimeSlotLabel: null,
     fightSummary: null,
     inactiveMessage: null,
     fights: [],
@@ -381,13 +383,13 @@ function buildLoadingConfig() {
 
 function buildStartScreenConfig(inactiveMessage?: string) {
   const selection = resolveCurrentSelection();
-  const fights = selection.stageSelection
-    ? buildFightCards(selection.stageSelection, selection.arena?.id)
+  const fights = selection.timeSlotSelection
+    ? buildFightCards(selection.timeSlotSelection, selection.arena?.id)
     : [];
-  const activeStageLabel = selection.stageSelection
-    ? `${selection.stageSelection.tournament.name} · ${stageDisplayName(selection.stageSelection.stage)}`
+  const activeTimeSlotLabel = selection.timeSlotSelection
+    ? `${selection.timeSlotSelection.tournament.name} · ${selection.timeSlotSelection.timeSlot.label}`
     : null;
-  const fightSummary = selection.stageSelection
+  const fightSummary = selection.timeSlotSelection
     ? `${fights.length} fight${fights.length === 1 ? "" : "s"}`
     : null;
 
@@ -403,13 +405,13 @@ function buildStartScreenConfig(inactiveMessage?: string) {
       ? selection.event.arenas.map((arena) => ({ id: arena.id, name: arena.name }))
       : [],
     selectedArenaId: selection.arena?.id ?? null,
-    activeStageLabel,
+    activeTimeSlotLabel,
     fightSummary,
     inactiveMessage:
       inactiveMessage ??
-      (selection.stageSelection
+      (selection.timeSlotSelection
         ? fights.length === 0
-          ? "No fights are assigned to this arena yet."
+          ? "No fights are assigned to this arena in the active time slot yet."
           : null
         : "Event not active for the selected arena."),
     fights,
@@ -423,47 +425,61 @@ function resolveCurrentSelection(): CurrentSelection {
     return {
       event: undefined,
       arena: undefined,
-      stageSelection: undefined,
+      timeSlotSelection: undefined,
     };
   }
 
   const arena =
     event.arenas.find((candidate) => candidate.id === selectedArenaId) ??
     event.arenas[0];
-  const stageSelection = arena ? findActiveStage(event, arena.id) : undefined;
-  return { event, arena, stageSelection };
+  const timeSlotSelection = arena ? findActiveTimeSlot(event, arena.id) : undefined;
+  return { event, arena, timeSlotSelection };
 }
 
-function findActiveStage(
+function findActiveTimeSlot(
   event: ApiEvent,
   arenaId: string,
-): ActiveStageSelection | undefined {
-  for (const tournament of event.tournaments) {
-    for (const stage of tournament.stages) {
-      const matches = collectMatches(stage, arenaId);
-      if (matches.length > 0) {
-        return { tournament, stage, matches };
-      }
-    }
+): ActiveTimeSlotSelection | undefined {
+  const schedule = event.schedule;
+  if (!schedule?.currentTimeSlotId) {
+    return undefined;
   }
 
-  return undefined;
+  const timeSlot = schedule.timeSlots.find((candidate) => candidate.id === schedule.currentTimeSlotId);
+  if (!timeSlot) {
+    return undefined;
+  }
+
+  const placement = timeSlot.scheduledPhases.find((candidate) => candidate.arenaId === arenaId);
+  if (!placement) {
+    return undefined;
+  }
+
+  const tournament = event.tournaments.find((candidate) => candidate.id === placement.stage.tournament.id);
+  const stage = tournament?.stages.find((candidate) => candidate.id === placement.stage.id);
+  if (!tournament || !stage) {
+    return undefined;
+  }
+
+  return {
+    tournament,
+    stage,
+    timeSlot,
+    matches: collectMatches(stage, arenaId, timeSlot.order),
+  };
 }
 
-function collectMatches(stage: ApiStage, arenaId: string): ApiMatch[] {
-  const matches: ApiMatch[] = [];
-  for (const round of stage.rounds) {
-    for (const match of round.matches) {
-      if (match.arenaId === arenaId) {
-        matches.push(match);
-      }
-    }
+function collectMatches(stage: ApiStage, arenaId: string, roundNumber: number): ApiMatch[] {
+  const round = stage.rounds.find((candidate) => candidate.roundNumber === roundNumber);
+  if (!round) {
+    return [];
   }
-  return matches;
+
+  return round.matches.filter((match) => match.arenaId === arenaId);
 }
 
 function buildFightCards(
-  stageSelection: ActiveStageSelection,
+  timeSlotSelection: ActiveTimeSlotSelection,
   arenaId?: string,
 ): Array<{
   id: string;
@@ -484,42 +500,37 @@ function buildFightCards(
     statusLabel: string;
   }> = [];
 
-  for (const round of stageSelection.stage.rounds) {
-    for (const match of round.matches) {
-      if (match.arenaId !== arenaId) {
-        continue;
-      }
-      const fighterA = resolveEntry(stageSelection.tournament, match.entryAId);
-      const fighterB = resolveEntry(stageSelection.tournament, match.entryBId);
-      if (!fighterA || !fighterB) {
-        continue;
-      }
-      cards.push({
-        id: match.id,
-        roundLabel: `Round ${round.roundNumber}`,
-        fighterAName: fighterA.user.username,
-        fighterBName: fighterB.user.username,
-        statusLabel: matchStatusLabel(match),
-      });
+  for (const match of timeSlotSelection.matches) {
+    const fighterA = resolveEntry(timeSlotSelection.tournament, match.entryAId);
+    const fighterB = resolveEntry(timeSlotSelection.tournament, match.entryBId);
+    if (!fighterA || !fighterB) {
+      continue;
     }
+    cards.push({
+      id: match.id,
+      roundLabel: timeSlotSelection.timeSlot.label,
+      fighterAName: fighterA.user.username,
+      fighterBName: fighterB.user.username,
+      statusLabel: matchStatusLabel(match),
+    });
   }
 
   return cards;
 }
 
 function resolveMatch(
-  stageSelection: ActiveStageSelection,
+  timeSlotSelection: ActiveTimeSlotSelection,
   arenaId: string,
   matchId?: string,
 ): ApiMatch | undefined {
   if (matchId) {
-    const explicit = stageSelection.matches.find((match) => match.id === matchId);
+    const explicit = timeSlotSelection.matches.find((match) => match.id === matchId);
     if (explicit) {
       return explicit;
     }
   }
 
-  return stageSelection.matches.find((match) => match.arenaId === arenaId);
+  return timeSlotSelection.matches.find((match) => match.arenaId === arenaId);
 }
 
 function resolveEntry(
@@ -541,10 +552,6 @@ function matchStatusLabel(match: ApiMatch): string {
     return "In progress";
   }
   return "Ready";
-}
-
-function stageDisplayName(stage: ApiStage): string {
-  return stage.name ?? stage.type.replaceAll("_", " ").toLowerCase();
 }
 
 function selectEvent(eventId: string): void {
