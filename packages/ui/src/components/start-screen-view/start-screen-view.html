@@ -1,0 +1,39 @@
+<div class="start-screen-view">
+  <header class="hero">
+    <div>
+      <p>HEMA Scorebox</p>
+      <h1>Tournament mode</h1>
+      <span id="status-copy"></span>
+    </div>
+    <div class="hero-badges">
+      <span class="badge" id="stage-badge"></span>
+      <span class="badge" id="fight-badge"></span>
+    </div>
+  </header>
+
+  <main class="content">
+    <section class="panel">
+      <div class="field-grid">
+        <label class="field">
+          <span>Event</span>
+          <select id="event-select"></select>
+        </label>
+        <label class="field">
+          <span>Arena</span>
+          <select id="arena-select"></select>
+        </label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header class="section-header">
+        <div>
+          <h2>Fights</h2>
+          <p id="fight-summary"></p>
+        </div>
+      </header>
+      <div id="message" class="message"></div>
+      <div id="fight-list" class="fight-list"></div>
+    </section>
+  </main>
+</div>

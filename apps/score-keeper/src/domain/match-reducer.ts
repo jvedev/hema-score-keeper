@@ -76,10 +76,11 @@ export function reduceMatchEvent(
 export function replayMatchEvents(
   events: readonly MatchEventDetail[],
   rules: MatchParameters,
+  initialState = createInitialMatchState(),
 ): MatchState {
   return events.reduce(
     (state, event) => reduceMatchEvent(state, event, rules),
-    createInitialMatchState(),
+    initialState,
   );
 }
 

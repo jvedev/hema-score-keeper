@@ -20,6 +20,10 @@
       "types": "./src/components/event-planner-view/event-planner-view.ts",
       "default": "./src/components/event-planner-view/event-planner-view.ts"
     },
+    "./start-screen-view": {
+      "types": "./src/components/start-screen-view/start-screen-view.ts",
+      "default": "./src/components/start-screen-view/start-screen-view.ts"
+    },
     "./ruleset-view": {
       "types": "./src/components/ruleset-view/ruleset-view.ts",
       "default": "./src/components/ruleset-view/ruleset-view.ts"

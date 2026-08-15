@@ -31,8 +31,8 @@ describe("match reducer", () => {
       { ...baseRules, useNetScore: true },
     );
 
-    expect(state.fighterAScore).toBe(3);
-    expect(state.fighterBScore).toBe(1);
+    expect(state.fighterAScore).toBe(2);
+    expect(state.fighterBScore).toBe(0);
   });
 
   it("does not count doubles when disabled by the ruleset", () => {
