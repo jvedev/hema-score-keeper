@@ -269,4 +269,5 @@ enum ScheduleRole {
   JUDGE
   JURY
   TABLE
+  FIGHTER
 }

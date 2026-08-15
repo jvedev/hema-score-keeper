@@ -777,15 +777,23 @@ async function createScheduledAssignment(request: IncomingMessage, params: Recor
   const role = parseScheduleRole(body.role);
   const user = await requireUser(userId);
   const eventId = scheduledPhase.arena.eventId;
+  const allowedKinds: Array<"FIGHTER" | "VOLUNTEER" | "BOTH"> = role === "FIGHTER"
+    ? ["FIGHTER", "BOTH"]
+    : ["VOLUNTEER", "BOTH"];
   const eligible = await prisma.entry.findFirst({
     where: {
       userId,
       tournament: { eventId },
-      kind: { in: ["VOLUNTEER", "BOTH"] },
+      kind: { in: allowedKinds },
     },
   });
   if (!eligible) {
-    throw new HttpError(400, `${user.username} is not a volunteer for this event.`);
+    throw new HttpError(400, role === "FIGHTER"
+      ? `${user.username} is not registered as a fighter for this event.`
+      : `${user.username} is not a volunteer for this event.`);
+  }
+  if (role === "FIGHTER" && eligible.tournamentId !== scheduledPhase.stage.tournamentId) {
+    throw new HttpError(400, `${user.username} is not registered for this tournament.`);
   }
   const conflict = await prisma.scheduledAssignment.findFirst({
     where: {
@@ -799,9 +807,13 @@ async function createScheduledAssignment(request: IncomingMessage, params: Recor
   const assignedRoleCount = await prisma.scheduledAssignment.count({
     where: { scheduledPhaseId: scheduledPhase.id, role },
   });
-  const roleLimit = role === "JURY" ? 4 : 1;
+  const roleLimit = role === "JURY"
+    ? 4
+    : role === "FIGHTER"
+      ? Math.max(1, scheduledPhase.stage.maxPoolSize ?? scheduledPhase.stage.preferredPoolSize ?? 1)
+      : 1;
   if (assignedRoleCount >= roleLimit) {
-    throw new HttpError(409, `${role} already has the maximum of ${roleLimit} volunteer${roleLimit === 1 ? "" : "s"}.`);
+    throw new HttpError(409, `${role} already has the maximum of ${roleLimit} assignment${roleLimit === 1 ? "" : "s"}.`);
   }
   return prisma.scheduledAssignment.create({
     data: { scheduledPhaseId: scheduledPhase.id, userId, role },
@@ -1782,12 +1794,12 @@ function requireTimeSlotDuration(value: unknown): number {
   return durationMinutes;
 }
 
-function parseScheduleRole(value: unknown): "JUDGE" | "JURY" | "TABLE" {
+function parseScheduleRole(value: unknown): "JUDGE" | "JURY" | "TABLE" | "FIGHTER" {
   const role = requireString(value, "Schedule role");
-  if (!["JUDGE", "JURY", "TABLE"].includes(role)) {
-    throw new HttpError(400, "Schedule role must be JUDGE, JURY, or TABLE.");
+  if (!["JUDGE", "JURY", "TABLE", "FIGHTER"].includes(role)) {
+    throw new HttpError(400, "Schedule role must be JUDGE, JURY, TABLE, or FIGHTER.");
   }
-  return role as "JUDGE" | "JURY" | "TABLE";
+  return role as "JUDGE" | "JURY" | "TABLE" | "FIGHTER";
 }
 
 function requireTimeOfDay(value: unknown): number {

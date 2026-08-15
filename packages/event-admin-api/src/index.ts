@@ -1,7 +1,7 @@
 export type StageType = "POOL" | "ELIMINATION" | "SEMI_FINAL" | "FINAL";
 export type EntryKind = "FIGHTER" | "VOLUNTEER" | "BOTH";
 export type StageOfficialRole = "JUDGE" | "JURY" | "TELLER" | "TABLE";
-export type ScheduleRole = "JUDGE" | "JURY" | "TABLE";
+export type ScheduleRole = "JUDGE" | "JURY" | "TABLE" | "FIGHTER";
 
 export interface ApiPenaltyRule {
   description: string;

@@ -6,6 +6,7 @@ import {
   type ApiEvent,
   type ApiEventSchedule,
   type ApiEventScheduleResponse,
+  type ApiEntry,
   type ApiSkill,
   type ApiRuleset,
   type ApiScheduledPhase,
@@ -23,8 +24,10 @@ export class EventPlannerView extends BaseComponent {
   #loading = false;
   #showSlotDetails = false;
   #showSuggestions = false;
-  #mode: "stages" | "volunteers" = "stages";
+  #mode: "stages" | "volunteers" | "fighters" = "stages";
   #dragging = false;
+  #dragSourceParticipant: { kind: "volunteer" | "fighter"; userId: string; tournamentId: string } | undefined;
+  #assigningFighters = false;
 
   connectedCallback(): void {
     this.#eventId = new URLSearchParams(window.location.search).get("eventId") ?? undefined;
@@ -170,8 +173,16 @@ export class EventPlannerView extends BaseComponent {
       return;
     }
     if (actionElement.dataset.clickAction === "set-mode") {
-      this.#mode = actionElement.dataset.mode === "volunteers" ? "volunteers" : "stages";
+      this.#mode = actionElement.dataset.mode === "volunteers"
+        ? "volunteers"
+        : actionElement.dataset.mode === "fighters"
+          ? "fighters"
+          : "stages";
       this.renderPlanner();
+      return;
+    }
+    if (actionElement.dataset.clickAction === "random-assign-fighters") {
+      void this.handleRandomAssignFighters();
       return;
     }
 
@@ -211,15 +222,16 @@ export class EventPlannerView extends BaseComponent {
     }
 
     const phase = source.closest<HTMLElement>("[data-stage-id]");
-    const volunteer = source.closest<HTMLElement>("[data-user-id]");
+    const participant = source.closest<HTMLElement>("[data-user-id][data-participant-kind][data-tournament-id]");
     const placement = source.closest<HTMLElement>("[data-placement-id]");
-    if (!placement && !phase && !volunteer) {
+    if (!placement && !phase && !participant) {
       return;
     }
 
     this.#dragging = true;
     this.root.host.toggleAttribute("data-dragging", true);
     this.clearHoveredVolunteer();
+    this.clearActiveDropTargets();
     if (!event.dataTransfer) {
       return;
     }
@@ -228,8 +240,24 @@ export class EventPlannerView extends BaseComponent {
       event.dataTransfer.setData("application/x-hema-scheduled-phase", placement.dataset.placementId ?? "");
     } else if (phase) {
       event.dataTransfer.setData("application/x-hema-stage", phase.dataset.stageId ?? "");
-    } else if (volunteer) {
-      event.dataTransfer.setData("application/x-hema-volunteer", volunteer.dataset.userId ?? "");
+    } else if (participant) {
+      const participantId = participant.dataset.userId ?? "";
+      if (participant.dataset.participantKind === "fighter") {
+        event.dataTransfer.setData("application/x-hema-fighter", participantId);
+        this.#dragSourceParticipant = {
+          kind: "fighter",
+          userId: participantId,
+          tournamentId: participant.dataset.tournamentId ?? "",
+        };
+        this.updateParticipantDropzoneStates();
+      } else {
+        event.dataTransfer.setData("application/x-hema-volunteer", participantId);
+        this.#dragSourceParticipant = {
+          kind: "volunteer",
+          userId: participantId,
+          tournamentId: participant.dataset.tournamentId ?? "",
+        };
+      }
     }
 
     event.dataTransfer.effectAllowed = "move";
@@ -241,9 +269,20 @@ export class EventPlannerView extends BaseComponent {
       return;
     }
 
+    const fighterDropzone = target.closest<HTMLElement>("[data-assignment-phase-id][data-role='FIGHTER']");
+    if (fighterDropzone && this.#dragSourceParticipant?.kind === "fighter") {
+      if (fighterDropzone.dataset.dropPossible === "true") {
+        event.preventDefault();
+        this.clearActiveDropTargets();
+        fighterDropzone.dataset.dropActive = "true";
+      }
+      return;
+    }
+
     const cell = target.closest<HTMLElement>("[data-assignment-phase-id], [data-arena-id][data-time-slot-id]");
     if (cell && cell.dataset.break !== "true") {
       event.preventDefault();
+      this.clearActiveDropTargets();
       cell.dataset.dropActive = "true";
     }
   }
@@ -278,15 +317,23 @@ export class EventPlannerView extends BaseComponent {
     const stageId = event.dataTransfer.getData("application/x-hema-stage");
     const placementId = event.dataTransfer.getData("application/x-hema-scheduled-phase");
     const volunteerId = event.dataTransfer.getData("application/x-hema-volunteer");
+    const fighterId = event.dataTransfer.getData("application/x-hema-fighter");
     const assignmentPhaseId = cell.dataset.assignmentPhaseId;
     const role = cell.dataset.role as ScheduleRole | undefined;
-    if (volunteerId && assignmentPhaseId && role) {
+    const participantId = fighterId || volunteerId;
+    if (participantId && assignmentPhaseId && role) {
+      const dropState = this.getParticipantDropState(assignmentPhaseId, participantId, role);
+      if (!dropState.valid) {
+        this.#error = dropState.reason ?? "This participant cannot be assigned to that time slot.";
+        this.renderPlanner();
+        return;
+      }
       try {
-        const assignment = await this.#api.createScheduledAssignment(assignmentPhaseId, { userId: volunteerId, role });
+        const assignment = await this.#api.createScheduledAssignment(assignmentPhaseId, { userId: participantId, role });
         this.addAssignmentToSchedule(assignmentPhaseId, assignment);
         this.renderPlanner();
       } catch (error) {
-        this.#error = error instanceof Error ? error.message : "The volunteer could not be assigned.";
+        this.#error = error instanceof Error ? error.message : "The assignment could not be saved.";
         this.renderPlanner();
       }
       return;
@@ -352,15 +399,23 @@ export class EventPlannerView extends BaseComponent {
   }
 
   private renderSchedule(event: ApiEvent, schedule: ApiEventSchedule): string {
-    const slots = schedule.timeSlots;
+    const allSlots = schedule.timeSlots;
+    const slots = this.#mode === "fighters"
+      ? allSlots.filter((slot) => slot.scheduledPhases.some((phase) => phase.stage.type === "POOL"))
+      : allSlots;
+    if (this.#mode === "fighters" && slots.length === 0) {
+      return `<div class="planner-empty">No pool time slots are visible for fighter assignments.</div>`;
+    }
     const columnTemplate = `11rem ${slots.map((slot) => `${Math.max(12, slot.durationMinutes / 4)}rem`).join(" ")}`;
     const currentStart = schedule.startTimeMinutes;
     let start = currentStart;
-    const slotHeaders = slots.map((slot) => {
-      const header = this.renderSlotHeader(slot, start);
-      start += slot.durationMinutes;
-      return header;
-    }).join("");
+    const slotHeaders = allSlots
+      .map((slot) => {
+        const header = this.renderSlotHeader(slot, start);
+        start += slot.durationMinutes;
+        return slots.includes(slot) ? header : "";
+      })
+      .join("");
 
     return `
       <div class="planner-controls">
@@ -381,7 +436,15 @@ export class EventPlannerView extends BaseComponent {
           <div class="planner-mode-tabs">
             <button type="button" data-click-action="set-mode" data-mode="stages" aria-pressed="${this.#mode === "stages"}">Tournament stages</button>
             <button type="button" data-click-action="set-mode" data-mode="volunteers" aria-pressed="${this.#mode === "volunteers"}">Volunteers</button>
+            <button type="button" data-click-action="set-mode" data-mode="fighters" aria-pressed="${this.#mode === "fighters"}">Fighters</button>
           </div>
+          ${this.#mode === "fighters" ? `
+            <div class="phase-sidebar-actions">
+              <button type="button" class="random-assign-button" data-click-action="random-assign-fighters" ${this.#assigningFighters || this.#loading ? "disabled" : ""}>
+                ${this.#assigningFighters ? "Assigning fighters..." : "Random assign fighters"}
+              </button>
+            </div>
+          ` : ""}
           <div class="phase-sidebar-content">
             ${this.#mode === "stages"
               ? event.tournaments.map((tournament) => `
@@ -394,7 +457,9 @@ export class EventPlannerView extends BaseComponent {
                 `).join("")}
               </section>
             `).join("")
-              : this.renderVolunteerList(event)}
+              : this.#mode === "volunteers"
+                ? this.renderVolunteerList(event)
+                : this.renderFighterList(event)}
           </div>
         </aside>
         <div class="timeline-scroll">
@@ -539,7 +604,11 @@ export class EventPlannerView extends BaseComponent {
             ${this.#mode === "stages"
               ? `<button type="button" data-click-action="delete-placement" data-id="${escapeHtml(placement.id)}" aria-label="Delete stage placement" title="Delete stage placement">×</button>`
               : ""}
-            ${this.#mode === "volunteers" ? this.renderAssignmentDropzones(placement) : ""}
+            ${this.#mode === "volunteers"
+              ? this.renderAssignmentDropzones(placement, "volunteers")
+              : this.#mode === "fighters" && placement.stage.type === "POOL"
+                ? this.renderAssignmentDropzones(placement, "fighters")
+                : ""}
           </article>
         ` : slot.isBreak ? "<span>Break</span>" : "<span class=\"drop-hint\">Drag a stage here</span>"}
       </div>
@@ -558,7 +627,7 @@ export class EventPlannerView extends BaseComponent {
       const skills = renderVolunteerSkills(volunteer.skills ?? []);
       const tooltip = renderVolunteerTooltip(volunteer.username, volunteer.skills ?? []);
       return `
-      <button class="volunteer-source" type="button" draggable="true" data-user-id="${escapeHtml(userId)}" data-volunteer-hover-key="source:${escapeHtml(userId)}">
+      <button class="volunteer-source" type="button" draggable="true" data-user-id="${escapeHtml(userId)}" data-participant-kind="volunteer" data-tournament-id="" data-volunteer-hover-key="source:${escapeHtml(userId)}">
         <strong>${escapeHtml(volunteer.username)}</strong>
         ${skills ? `<div class="volunteer-skills">${skills}</div>` : ""}
         ${tooltip}
@@ -567,18 +636,64 @@ export class EventPlannerView extends BaseComponent {
     }).join("") || "<p class=\"planner-empty\">No volunteers are available for this event.</p>";
   }
 
-  private renderAssignmentDropzones(placement: ApiScheduledPhase): string {
-    return `<div class="assignment-dropzones">${(["JUDGE", "JURY", "TABLE"] as const).map((role) => {
+  private renderFighterList(event: ApiEvent): string {
+    const assignedParticipantIds = this.getAssignedFighterParticipantIds();
+    const sections = event.tournaments
+      .map((tournament) => {
+        const fighters = tournament.entries.filter((entry) =>
+          (entry.kind === "FIGHTER" || entry.kind === "BOTH") && !assignedParticipantIds.has(entry.userId),
+        );
+        if (fighters.length === 0) {
+          return "";
+        }
+
+        return `
+          <section class="tournament-participants" style="--tournament-color: ${escapeHtml(tournament.color)}">
+            <h3>${escapeHtml(tournament.name)}</h3>
+            ${fighters.map((entry) => this.renderFighterSource(entry, tournament.name, tournament.color)).join("")}
+          </section>
+        `;
+      })
+      .join("");
+
+    return sections || "<p class=\"planner-empty\">No fighters are available for this event.</p>";
+  }
+
+  private renderFighterSource(entry: ApiEntry, tournamentName: string, tournamentColor: string): string {
+    const seedLabel = entry.seed === null ? "" : `Seed ${entry.seed}`;
+    return `
+      <button class="fighter-source" type="button" draggable="true" data-user-id="${escapeHtml(entry.userId)}" data-participant-kind="fighter" data-tournament-id="${escapeHtml(entry.tournamentId)}" style="--tournament-color: ${escapeHtml(tournamentColor)}">
+        <span class="fighter-source-dot" aria-hidden="true"></span>
+        <span class="fighter-source-text">
+          <strong>${escapeHtml(entry.user.username)}</strong>
+          <span>${escapeHtml(tournamentName)}${seedLabel ? ` · ${escapeHtml(seedLabel)}` : ""}</span>
+        </span>
+      </button>
+    `;
+  }
+
+  private renderAssignmentDropzones(placement: ApiScheduledPhase, mode: "volunteers" | "fighters"): string {
+    const roles = mode === "fighters" ? (["FIGHTER"] as const) : (["JUDGE", "JURY", "TABLE"] as const);
+    return `<div class="assignment-dropzones">${roles.map((role) => {
       const assignments = placement.assignments?.filter((candidate) => candidate.role === role) ?? [];
-      return `<div class="assignment-dropzone" data-assignment-phase-id="${escapeHtml(placement.id)}" data-role="${role}">
-        <span>${role}</span>
-        <div class="assignment-volunteers">
-          ${assignments.map((assignment) => `
+      const emptyLabel = role === "FIGHTER" ? "Drop contender" : "Drop volunteer";
+      const roleLabel = role === "FIGHTER" ? "Contenders" : role;
+      const limit = role === "JURY" ? 4 : role === "FIGHTER" ? this.getFighterLimit(placement) : 1;
+      return `<div class="assignment-dropzone" data-assignment-phase-id="${escapeHtml(placement.id)}" data-role="${role}" data-role-limit="${limit}"${role === "FIGHTER" ? ` style="--fighter-slot-count: ${limit}"` : ""}>
+        <div class="assignment-dropzone-header">
+          <span>${roleLabel}</span>
+          ${role === "FIGHTER" ? `<span class="assignment-dropzone-count">${assignments.length}/${limit}</span>` : ""}
+        </div>
+        <small class="assignment-dropzone-hint">${emptyLabel}</small>
+        <div class="assignment-volunteers${role === "FIGHTER" ? " fighter-assignment-volunteers" : ""}">
+          ${mode === "fighters"
+            ? this.renderFighterAssignmentSlots(assignments, limit)
+            : assignments.map((assignment) => `
             <span class="assignment-volunteer" data-volunteer-hover-key="assignment:${escapeHtml(assignment.id)}">${escapeHtml(assignment.user.username)}
               <button type="button" data-click-action="delete-assignment" data-id="${escapeHtml(assignment.id)}" aria-label="Remove ${escapeHtml(assignment.user.username)}" title="Remove ${escapeHtml(assignment.user.username)}">×</button>
               ${renderVolunteerTooltip(assignment.user.username, assignment.user.skills ?? [])}
             </span>
-          `).join("") || "<em>Drop volunteer</em>"}
+          `).join("") || `<em>${emptyLabel}</em>`}
         </div>
       </div>`;
     }).join("")}</div>`;
@@ -599,8 +714,11 @@ export class EventPlannerView extends BaseComponent {
   
   private handleDragEnd(): void {
     this.#dragging = false;
+    this.#dragSourceParticipant = undefined;
     this.root.host.toggleAttribute("data-dragging", false);
     this.clearHoveredVolunteer();
+    this.clearActiveDropTargets();
+    this.clearParticipantDropzoneStates();
   }
 
   private handleVolunteerMouseOver(event: MouseEvent): void {
@@ -651,6 +769,277 @@ export class EventPlannerView extends BaseComponent {
       delete hovered.dataset.hovered;
     }
   }
+
+  private clearActiveDropTargets(): void {
+    this.root.querySelectorAll<HTMLElement>("[data-drop-active='true']").forEach((element) => {
+      delete element.dataset.dropActive;
+    });
+  }
+
+  private clearParticipantDropzoneStates(): void {
+    this.root.querySelectorAll<HTMLElement>("[data-assignment-phase-id]").forEach((element) => {
+      delete element.dataset.dropPossible;
+      delete element.dataset.dropReason;
+      const hint = element.querySelector<HTMLElement>(".assignment-dropzone-hint");
+      if (hint) {
+        hint.textContent = element.dataset.role === "FIGHTER" ? "Drop contender" : "Drop volunteer";
+      }
+    });
+  }
+
+  private updateParticipantDropzoneStates(): void {
+    this.clearParticipantDropzoneStates();
+    const dragSource = this.#dragSourceParticipant;
+    if (!dragSource || dragSource.kind !== "fighter" || !this.#scheduleData) {
+      return;
+    }
+
+    for (const dropzone of this.root.querySelectorAll<HTMLElement>("[data-assignment-phase-id][data-role='FIGHTER']")) {
+      const phase = this.findScheduledPhase(dropzone.dataset.assignmentPhaseId ?? "");
+      if (!phase) {
+        continue;
+      }
+
+      const dropState = this.getParticipantDropState(phase.id, dragSource.userId, "FIGHTER");
+      dropzone.dataset.dropPossible = String(dropState.valid);
+      if (!dropState.valid) {
+        dropzone.dataset.dropReason = dropState.reason ?? "Unavailable";
+      }
+      const hint = dropzone.querySelector<HTMLElement>(".assignment-dropzone-hint");
+      if (hint) {
+        hint.textContent = dropState.valid ? "Drop contender" : dropState.reason ?? "Unavailable";
+      }
+    }
+  }
+
+  private getParticipantDropState(scheduledPhaseId: string, participantId: string, role: ScheduleRole): { valid: boolean; reason?: string } {
+    const phase = this.findScheduledPhase(scheduledPhaseId);
+    if (!phase) {
+      return { valid: false, reason: "This target is unavailable." };
+    }
+
+    if (role === "FIGHTER") {
+      const participantTournamentId = this.#dragSourceParticipant?.userId === participantId
+        ? this.#dragSourceParticipant.tournamentId
+        : this.findParticipantTournamentId(participantId);
+      if (!participantTournamentId || phase.stage.tournament.id !== participantTournamentId) {
+        return { valid: false, reason: "This contender belongs to a different tournament." };
+      }
+
+      const fighterCount = phase.assignments.filter((assignment) => assignment.role === "FIGHTER").length;
+      if (fighterCount >= this.getFighterLimit(phase)) {
+        return { valid: false, reason: "This contender slot is already full." };
+      }
+    }
+
+    const timeSlot = this.findTimeSlotForScheduledPhase(scheduledPhaseId);
+    if (!timeSlot) {
+      return { valid: false, reason: "This target is unavailable." };
+    }
+
+    const alreadyBooked = timeSlot.scheduledPhases.some((candidate) =>
+      candidate.assignments.some((assignment) => assignment.userId === participantId),
+    );
+    if (alreadyBooked) {
+      return { valid: false, reason: "This participant is already booked in that time slot." };
+    }
+
+    return { valid: true };
+  }
+
+  private findScheduledPhase(scheduledPhaseId: string): ApiScheduledPhase | undefined {
+    for (const timeSlot of this.#scheduleData?.schedule.timeSlots ?? []) {
+      const scheduledPhase = timeSlot.scheduledPhases.find((candidate) => candidate.id === scheduledPhaseId);
+      if (scheduledPhase) {
+        return scheduledPhase;
+      }
+    }
+    return undefined;
+  }
+
+  private findTimeSlotForScheduledPhase(scheduledPhaseId: string): ApiScheduleTimeSlot | undefined {
+    return this.#scheduleData?.schedule.timeSlots.find((timeSlot) =>
+      timeSlot.scheduledPhases.some((candidate) => candidate.id === scheduledPhaseId),
+    );
+  }
+
+  private findParticipantTournamentId(participantId: string): string | undefined {
+    for (const tournament of this.#scheduleData?.event.tournaments ?? []) {
+      if (tournament.entries.some((entry) => entry.userId === participantId)) {
+        return tournament.id;
+      }
+    }
+    return undefined;
+  }
+
+  private getFighterLimit(placement: ApiScheduledPhase): number {
+    return Math.max(1, placement.stage.maxPoolSize ?? placement.stage.preferredPoolSize ?? 1);
+  }
+
+  private renderFighterAssignmentSlots(assignments: NonNullable<ApiScheduledPhase["assignments"]>, limit: number): string {
+    const slotCount = Math.max(limit, assignments.length);
+    return Array.from({ length: slotCount }, (_value, index) => {
+      const assignment = assignments[index];
+      if (!assignment) {
+        return `<div class="fighter-assignment-slot fighter-assignment-slot-empty"><em>Open slot</em></div>`;
+      }
+
+      return `
+        <span class="fighter-assignment-slot fighter-assignment-slot-filled" data-volunteer-hover-key="assignment:${escapeHtml(assignment.id)}">
+          <span class="fighter-assignment-slot-name">${escapeHtml(assignment.user.username)}</span>
+          <button type="button" data-click-action="delete-assignment" data-id="${escapeHtml(assignment.id)}" aria-label="Remove ${escapeHtml(assignment.user.username)}" title="Remove ${escapeHtml(assignment.user.username)}">×</button>
+          ${renderVolunteerTooltip(assignment.user.username, assignment.user.skills ?? [])}
+        </span>
+      `;
+    }).join("");
+  }
+
+  private getAssignedFighterParticipantIds(): Set<string> {
+    const assignedParticipantIds = new Set<string>();
+    for (const timeSlot of this.#scheduleData?.schedule.timeSlots ?? []) {
+      for (const scheduledPhase of timeSlot.scheduledPhases) {
+        for (const assignment of scheduledPhase.assignments ?? []) {
+          if (assignment.role === "FIGHTER") {
+            assignedParticipantIds.add(assignment.userId);
+          }
+        }
+      }
+    }
+    return assignedParticipantIds;
+  }
+
+  private async handleRandomAssignFighters(): Promise<void> {
+    const scheduleData = this.#scheduleData;
+    if (!scheduleData) {
+      return;
+    }
+
+    this.#assigningFighters = true;
+    this.#error = undefined;
+    this.renderPlanner();
+
+    try {
+      const usedFighterIds = this.getAssignedFighterParticipantIds();
+      const blockedTimeSlotsByUserId = this.buildBlockedTimeSlotsByUserId(scheduleData.schedule.timeSlots);
+      const shuffledFighters = this.shuffle(
+        scheduleData.event.tournaments.flatMap((tournament) =>
+          tournament.entries
+            .filter((entry) => (entry.kind === "FIGHTER" || entry.kind === "BOTH") && !usedFighterIds.has(entry.userId))
+            .map((entry) => ({ entry, tournament })),
+        ),
+      );
+
+      const poolStates = this.buildPoolStates(scheduleData.schedule.timeSlots);
+      const tournamentPoolStates = new Map<string, Array<PoolState>>();
+      for (const poolState of poolStates) {
+        const states = tournamentPoolStates.get(poolState.tournamentId) ?? [];
+        states.push(poolState);
+        tournamentPoolStates.set(poolState.tournamentId, states);
+      }
+
+      for (const fighter of shuffledFighters) {
+        const candidates = (tournamentPoolStates.get(fighter.tournament.id) ?? [])
+          .filter((phaseState) =>
+            phaseState.assignedCount < phaseState.limit
+            && !(blockedTimeSlotsByUserId.get(fighter.entry.userId)?.has(phaseState.timeSlotId) ?? false),
+          )
+          .sort((left, right) => {
+            const leftPriority = left.assignedCount < left.preferredCount ? 0 : 1;
+            const rightPriority = right.assignedCount < right.preferredCount ? 0 : 1;
+            if (leftPriority !== rightPriority) {
+              return leftPriority - rightPriority;
+            }
+            if (left.assignedCount !== right.assignedCount) {
+              return left.assignedCount - right.assignedCount;
+            }
+            return Math.random() - 0.5;
+          });
+
+        const target = candidates[0];
+        if (!target) {
+          continue;
+        }
+
+        const assignment = await this.#api.createScheduledAssignment(target.scheduledPhaseId, {
+          userId: fighter.entry.userId,
+          role: "FIGHTER",
+        });
+        this.addAssignmentToSchedule(target.scheduledPhaseId, assignment);
+        target.assignedCount += 1;
+        usedFighterIds.add(fighter.entry.userId);
+      }
+
+      await this.load();
+    } catch (error) {
+      this.#error = error instanceof Error ? error.message : "The fighters could not be assigned.";
+      this.renderPlanner();
+    } finally {
+      this.#assigningFighters = false;
+      this.renderPlanner();
+    }
+  }
+
+  private buildPoolStates(timeSlots: ApiEventSchedule["timeSlots"]): PoolState[] {
+    const states: PoolState[] = [];
+    for (const timeSlot of timeSlots) {
+      for (const scheduledPhase of timeSlot.scheduledPhases) {
+        if (scheduledPhase.stage.type !== "POOL") {
+          continue;
+        }
+
+        const assignedCount = scheduledPhase.assignments?.filter((assignment) => assignment.role === "FIGHTER").length ?? 0;
+        const limit = this.getFighterLimit(scheduledPhase);
+        const preferredCount = Math.max(1, scheduledPhase.stage.preferredPoolSize ?? limit);
+        states.push({
+          scheduledPhaseId: scheduledPhase.id,
+          tournamentId: scheduledPhase.stage.tournament.id,
+          timeSlotId: scheduledPhase.timeSlotId,
+          assignedCount,
+          limit,
+          preferredCount,
+        });
+      }
+    }
+
+    return states;
+  }
+
+  private buildBlockedTimeSlotsByUserId(timeSlots: ApiScheduleTimeSlot[]): Map<string, Set<string>> {
+    const blocked = new Map<string, Set<string>>();
+    for (const timeSlot of timeSlots) {
+      for (const scheduledPhase of timeSlot.scheduledPhases) {
+        for (const assignment of scheduledPhase.assignments ?? []) {
+          const timeSlotsForUser = blocked.get(assignment.userId) ?? new Set<string>();
+          timeSlotsForUser.add(timeSlot.id);
+          blocked.set(assignment.userId, timeSlotsForUser);
+        }
+      }
+    }
+
+    return blocked;
+  }
+
+  private shuffle<T>(items: T[]): T[] {
+    const shuffled = [...items];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      const value = shuffled[index]!;
+      const swapValue = shuffled[swapIndex]!;
+      shuffled[index] = swapValue;
+      shuffled[swapIndex] = value;
+    }
+    return shuffled;
+  }
+
+}
+
+interface PoolState {
+  scheduledPhaseId: string;
+  tournamentId: string;
+  timeSlotId: string;
+  assignedCount: number;
+  limit: number;
+  preferredCount: number;
 }
 
 function renderVolunteerSkills(skills: NonNullable<ApiEvent["tournaments"][number]["entries"][number]["user"]["skills"]>): string {
