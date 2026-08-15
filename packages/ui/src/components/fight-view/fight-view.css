@@ -151,6 +151,11 @@
   border-color: var(--hema-left-color, #21c15b);
 }
 
+#end-match-button {
+  background: color-mix(in srgb, var(--warning) 18%, var(--surface-raised));
+  border-color: var(--warning);
+}
+
 .button-row {
   padding-bottom: 8px;
 }

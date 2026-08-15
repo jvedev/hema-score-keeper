@@ -162,6 +162,12 @@ select {
   outline: none;
 }
 
+.fight-button:disabled,
+.fight-button.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .fight-meta,
 .fight-status {
   color: rgba(255, 255, 255, 0.68);

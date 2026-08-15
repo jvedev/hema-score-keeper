@@ -12,6 +12,10 @@ describe("fight-view", () => {
     expect(
       element.shadowRoot?.querySelector("#timeout-button")?.textContent?.trim(),
     ).toBe("Start");
+    expect(
+      element.shadowRoot?.querySelector<HTMLButtonElement>("#end-match-button")
+        ?.hidden,
+    ).toBe(false);
 
     element.remove();
   });
@@ -164,4 +168,5 @@ describe("fight-view", () => {
 
     element.remove();
   });
+
 });

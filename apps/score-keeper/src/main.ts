@@ -1,17 +1,21 @@
 import "@hema/ui";
 import "@hema/ui/start-screen-view";
+import { createApiClient } from "@hema/event-admin-api";
 import type {
   ApiArena,
   ApiEvent,
   ApiMatch,
+  ApiMatchExchangeInput,
   ApiScheduleTimeSlot,
   ApiStage,
   ApiTournament,
 } from "@hema/event-admin-api";
 import { createEventRepository } from "./data/create-event-repository";
 import { createRuleSetRepository } from "./data/create-rule-set-repository";
+import { shouldUseMockApi } from "./data/use-mock-api";
 import { MatchStore } from "./domain/match-store";
 import { createMatchState } from "./domain/match-state";
+import { reduceMatchEvent } from "./domain/match-reducer";
 import "./styles.css";
 
 type OrientationLockType =
@@ -66,6 +70,7 @@ const forfeitDialog =
 
 const eventRepository = createEventRepository();
 const ruleSetRepository = createRuleSetRepository();
+const backendClient = shouldUseMockApi() ? undefined : createApiClient();
 const selectionStorageKey = "hema-score-keeper.start-selection";
 const defaultArenaLeftColor = "#21c15b";
 const defaultArenaRightColor = "#2f7dfa";
@@ -77,6 +82,7 @@ let selectedMatchId: string | undefined;
 let matchStore: MatchStore | undefined;
 let wakeLock: WakeLockSentinel | undefined;
 let wakeLockRequested = false;
+const completedMatchIds = new Set<string>();
 
 fightView.setMatchActive(false);
 showStartScreen();
@@ -118,6 +124,11 @@ fightView.addEventListener("match-reset-requested", () => {
   matchStore.reset();
   fightView.setMatchStarted(false);
 });
+fightView.addEventListener("end-match-requested", () => {
+  void completeMatch().catch((error) => {
+    console.error("Unable to complete match.", error);
+  });
+});
 fightView.addEventListener("forfeit-requested", () => forfeitDialog.open());
 
 window.addEventListener("match-event", (event) => {
@@ -143,6 +154,7 @@ async function loadEvents(): Promise<void> {
   startScreenView.configure(buildLoadingConfig());
   try {
     events = await eventRepository.listEvents();
+    mergeCompletedMatchIds(events);
     applyLocationSelection();
     if (isFightRoute()) {
       await beginFightMode(selectedMatchId, true);
@@ -178,14 +190,16 @@ async function beginFightMode(
     return;
   }
 
-  const match =
-    resolveMatch(timeSlotSelection, selection.arena.id, matchId) ??
-    timeSlotSelection.matches[0];
+  const match = resolveMatch(timeSlotSelection, selection.arena.id, matchId);
   if (!match) {
     await exitFightMode();
     syncStartUrl();
     showStartScreen();
-    renderStartScreen("No fights are assigned to the selected time slot.");
+    renderStartScreen(
+      timeSlotSelection.matches.length === 0
+        ? "No fights are assigned to the selected time slot."
+        : "All fights in the selected time slot are already completed.",
+    );
     return;
   }
 
@@ -244,6 +258,7 @@ async function beginFightMode(
     fighterAScore: match.scoreA ?? 0,
     fighterBScore: match.scoreB ?? 0,
   });
+  fightView.setMatchCompleted(false);
   scoreView.configure({
     scores: ruleSet.matchParameters.scores,
     fighterA: {
@@ -311,9 +326,60 @@ async function exitFightMode(): Promise<void> {
     }
   }
   fightView.setMatchStarted(false);
+  fightView.setMatchCompleted(false);
   fightView.hidden = true;
   startScreenView.hidden = false;
   document.body.dataset.mode = "start";
+}
+
+async function completeMatch(): Promise<void> {
+  if (!matchStore) {
+    throw new Error("Match store is not initialized.");
+  }
+
+  const selection = resolveCurrentSelection();
+  const timeSlotSelection = selection.timeSlotSelection;
+  if (!selection.event || !selection.arena || !timeSlotSelection) {
+    throw new Error("No active match is available to complete.");
+  }
+
+  if (!selectedMatchId) {
+    throw new Error("No active match is available to complete.");
+  }
+
+  const match = timeSlotSelection.matches.find((candidate) => candidate.id === selectedMatchId);
+  if (!match) {
+    throw new Error("No active match is available to complete.");
+  }
+
+  const ruleSetId =
+    match.ruleset?.id ??
+    timeSlotSelection.stage.ruleset?.id ??
+    timeSlotSelection.tournament.ruleset?.id ??
+    selection.event.ruleset?.id;
+  if (!ruleSetId) {
+    throw new Error("A ruleset is required to complete the fight.");
+  }
+
+  const ruleSet = await ruleSetRepository.getRuleSet(ruleSetId);
+  const exchanges = buildMatchExchanges(match, ruleSet.matchParameters, matchStore.events);
+  const winnerEntryId = resolveWinnerEntryId(match, matchStore.state);
+
+  if (backendClient) {
+    await backendClient.completeMatch(match.id, {
+      scoreA: matchStore.state.fighterAScore,
+      scoreB: matchStore.state.fighterBScore,
+      winnerEntryId,
+      exchanges,
+    });
+  }
+
+  completedMatchIds.add(match.id);
+  selectedMatchId = undefined;
+  persistSelection();
+  syncStartUrl();
+  await exitFightMode();
+  await loadEvents();
 }
 
 async function requestWakeLock(): Promise<void> {
@@ -503,6 +569,7 @@ function buildFightCards(
   fighterAName: string;
   fighterBName: string;
   statusLabel: string;
+  disabled: boolean;
 }> {
   if (!arenaId) {
     return [];
@@ -514,6 +581,7 @@ function buildFightCards(
     fighterAName: string;
     fighterBName: string;
     statusLabel: string;
+    disabled: boolean;
   }> = [];
 
   for (const match of timeSlotSelection.matches) {
@@ -528,6 +596,7 @@ function buildFightCards(
       fighterAName: fighterA.user.username,
       fighterBName: fighterB.user.username,
       statusLabel: matchStatusLabel(match),
+      disabled: isMatchCompleted(match),
     });
   }
 
@@ -541,12 +610,14 @@ function resolveMatch(
 ): ApiMatch | undefined {
   if (matchId) {
     const explicit = timeSlotSelection.matches.find((match) => match.id === matchId);
-    if (explicit) {
+    if (explicit && !isMatchCompleted(explicit)) {
       return explicit;
     }
   }
 
-  return timeSlotSelection.matches.find((match) => match.arenaId === arenaId);
+  return timeSlotSelection.matches.find(
+    (match) => match.arenaId === arenaId && !isMatchCompleted(match),
+  );
 }
 
 function resolveEntry(
@@ -561,13 +632,81 @@ function resolveEntry(
 }
 
 function matchStatusLabel(match: ApiMatch): string {
-  if (match.winnerEntryId) {
+  if (isMatchCompleted(match)) {
     return "Completed";
   }
-  if (match.scoreA !== null || match.scoreB !== null) {
-    return "In progress";
-  }
   return "Ready";
+}
+
+function isMatchCompleted(match: ApiMatch): boolean {
+  return (
+    completedMatchIds.has(match.id) ||
+    match.scoreA !== null ||
+    match.scoreB !== null ||
+    match.winnerEntryId !== null
+  );
+}
+
+function mergeCompletedMatchIds(eventList: readonly ApiEvent[]): void {
+  for (const event of eventList) {
+    for (const tournament of event.tournaments) {
+      for (const stage of tournament.stages) {
+        for (const round of stage.rounds) {
+          for (const match of round.matches) {
+            if (isPersistedMatchCompleted(match)) {
+              completedMatchIds.add(match.id);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+function isPersistedMatchCompleted(match: ApiMatch): boolean {
+  return match.scoreA !== null || match.scoreB !== null || match.winnerEntryId !== null;
+}
+
+function buildMatchExchanges(
+  match: ApiMatch,
+  rules: Parameters<typeof reduceMatchEvent>[2],
+  eventsToPersist: readonly Parameters<typeof reduceMatchEvent>[1][],
+): ApiMatchExchangeInput[] {
+  const startingState = createMatchState({
+    fighterAScore: match.scoreA ?? 0,
+    fighterBScore: match.scoreB ?? 0,
+    elapsedTimeSeconds: 0,
+    warnings: { A: 0, B: 0 },
+  });
+  let nextState = startingState;
+
+  return eventsToPersist.map((event) => {
+    nextState = reduceMatchEvent(nextState, event, rules);
+    return {
+      scoreA: nextState.fighterAScore,
+      scoreB: nextState.fighterBScore,
+      details: event,
+    };
+  });
+}
+
+function resolveWinnerEntryId(
+  match: ApiMatch,
+  state: Parameters<typeof createMatchState>[0],
+): string | null {
+  if (state.disqualifiedFighter === "A") {
+    return match.entryBId;
+  }
+  if (state.disqualifiedFighter === "B") {
+    return match.entryAId;
+  }
+  if (state.fighterAScore > state.fighterBScore) {
+    return match.entryAId;
+  }
+  if (state.fighterBScore > state.fighterAScore) {
+    return match.entryBId;
+  }
+  return null;
 }
 
 function selectEvent(eventId: string): void {

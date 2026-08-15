@@ -87,6 +87,7 @@ const routes: Route[] = [
   { method: "GET", pattern: /^\/api\/v1\/matches$/, handler: listMatches },
   { method: "POST", pattern: /^\/api\/v1\/matches$/, handler: createMatch },
   { method: "GET", pattern: /^\/api\/v1\/matches\/([^/]+)$/, handler: getMatch },
+  { method: "POST", pattern: /^\/api\/v1\/matches\/([^/]+)\/complete$/, handler: completeMatch },
   { method: "PATCH", pattern: /^\/api\/v1\/matches\/([^/]+)$/, handler: updateMatch },
   { method: "DELETE", pattern: /^\/api\/v1\/matches\/([^/]+)$/, handler: deleteMatch },
   { method: "GET", pattern: /^\/api\/v1\/exchanges$/, handler: listExchanges },
@@ -1499,6 +1500,83 @@ async function deleteMatch(_request: IncomingMessage, params: Record<string, str
   return undefined;
 }
 
+async function completeMatch(request: IncomingMessage, params: Record<string, string>): Promise<unknown> {
+  const matchId = routeId(params);
+  const currentMatch = await requireMatch(matchId);
+  if (
+    currentMatch.scoreA !== null ||
+    currentMatch.scoreB !== null ||
+    currentMatch.winnerEntryId !== null ||
+    currentMatch.exchanges.length > 0
+  ) {
+    throw new HttpError(409, "This match has already been completed.");
+  }
+
+  const body = ensureObject(await readJsonBody(request), "Match completion");
+  const scoreA = requireInteger(body.scoreA, "Score A");
+  const scoreB = requireInteger(body.scoreB, "Score B");
+  const exchangeInputs = Array.isArray(body.exchanges) ? body.exchanges : undefined;
+  if (!exchangeInputs) {
+    throw new HttpError(400, "Match completion exchanges must be an array.");
+  }
+
+  let winnerEntryId: string | null = null;
+  if (body.winnerEntryId !== undefined) {
+    if (body.winnerEntryId === null) {
+      winnerEntryId = null;
+    } else {
+      winnerEntryId = requireString(body.winnerEntryId, "Winner entry ID");
+      await requireEntryInTournament(
+        winnerEntryId,
+        currentMatch.round.stage.tournamentId,
+        "Winner entry",
+      );
+    }
+  }
+
+  const exchanges = exchangeInputs.map((exchangeInput, index) => {
+    const exchange = ensureObject(exchangeInput, `Match exchange ${index + 1}`);
+    return {
+      scoreA: requireInteger(exchange.scoreA, `Match exchange ${index + 1} score A`),
+      scoreB: requireInteger(exchange.scoreB, `Match exchange ${index + 1} score B`),
+      details: exchange.details === undefined ? undefined : ensureJsonValue(exchange.details),
+    };
+  });
+
+  if (exchanges.length > 0) {
+    const lastExchange = exchanges[exchanges.length - 1];
+    if (!lastExchange || lastExchange.scoreA !== scoreA || lastExchange.scoreB !== scoreB) {
+      throw new HttpError(400, "Final scores must match the last saved exchange.");
+    }
+  }
+
+  return prisma.$transaction(async (transaction) => {
+    for (const exchange of exchanges) {
+      if (exchange.details === undefined) {
+        throw new HttpError(400, "Match exchange details must be provided.");
+      }
+      await transaction.exchange.create({
+        data: {
+          matchId,
+          scoreA: exchange.scoreA,
+          scoreB: exchange.scoreB,
+          details: exchange.details,
+        },
+      });
+    }
+
+    return transaction.match.update({
+      where: { id: matchId },
+      data: {
+        scoreA,
+        scoreB,
+        winnerEntryId,
+      },
+      include: matchDetailInclude,
+    });
+  });
+}
+
 async function listExchanges(): Promise<unknown> {
   return prisma.exchange.findMany({
     orderBy: [{ matchId: "asc" }, { id: "asc" }],
@@ -2075,6 +2153,14 @@ function resolveEliminationParticipantCount(
   }
 
   return 5;
+}
+
+function requireInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new HttpError(400, `${label} must be an integer.`);
+  }
+
+  return value;
 }
 
 function toRulesetDetail(ruleset: {

@@ -18,6 +18,7 @@ export interface StartScreenFight {
   fighterAName: string;
   fighterBName: string;
   statusLabel: string;
+  disabled: boolean;
 }
 
 export interface StartScreenConfig {
@@ -157,14 +158,18 @@ export class StartScreenView extends BaseComponent {
       status.textContent = fight.statusLabel;
 
       button.append(meta, title, status);
-      this.registerEvent(button, "click", () => {
-        this.dispatchEvent(
-          new CustomEvent("fight-selected", {
-            bubbles: true,
-            detail: { matchId: fight.id },
-          }),
-        );
-      });
+      button.disabled = fight.disabled;
+      button.classList.toggle("is-disabled", fight.disabled);
+      if (!fight.disabled) {
+        this.registerEvent(button, "click", () => {
+          this.dispatchEvent(
+            new CustomEvent("fight-selected", {
+              bubbles: true,
+              detail: { matchId: fight.id },
+            }),
+          );
+        });
+      }
       fightList.append(button);
     }
 

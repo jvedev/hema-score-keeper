@@ -96,6 +96,19 @@ export interface ApiMatch {
   ruleset: ApiRuleset | null;
 }
 
+export interface ApiMatchExchangeInput {
+  scoreA: number;
+  scoreB: number;
+  details: unknown;
+}
+
+export interface ApiMatchCompletionInput {
+  winnerEntryId?: string | null;
+  scoreA: number;
+  scoreB: number;
+  exchanges: readonly ApiMatchExchangeInput[];
+}
+
 export interface ApiRound {
   id: string;
   stageId: string;
@@ -341,6 +354,7 @@ export interface ApiClient {
   deleteStageOfficial(id: string): Promise<void>;
   listRounds(): Promise<ApiRound[]>;
   listMatches(): Promise<ApiMatch[]>;
+  completeMatch(id: string, body: ApiMatchCompletionInput): Promise<ApiMatch>;
 }
 
 const defaultBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
@@ -432,6 +446,11 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
     deleteStageOfficial: (id) => requestJson<void>(baseUrl, `/stage-officials/${id}`, { method: "DELETE" }),
     listRounds: () => requestJson<ApiRound[]>(baseUrl, "/rounds"),
     listMatches: () => requestJson<ApiMatch[]>(baseUrl, "/matches"),
+    completeMatch: (id, body) =>
+      requestJson<ApiMatch>(baseUrl, `/matches/${id}/complete`, {
+        method: "POST",
+        body,
+      }),
   };
 }
 

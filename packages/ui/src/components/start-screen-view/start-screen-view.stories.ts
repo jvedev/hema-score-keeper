@@ -27,6 +27,7 @@ const meta = {
           fighterAName: "Alex Meyer",
           fighterBName: "Blake Novak",
           statusLabel: "Ready",
+          disabled: false,
         },
         {
           id: "match-2",
@@ -34,6 +35,7 @@ const meta = {
           fighterAName: "Casey Silva",
           fighterBName: "Drew Fischer",
           statusLabel: "Ready",
+          disabled: false,
         },
       ],
     });

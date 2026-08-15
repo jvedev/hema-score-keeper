@@ -33,10 +33,12 @@ export class FightView extends BaseComponent {
   #fighterLeft!: HTMLElementTagNameMap["fighter-score"];
   #fighterRight!: HTMLElementTagNameMap["fighter-score"];
   #timeoutButton!: HTMLButtonElement;
+  #endMatchButton!: HTMLButtonElement;
   #buttonStack!: HTMLElement;
   #wakeStatus!: HTMLElement;
   #matchStarted = false;
   #matchActive = false;
+  #matchCompleted = false;
   #colorsSwapped = false;
   #leftFighterStyle: FighterStyleConfig = {
     backgroundColor: "#21c15b",
@@ -53,6 +55,7 @@ export class FightView extends BaseComponent {
     this.#fighterLeft = this.queryRoot("#fighter-left");
     this.#fighterRight = this.queryRoot("#fighter-right");
     this.#timeoutButton = this.queryRoot("#timeout-button");
+    this.#endMatchButton = this.queryRoot("#end-match-button");
     this.#buttonStack = this.queryRoot(".button-stack");
     this.#wakeStatus = this.queryRoot("#wake-status");
     this.#registerScoreCorrection(this.#fighterLeft, "A");
@@ -75,6 +78,9 @@ export class FightView extends BaseComponent {
       );
     });
     this.registerEvent(this.#timeoutButton, "click", () => this.#toggleTimer());
+    this.registerEvent(this.#endMatchButton, "click", () => {
+      this.dispatchEvent(new CustomEvent("end-match-requested", { bubbles: true }));
+    });
     this.registerEvent(this.queryRoot("#reset-button"), "confirmed", () => {
       this.#resetFight();
       this.dispatchEvent(new CustomEvent("match-reset-requested", {
@@ -111,6 +117,7 @@ export class FightView extends BaseComponent {
 
   setMatchDuration(durationSeconds: number): void {
     this.#timer.setAttribute("seconds", String(Math.max(0, durationSeconds)));
+    this.#matchCompleted = false;
     this.#resetFight();
   }
 
@@ -128,6 +135,15 @@ export class FightView extends BaseComponent {
   setMatchStarted(started: boolean): void {
     this.#matchStarted = started;
     if (!started) this.#timer.stop();
+    this.#syncControls();
+  }
+
+  setMatchCompleted(completed: boolean): void {
+    this.#matchCompleted = completed;
+    if (completed) {
+      this.#matchActive = false;
+      this.#timer.stop();
+    }
     this.#syncControls();
   }
 
@@ -214,10 +230,13 @@ export class FightView extends BaseComponent {
       "hidden",
       !started,
     );
-    this.#buttonStack.classList.toggle("pre-start", !started);
+    this.queryRoot<HTMLElementTagNameMap["confirm-button"]>(
+      "#reset-button",
+    ).toggleAttribute("disabled", !started || !active);
     this.queryRoot<HTMLElementTagNameMap["confirm-button"]>(
       "#forfeit-button",
     ).toggleAttribute("disabled", !started || !active);
+    this.#buttonStack.classList.toggle("pre-start", !started);
 
     if (!started) {
       this.#timeoutButton.textContent = "Start";

@@ -32,6 +32,7 @@ describe("start-screen-view", () => {
           fighterAName: "Alex",
           fighterBName: "Blake",
           statusLabel: "Ready",
+          disabled: false,
         },
       ],
     });
@@ -104,11 +105,47 @@ describe("start-screen-view", () => {
           fighterAName: "Alex",
           fighterBName: "Blake",
           statusLabel: "Ready",
+          disabled: false,
         },
       ],
     });
     element.shadowRoot?.querySelector<HTMLButtonElement>(".fight-button")?.click();
 
     expect(selectedFightId).toBe("match-1");
+  });
+
+  it("does not emit selection for completed fights", () => {
+    const element = document.createElement("start-screen-view");
+    document.body.appendChild(element);
+    element.configure({
+      loading: false,
+      error: null,
+      eventOptions: [{ id: "event-1", name: "Summer Open" }],
+      selectedEventId: "event-1",
+      arenaOptions: [{ id: "arena-1", name: "Ring 1" }],
+      selectedArenaId: "arena-1",
+      activeTimeSlotLabel: "Open · Block 1",
+      fightSummary: "1 fight",
+      inactiveMessage: null,
+      fights: [
+        {
+          id: "match-1",
+          roundLabel: "Round 1",
+          fighterAName: "Alex",
+          fighterBName: "Blake",
+          statusLabel: "Completed",
+          disabled: true,
+        },
+      ],
+    });
+
+    let selectedFightId: string | undefined;
+    element.addEventListener("fight-selected", (event) => {
+      selectedFightId = event.detail.matchId;
+    });
+
+    element.shadowRoot?.querySelector<HTMLButtonElement>(".fight-button")?.click();
+
+    expect(selectedFightId).toBeUndefined();
   });
 });
