@@ -90,6 +90,31 @@
   color: #cbd5e1;
 }
 
+.pool-ranking-rules {
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.7rem;
+  padding: 0.85rem 0.95rem;
+}
+
+.pool-ranking-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #cbd5e1;
+  margin-bottom: 0.5rem;
+}
+
+.pool-ranking-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+  color: #e2e8f0;
+  font-size: 0.9rem;
+}
+
 .table-wrapper {
   overflow-x: auto;
 }

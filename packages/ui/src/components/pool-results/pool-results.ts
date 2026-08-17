@@ -41,6 +41,50 @@ export interface PoolData {
   isFinished: boolean;
 }
 
+interface PoolStandingStats {
+  entry: ApiEntry;
+  matchesPlayed: number;
+  wins: number;
+  losses: number;
+  ties: number;
+  pointsScored: number;
+  pointsConceded: number;
+  matchPoints: number;
+  directResults: Map<string, "win" | "loss" | "draw">;
+}
+
+interface PoolStandingRowWithMeta extends PoolStandingRow {
+  matchPoints: number;
+  directResults: Map<string, "win" | "loss" | "draw">;
+}
+
+const poolWinnerRules = [
+  {
+    title: "Primary ranking",
+    description: "Match points (Win = 3, Draw = 1, Loss = 0)",
+  },
+  {
+    title: "Tie breaker 1",
+    description: "Head-to-head result between tied fighters",
+  },
+  {
+    title: "Tie breaker 2",
+    description: "Net score (Hits given - Hits received)",
+  },
+  {
+    title: "Tie breaker 3",
+    description: "Total hits given (Most points scored)",
+  },
+  {
+    title: "Tie breaker 4",
+    description: "Total hits received (Fewest points conceded)",
+  },
+  {
+    title: "Tie breaker 5",
+    description: "Deciding tie-breaker exchange or coin toss if all metrics remain equal",
+  },
+];
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -222,18 +266,7 @@ export class PoolResults extends BaseComponent {
     matches: ApiMatch[],
     entryById: Map<string, ApiEntry>,
   ): PoolData {
-    const statsMap = new Map<
-      string,
-      {
-        entry: ApiEntry;
-        matchesPlayed: number;
-        wins: number;
-        losses: number;
-        ties: number;
-        pointsScored: number;
-        pointsConceded: number;
-      }
-    >();
+    const statsMap = new Map<string, PoolStandingStats>();
 
     for (const fighter of fighters) {
       statsMap.set(fighter.id, {
@@ -244,6 +277,8 @@ export class PoolResults extends BaseComponent {
         ties: 0,
         pointsScored: 0,
         pointsConceded: 0,
+        matchPoints: 0,
+        directResults: new Map<string, "win" | "loss" | "draw">(),
       });
     }
 
@@ -269,9 +304,12 @@ export class PoolResults extends BaseComponent {
           statsA.matchesPlayed += 1;
           statsA.pointsScored += scoreA;
           statsA.pointsConceded += scoreB;
-          if (m.winnerEntryId === m.entryAId || scoreA > scoreB) {
+          const outcomeA = this.#getOutcomeForEntry(m, m.entryAId, scoreA, scoreB);
+          statsA.matchPoints += this.#pointsForOutcome(outcomeA);
+          statsA.directResults.set(m.entryBId ?? "", outcomeA);
+          if (outcomeA === "win") {
             statsA.wins += 1;
-          } else if (m.winnerEntryId === m.entryBId || scoreB > scoreA) {
+          } else if (outcomeA === "loss") {
             statsA.losses += 1;
           } else {
             statsA.ties += 1;
@@ -283,9 +321,12 @@ export class PoolResults extends BaseComponent {
           statsB.matchesPlayed += 1;
           statsB.pointsScored += scoreB;
           statsB.pointsConceded += scoreA;
-          if (m.winnerEntryId === m.entryBId || scoreB > scoreA) {
+          const outcomeB = this.#getOutcomeForEntry(m, m.entryBId, scoreA, scoreB);
+          statsB.matchPoints += this.#pointsForOutcome(outcomeB);
+          statsB.directResults.set(m.entryAId ?? "", outcomeB);
+          if (outcomeB === "win") {
             statsB.wins += 1;
-          } else if (m.winnerEntryId === m.entryAId || scoreA > scoreB) {
+          } else if (outcomeB === "loss") {
             statsB.losses += 1;
           } else {
             statsB.ties += 1;
@@ -309,28 +350,32 @@ export class PoolResults extends BaseComponent {
     const totalMatches = matches.length;
     const isFinished = completedMatches === totalMatches && totalMatches > 0;
 
-    // Build and sort standings
-    const standings: PoolStandingRow[] = [...statsMap.values()]
-      .map((s) => ({
-        rank: 0,
-        entryId: s.entry.id,
-        username: s.entry.user.username,
-        seed: s.entry.seed,
-        matchesPlayed: s.matchesPlayed,
-        wins: s.wins,
-        losses: s.losses,
-        ties: s.ties,
-        pointsScored: s.pointsScored,
-        pointsConceded: s.pointsConceded,
-        netPoints: s.pointsScored - s.pointsConceded,
+    const sortableStandings: PoolStandingRowWithMeta[] = [...statsMap.values()].map((s) => ({
+      rank: 0,
+      entryId: s.entry.id,
+      username: s.entry.user.username,
+      seed: s.entry.seed,
+      matchesPlayed: s.matchesPlayed,
+      wins: s.wins,
+      losses: s.losses,
+      ties: s.ties,
+      pointsScored: s.pointsScored,
+      pointsConceded: s.pointsConceded,
+      netPoints: s.pointsScored - s.pointsConceded,
+      matchPoints: s.matchPoints,
+      directResults: s.directResults,
+    }));
+
+    const standings: PoolStandingRow[] = sortableStandings
+      .sort((a, b) => this.#compareStandings(a, b))
+      .map((row, idx) => ({
+        ...row,
+        rank: idx + 1,
       }))
-      .sort((a, b) => {
-        if (b.wins !== a.wins) return b.wins - a.wins;
-        if (b.netPoints !== a.netPoints) return b.netPoints - a.netPoints;
-        if (b.pointsScored !== a.pointsScored) return b.pointsScored - a.pointsScored;
-        return (a.seed ?? 999) - (b.seed ?? 999);
-      })
-      .map((row, idx) => ({ ...row, rank: idx + 1 }));
+      .map((row) => {
+        const { matchPoints: _matchPoints, directResults: _directResults, ...standingsRow } = row;
+        return standingsRow;
+      });
 
     return {
       id,
@@ -344,6 +389,78 @@ export class PoolResults extends BaseComponent {
       completedMatches,
       isFinished,
     };
+  }
+
+  #getOutcomeForEntry(match: ApiMatch, entryId: string, scoreA: number, scoreB: number): "win" | "loss" | "draw" {
+    if (match.winnerEntryId === entryId) {
+      return "win";
+    }
+
+    if (match.winnerEntryId !== null) {
+      return "loss";
+    }
+
+    if (scoreA === scoreB) {
+      return "draw";
+    }
+
+    const isEntryA = entryId === match.entryAId;
+    return isEntryA ? (scoreA > scoreB ? "win" : "loss") : (scoreB > scoreA ? "win" : "loss");
+  }
+
+  #pointsForOutcome(outcome: "win" | "loss" | "draw"): number {
+    switch (outcome) {
+      case "win":
+        return 3;
+      case "draw":
+        return 1;
+      default:
+        return 0;
+    }
+  }
+
+  #compareStandings(a: PoolStandingRowWithMeta, b: PoolStandingRowWithMeta): number {
+    if (a.matchPoints !== b.matchPoints) {
+      return b.matchPoints - a.matchPoints;
+    }
+
+    const headToHead = this.#compareHeadToHead(a, b);
+    if (headToHead !== 0) {
+      return headToHead;
+    }
+
+    if (a.netPoints !== b.netPoints) {
+      return b.netPoints - a.netPoints;
+    }
+
+    if (a.pointsScored !== b.pointsScored) {
+      return b.pointsScored - a.pointsScored;
+    }
+
+    if (a.pointsConceded !== b.pointsConceded) {
+      return a.pointsConceded - b.pointsConceded;
+    }
+
+    return (a.seed ?? 999) - (b.seed ?? 999);
+  }
+
+  #compareHeadToHead(a: PoolStandingRowWithMeta, b: PoolStandingRowWithMeta): number {
+    const resultA = a.directResults.get(b.entryId);
+    const resultB = b.directResults.get(a.entryId);
+
+    if (!resultA || !resultB) {
+      return 0;
+    }
+
+    if (resultA === "win" && resultB === "loss") {
+      return -1;
+    }
+
+    if (resultA === "loss" && resultB === "win") {
+      return 1;
+    }
+
+    return 0;
   }
 
   #renderHtml(pools: PoolData[]): string {
@@ -399,6 +516,13 @@ export class PoolResults extends BaseComponent {
             <div class="pool-card-subtitle">Arena: ${escapeHtml(pool.arenaName)} ${pool.timeSlotLabel !== "-" ? `· Timeslot: ${escapeHtml(pool.timeSlotLabel)}` : ""}</div>
           </div>
           <div>${statusBadge}</div>
+        </div>
+
+        <div class="pool-ranking-rules">
+          <div class="pool-ranking-title">Winner Determination</div>
+          <ol class="pool-ranking-list">
+            ${poolWinnerRules.map((rule) => `<li><strong>${escapeHtml(rule.title)}:</strong> ${escapeHtml(rule.description)}</li>`).join("")}
+          </ol>
         </div>
 
         <div class="table-wrapper">
