@@ -39,7 +39,74 @@
       <div>Rotate your device back to portrait to continue.</div>
     </div>
 
-    <start-screen-view id="start-screen-view"></start-screen-view>
+    <section id="launcher-screen" class="mode-screen">
+      <div class="mode-card">
+        <p class="mode-eyebrow">HEMA Scorebox</p>
+        <h1>Choose a start mode</h1>
+        <p class="mode-copy">Select how you want to begin scoring.</p>
+        <div class="mode-actions">
+          <button id="standalone-button" type="button" class="mode-button">Stand alone</button>
+          <button id="google-sheets-button" type="button" class="mode-button">Google Sheets</button>
+          <button id="event-button" type="button" class="mode-button mode-button-primary">Event</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="standalone-screen" class="mode-screen" hidden>
+      <div class="mode-card">
+        <p class="mode-eyebrow">Stand alone</p>
+        <h1>Standalone mode</h1>
+        <p class="mode-copy">Deze flow werken we nog uit.</p>
+        <div class="mode-actions">
+          <button id="standalone-back-button" type="button" class="mode-button">Back</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="google-sheets-screen" class="mode-screen" hidden>
+      <div class="mode-card">
+        <p class="mode-eyebrow">Google Sheets</p>
+        <h1>Google Sheets mode</h1>
+        <p class="mode-copy">
+          Scan the pool's QR code to fill these in automatically, or paste the
+          spreadsheet IDs below. The club shares these sheets with the app once
+          &mdash; no Google sign-in needed here.
+        </p>
+        <div class="mode-fields">
+          <label class="mode-field">
+            <span>Source pool sheet ID</span>
+            <input
+              id="google-sheets-source-input"
+              type="text"
+              inputmode="text"
+              autocomplete="off"
+              placeholder="Spreadsheet ID with players &amp; matches"
+            />
+          </label>
+          <label class="mode-field">
+            <span>Destination sheet ID</span>
+            <input
+              id="google-sheets-dest-input"
+              type="text"
+              inputmode="text"
+              autocomplete="off"
+              placeholder="Spreadsheet ID to write results to"
+            />
+          </label>
+        </div>
+        <div class="mode-actions">
+          <button id="google-sheets-apply-button" type="button" class="mode-button">
+            Save sheet IDs
+          </button>
+        </div>
+        <p id="google-sheets-status" class="mode-copy"></p>
+        <div class="mode-actions">
+          <button id="google-sheets-back-button" type="button" class="mode-button">Back</button>
+        </div>
+      </div>
+    </section>
+
+    <start-screen-view id="start-screen-view" hidden></start-screen-view>
     <fight-view id="fight-view" hidden></fight-view>
 
     <score-view id="score-view"></score-view>

@@ -1,0 +1,35 @@
+<div class="participants-view">
+  <header>
+    <div class="header-nav">
+      <button id="back-button" type="button" class="back-button">← Back</button>
+      <div class="header-nav-actions">
+        <button id="refresh-button" type="button" class="refresh-button">⟳ Refresh</button>
+        <button id="view-ranking-button" type="button" class="tab-button">Ranking →</button>
+      </div>
+    </div>
+    <p>Participants</p>
+    <h1 id="competition-name"></h1>
+  </header>
+  <main>
+    <section id="register-self-section" class="form-section" hidden>
+      <h2>Register yourself</h2>
+      <p class="hint">Pick a name so this competition remembers who you are.</p>
+      <div class="form-row">
+        <input id="register-self-input" type="text" placeholder="Your name" autocomplete="off" />
+        <button id="register-self-button" type="button" class="primary-button">Register</button>
+      </div>
+    </section>
+
+    <p id="submit-error" class="message is-error" hidden></p>
+    <div id="message" class="message"></div>
+    <div id="participant-list" class="participant-list"></div>
+
+    <section class="form-section">
+      <h2>Add a participant</h2>
+      <div class="form-row">
+        <input id="add-participant-input" type="text" placeholder="Participant name" autocomplete="off" />
+        <button id="add-participant-button" type="button" class="primary-button">Add</button>
+      </div>
+    </section>
+  </main>
+</div>

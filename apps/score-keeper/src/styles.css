@@ -47,6 +47,122 @@ fight-view[hidden] {
   display: none;
 }
 
+.mode-screen[hidden] {
+  display: none;
+}
+
+.mode-screen {
+  align-items: center;
+  display: flex;
+  min-height: 100%;
+  padding: 24px 20px 28px;
+}
+
+.mode-card {
+  background: #111723;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  display: grid;
+  gap: 14px;
+  margin: 0 auto;
+  max-width: 520px;
+  padding: 24px;
+  width: 100%;
+}
+
+.mode-eyebrow,
+.mode-card h1,
+.mode-copy {
+  margin: 0;
+}
+
+.mode-eyebrow {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.mode-card h1 {
+  font-size: 30px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mode-copy {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.mode-fields {
+  display: grid;
+  gap: 12px;
+}
+
+.mode-field {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.mode-field span {
+  color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mode-field input {
+  background: #0f1623;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  color: inherit;
+  font-family: var(--hema-font-ui);
+  font-size: 15px;
+  padding: 12px 14px;
+  user-select: text;
+  width: 100%;
+}
+
+.mode-field input:focus-visible {
+  border-color: var(--hema-left-color);
+  outline: none;
+}
+
+.mode-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.mode-button {
+  background: #0f1623;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  color: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  padding: 14px 16px;
+  text-align: center;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.mode-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.mode-button:hover,
+.mode-button:focus-visible {
+  border-color: var(--hema-left-color);
+  outline: none;
+}
+
+.mode-button-primary {
+  background: var(--hema-left-color);
+  border-color: transparent;
+  color: #071a0d;
+}
+
 body[data-mode="fight"] #rotate-overlay {
   display: none;
 }

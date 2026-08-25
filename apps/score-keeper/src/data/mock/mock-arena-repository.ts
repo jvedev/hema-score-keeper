@@ -1,5 +1,5 @@
 import type { ArenaRepository } from "../arena-repository";
-import type { Arena } from "../../domain/arena";
+import type { Arena } from "@hema/match-engine";
 import { arenas } from "./fixtures/arenas";
 
 export class MockArenaRepository implements ArenaRepository {

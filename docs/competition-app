@@ -1,0 +1,60 @@
+Maak een nieuwe app aan competition
+De competition app is een mobile pwa net zoals de score-keeper app
+zelfde stijl
+
+de backend wordt google-docs
+bekijk de skills in .github/workflows/skills.yml
+maak voor de client voor alle aanroepen naar de google backend een losse service class deze wil ik ergens in packages
+op die manier kan ik meerdere services classes gebruiken
+
+dit is een pwa waarbij we uitslagen van gevechten gaan opslaan en bekijken waar we de ranking van deelnemers kunnen zien
+en waar we de score kunnen opslaan.
+de deelnemers, de uitslag van de wedstrijden en de ranking komen in 1 een google-docs sheet te staan. alle details van een match worden als json opgeslagen en zijn voor de ranking niet belangrijk
+de ranking zal ook in de pwa worden bijgewerkt zodat de sheets dom kunnen zijn
+ik wil de logica voor de ranking in een apart package en een npm package gaan gebruiken die de zelfde ranking methode gaat gebruiken als hema ratings
+de app wordt gehost op github pages
+omdat deze app alleen met google docs als backend gaat werken word de ruleset straks in de client ingeladen via google-docs
+
+elke competitie heeft zijn eigen sheet die verder identiek zijn
+er komt een competitions sheet waar alle competities staan en verwijzingen naar die sheets
+er komt een ruleset sheet waar de ruleset in staat die voor alle competities geldt
+elke ruleset is opgeslagen met naam en json in 1 cel zodat het compatible blijft met andere backends
+
+
+de app werkt als volgt:
+
+na aanmelding
+zie je de
+competition-selector-view
+hier komt een lijst met competities
+na het kiezen van de competitie komt er een lijst met deelnemers en hun ranking
+bij het kiezen van een deelnemer
+krijg je een lijst van gevechten in de bouts-view die deze deelnemer heeft gehad
+bij het kiezen van een gevecht krijg je de bout-details van dat gevecht te zien
+
+er is een knop onderaan met new bout  deze opend de new-bout view
+je kan dan twee deelnemers kiezen en een match aanmaken
+je kan hier geen ruleset of dicipline kiezen maar in een andere context moet dat mogelijk zijn straks voor de stand alone app
+
+de rest van de flow is het zelfde als die in score keeper
+eigenlijk is dit een variant van scorekeeper met wat andere views
+maak de twee apps zo dat veel logica en componenten naar packages verschuift
+
+als de match is beidigd komt er een overzicht van de match bout-details deze heeft nu twee knoppen publish en decline
+na publish wordt de uitslag naar de google-docs sheet geschreven en wordt de ranking in de sheet geupdate (hierover later meer)
+
+de competition sheet heeft dan als tablad 1 ranking 2 participant 3 bouts 4 settings readonly met een ruleset als json in 1 cel start data en end date en een naam van de competitie
+
+vraag
+1 is het beter om dit met score keeper te intergreren
+2 is het beter eerst score-keeper te refactoren naar packages en dan de competition app te maken
+3 stel vragen aan mij voor verduidelijking
+4 stel een plan op voor het hele project waarbij je steeds een deel zelf doet waarna ik die stap evalueer
+5 stel per stap eerst een plan op en stel opnieuw vragen als nodig
+
+
+
+ma
+
+
+

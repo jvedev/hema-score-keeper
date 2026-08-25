@@ -1,4 +1,4 @@
-import type { RuleSet } from "../../domain/rule-set";
+import type { RuleSet } from "@hema/match-engine";
 import type { RuleSetRepository } from "../rule-set-repository";
 import { ApiClient } from "./api-client";
 

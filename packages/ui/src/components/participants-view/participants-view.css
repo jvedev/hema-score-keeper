@@ -1,0 +1,198 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+.participants-view {
+  background: var(--hema-bg);
+  box-sizing: border-box;
+  color: var(--hema-text);
+  min-height: 100%;
+  padding: 32px 20px;
+}
+
+header,
+main {
+  margin: 0 auto;
+  max-width: 480px;
+}
+
+header {
+  border-bottom: 1px solid var(--hema-line);
+  margin-bottom: 28px;
+  padding-bottom: 24px;
+}
+
+.header-nav {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.header-nav-actions {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+}
+
+.back-button,
+.tab-button,
+.refresh-button {
+  background: none;
+  border: none;
+  color: var(--hema-text-dim);
+  cursor: pointer;
+  font-family: var(--hema-font-ui);
+  font-size: 13px;
+  padding: 0;
+}
+
+.tab-button {
+  color: var(--hema-left-color);
+}
+
+.back-button:hover,
+.back-button:focus-visible,
+.tab-button:hover,
+.tab-button:focus-visible,
+.refresh-button:hover,
+.refresh-button:focus-visible {
+  color: var(--hema-text);
+  outline: none;
+}
+
+.refresh-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+header p,
+header h1 {
+  font-family: var(--hema-font-display);
+  text-transform: uppercase;
+}
+
+header p {
+  color: var(--hema-text-dim);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  margin: 0 0 8px;
+}
+
+header h1 {
+  font-size: 26px;
+  letter-spacing: 0.06em;
+  margin: 0;
+}
+
+.form-section {
+  background: var(--hema-surface);
+  border: 1px solid var(--hema-line);
+  border-radius: var(--hema-radius);
+  margin-bottom: 20px;
+  padding: 16px;
+}
+
+.form-section h2 {
+  font-family: var(--hema-font-display);
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+
+.hint {
+  color: var(--hema-text-dim);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.form-row {
+  display: flex;
+  gap: 10px;
+}
+
+.form-row input {
+  background: var(--hema-surface-raised);
+  border: 1px solid var(--hema-line);
+  border-radius: var(--hema-radius);
+  color: var(--hema-text);
+  flex: 1;
+  font-family: var(--hema-font-ui);
+  font-size: 14px;
+  padding: 10px 12px;
+}
+
+.form-row input:focus-visible {
+  border-color: var(--hema-left-color);
+  outline: none;
+}
+
+.primary-button {
+  background: var(--hema-left-color);
+  border: none;
+  border-radius: var(--hema-radius);
+  color: #071a0d;
+  font-family: var(--hema-font-ui);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 16px;
+}
+
+.primary-button:hover,
+.primary-button:focus-visible {
+  filter: brightness(1.1);
+  outline: none;
+}
+
+.message {
+  color: var(--hema-text-dim);
+  font-size: 14px;
+  margin-bottom: 14px;
+}
+
+.message.is-error {
+  color: var(--hema-danger);
+}
+
+.participant-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.participant-row {
+  align-items: center;
+  background: var(--hema-surface);
+  border: 1px solid var(--hema-line);
+  border-radius: var(--hema-radius);
+  color: var(--hema-text);
+  display: flex;
+  font-family: var(--hema-font-ui);
+  justify-content: space-between;
+  padding: 12px 16px;
+  text-align: left;
+  width: 100%;
+}
+
+.participant-row:hover,
+.participant-row:focus-visible {
+  border-color: var(--hema-left-color);
+  outline: none;
+}
+
+.participant-row.is-me {
+  border-color: var(--hema-left-color);
+}
+
+.me-badge {
+  background: var(--hema-left-color);
+  border-radius: 999px;
+  color: #071a0d;
+  font-family: var(--hema-font-display);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  text-transform: uppercase;
+}

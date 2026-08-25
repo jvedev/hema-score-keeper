@@ -13,9 +13,8 @@ import type {
 import { createEventRepository } from "./data/create-event-repository";
 import { createRuleSetRepository } from "./data/create-rule-set-repository";
 import { shouldUseMockApi } from "./data/use-mock-api";
-import { MatchStore } from "./domain/match-store";
-import { createMatchState } from "./domain/match-state";
-import { reduceMatchEvent } from "./domain/match-reducer";
+import { fetchSheetValues } from "./data/google-sheets-client";
+import { MatchStore, createMatchState, reduceMatchEvent } from "@hema/match-engine";
 import "./styles.css";
 
 type OrientationLockType =
@@ -47,6 +46,13 @@ interface CurrentSelection {
   timeSlotSelection: ActiveTimeSlotSelection | undefined;
 }
 
+interface GoogleSheetsSelection {
+  sourceSheetId?: string | undefined;
+  destSheetId?: string | undefined;
+}
+
+type AppRoute = "launcher" | "event" | "standalone" | "google-sheets" | "fight";
+
 function requireElement<ElementType extends Element>(
   selector: string,
 ): ElementType {
@@ -61,6 +67,26 @@ const startScreenView =
   );
 const fightView =
   requireElement<HTMLElementTagNameMap["fight-view"]>("#fight-view");
+const launcherScreen = requireElement<HTMLElement>("#launcher-screen");
+const standaloneScreen = requireElement<HTMLElement>("#standalone-screen");
+const googleSheetsScreen = requireElement<HTMLElement>("#google-sheets-screen");
+const standaloneButton =
+  requireElement<HTMLButtonElement>("#standalone-button");
+const googleSheetsButton =
+  requireElement<HTMLButtonElement>("#google-sheets-button");
+const eventButton = requireElement<HTMLButtonElement>("#event-button");
+const standaloneBackButton =
+  requireElement<HTMLButtonElement>("#standalone-back-button");
+const googleSheetsBackButton =
+  requireElement<HTMLButtonElement>("#google-sheets-back-button");
+const googleSheetsSourceInput =
+  requireElement<HTMLInputElement>("#google-sheets-source-input");
+const googleSheetsDestInput =
+  requireElement<HTMLInputElement>("#google-sheets-dest-input");
+const googleSheetsApplyButton =
+  requireElement<HTMLButtonElement>("#google-sheets-apply-button");
+const googleSheetsStatus =
+  requireElement<HTMLElement>("#google-sheets-status");
 const scoreView =
   requireElement<HTMLElementTagNameMap["score-view"]>("#score-view");
 const warningView =
@@ -72,6 +98,7 @@ const eventRepository = createEventRepository();
 const ruleSetRepository = createRuleSetRepository();
 const backendClient = shouldUseMockApi() ? undefined : createApiClient();
 const selectionStorageKey = "hema-score-keeper.start-selection";
+const googleSheetsSelectionStorageKey = "hema-score-keeper.google-sheets-selection";
 const defaultArenaLeftColor = "#21c15b";
 const defaultArenaRightColor = "#2f7dfa";
 
@@ -82,11 +109,40 @@ let selectedMatchId: string | undefined;
 let matchStore: MatchStore | undefined;
 let wakeLock: WakeLockSentinel | undefined;
 let wakeLockRequested = false;
+let eventsLoadPromise: Promise<void> | undefined;
+let eventsLoaded = false;
 const completedMatchIds = new Set<string>();
+let googleSheetsSelection: GoogleSheetsSelection = {};
 
 fightView.setMatchActive(false);
-showStartScreen();
-startScreenView.configure(buildLoadingConfig());
+
+standaloneButton.addEventListener("click", () => {
+  syncStandaloneUrl();
+  showStandaloneScreen();
+});
+googleSheetsButton.addEventListener("click", () => {
+  enterGoogleSheetsMode();
+});
+eventButton.addEventListener("click", () => {
+  void openEventMode();
+});
+standaloneBackButton.addEventListener("click", () => {
+  syncLauncherUrl(true);
+  showLauncherScreen();
+});
+googleSheetsBackButton.addEventListener("click", () => {
+  syncLauncherUrl(true);
+  showLauncherScreen();
+});
+googleSheetsApplyButton.addEventListener("click", () => {
+  googleSheetsSelection = {
+    sourceSheetId: googleSheetsSourceInput.value.trim() || undefined,
+    destSheetId: googleSheetsDestInput.value.trim() || undefined,
+  };
+  persistGoogleSheetsSelection();
+  syncGoogleSheetsUrl(true);
+  void logSourceSheetContents();
+});
 
 startScreenView.addEventListener("event-selected", (event) => {
   selectEvent(event.detail.eventId);
@@ -137,42 +193,158 @@ window.addEventListener("match-event", (event) => {
 });
 
 window.addEventListener("popstate", () => {
-  applyLocationSelection();
-  if (isFightRoute()) {
-    void beginFightMode(selectedMatchId, true);
+  void handleRoute();
+});
+
+void initializeApp();
+
+async function initializeApp(): Promise<void> {
+  const route = resolveRoute();
+  if (route === "event" || route === "fight") {
+    showEventScreen();
+    startScreenView.configure(buildLoadingConfig());
+    await loadEvents();
     return;
   }
 
-  void exitFightMode();
-  showStartScreen();
-  renderStartScreen();
-});
+  if (route === "standalone") {
+    showStandaloneScreen();
+    return;
+  }
 
-void loadEvents();
+  if (route === "google-sheets") {
+    enterGoogleSheetsMode(true);
+    return;
+  }
 
-async function loadEvents(): Promise<void> {
-  startScreenView.configure(buildLoadingConfig());
-  try {
-    events = await eventRepository.listEvents();
-    mergeCompletedMatchIds(events);
+  showLauncherScreen();
+}
+
+function enterGoogleSheetsMode(replaceUrl = false): void {
+  applyGoogleSheetsLocationSelection();
+  syncGoogleSheetsUrl(replaceUrl);
+  showGoogleSheetsScreen();
+  renderGoogleSheetsScreen();
+}
+
+async function openEventMode(): Promise<void> {
+  syncEventUrl();
+  showEventScreen();
+  if (eventsLoaded) {
     applyLocationSelection();
-    if (isFightRoute()) {
-      await beginFightMode(selectedMatchId, true);
+    syncEventUrl(true);
+    renderEventScreen();
+    return;
+  }
+
+  startScreenView.configure(buildLoadingConfig());
+  await loadEvents();
+}
+
+async function handleRoute(): Promise<void> {
+  const route = resolveRoute();
+  if (route === "launcher") {
+    await exitFightMode();
+    showLauncherScreen();
+    return;
+  }
+
+  if (route === "standalone") {
+    await exitFightMode();
+    showStandaloneScreen();
+    return;
+  }
+
+  if (route === "google-sheets") {
+    await exitFightMode();
+    enterGoogleSheetsMode(true);
+    return;
+  }
+
+  if (route === "event") {
+    await exitFightMode();
+    showEventScreen();
+    if (eventsLoaded) {
+      applyLocationSelection();
+      syncEventUrl(true);
+      renderEventScreen();
       return;
     }
 
-    await exitFightMode();
-    showStartScreen();
-    syncStartUrl();
-    renderStartScreen();
-  } catch (error) {
-    await exitFightMode();
-    showStartScreen();
-    startScreenView.configure({
-      ...buildLoadingConfig(),
-      loading: false,
-      error: error instanceof Error ? error.message : "Unable to load events.",
-    });
+    startScreenView.configure(buildLoadingConfig());
+    await loadEvents();
+    return;
+  }
+
+  await exitFightMode();
+  showEventScreen();
+  if (eventsLoaded) {
+    applyLocationSelection();
+    await beginFightMode(selectedMatchId, true);
+    return;
+  }
+
+  startScreenView.configure(buildLoadingConfig());
+  await loadEvents();
+}
+
+async function loadEvents(): Promise<void> {
+  if (eventsLoadPromise) {
+    return eventsLoadPromise;
+  }
+
+  eventsLoadPromise = (async () => {
+    startScreenView.configure(buildLoadingConfig());
+    try {
+      events = await eventRepository.listEvents();
+      eventsLoaded = true;
+      mergeCompletedMatchIds(events);
+      applyLocationSelection();
+
+      const route = resolveRoute();
+      if (route === "fight") {
+        await beginFightMode(selectedMatchId, true);
+        return;
+      }
+
+      if (route === "event") {
+        syncEventUrl(true);
+        showEventScreen();
+        renderEventScreen();
+        return;
+      }
+
+      if (route === "standalone") {
+        showStandaloneScreen();
+        return;
+      }
+
+      if (route === "google-sheets") {
+        enterGoogleSheetsMode(true);
+        return;
+      }
+    } catch (error) {
+      eventsLoaded = false;
+      const route = resolveRoute();
+      if (route === "fight" || route === "event") {
+        await exitFightMode();
+        showEventScreen();
+        startScreenView.configure({
+          ...buildLoadingConfig(),
+          loading: false,
+          error: error instanceof Error ? error.message : "Unable to load events.",
+        });
+        return;
+      }
+
+      console.error("Unable to load events.", error);
+    }
+  })();
+
+  try {
+    await eventsLoadPromise;
+  } finally {
+    eventsLoadPromise = undefined;
   }
 }
 
@@ -184,18 +356,18 @@ async function beginFightMode(
   const timeSlotSelection = selection.timeSlotSelection;
   if (!selection.event || !selection.arena || !timeSlotSelection) {
     await exitFightMode();
-    syncStartUrl();
-    showStartScreen();
-    renderStartScreen("Event not active for the selected arena.");
+    syncEventUrl(true);
+    showEventScreen();
+    renderEventScreen("Event not active for the selected arena.");
     return;
   }
 
   const match = resolveMatch(timeSlotSelection, selection.arena.id, matchId);
   if (!match) {
     await exitFightMode();
-    syncStartUrl();
-    showStartScreen();
-    renderStartScreen(
+    syncEventUrl(true);
+    showEventScreen();
+    renderEventScreen(
       timeSlotSelection.matches.length === 0
         ? "No fights are assigned to the selected time slot."
         : "All fights in the selected time slot are already completed.",
@@ -327,9 +499,10 @@ async function exitFightMode(): Promise<void> {
   }
   fightView.setMatchStarted(false);
   fightView.setMatchCompleted(false);
+  scoreView.close();
+  warningView.close();
+  forfeitDialog.close();
   fightView.hidden = true;
-  startScreenView.hidden = false;
-  document.body.dataset.mode = "start";
 }
 
 async function completeMatch(): Promise<void> {
@@ -377,7 +550,7 @@ async function completeMatch(): Promise<void> {
   completedMatchIds.add(match.id);
   selectedMatchId = undefined;
   persistSelection();
-  syncStartUrl();
+  syncEventUrl(true);
   await exitFightMode();
   await loadEvents();
 }
@@ -420,8 +593,8 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-function renderStartScreen(inactiveMessage?: string): void {
-  startScreenView.configure(buildStartScreenConfig(inactiveMessage));
+function renderEventScreen(inactiveMessage?: string): void {
+  startScreenView.configure(buildEventScreenConfig(inactiveMessage));
 }
 
 function createFighterStyle(backgroundColor: string): { backgroundColor: string; textColor: string } {
@@ -463,7 +636,7 @@ function buildLoadingConfig() {
   };
 }
 
-function buildStartScreenConfig(inactiveMessage?: string) {
+function buildEventScreenConfig(inactiveMessage?: string) {
   const selection = resolveCurrentSelection();
   const fights = selection.timeSlotSelection
     ? buildFightCards(selection.timeSlotSelection, selection.arena?.id)
@@ -715,23 +888,37 @@ function selectEvent(eventId: string): void {
   selectedArenaId = event?.arenas[0]?.id;
   selectedMatchId = undefined;
   persistSelection();
-  syncStartUrl();
-  showStartScreen();
-  renderStartScreen();
+  syncEventUrl(true);
+  showEventScreen();
+  renderEventScreen();
 }
 
 function selectArena(arenaId: string): void {
   selectedArenaId = arenaId;
   selectedMatchId = undefined;
   persistSelection();
-  syncStartUrl();
-  showStartScreen();
-  renderStartScreen();
+  syncEventUrl(true);
+  showEventScreen();
+  renderEventScreen();
 }
 
-function syncStartUrl(): void {
+function syncLauncherUrl(replaceUrl = false): void {
   const url = new URL(window.location.href);
   url.pathname = "/";
+  url.searchParams.delete("eventId");
+  url.searchParams.delete("arenaId");
+  url.searchParams.delete("matchId");
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  if (replaceUrl) {
+    window.history.replaceState({}, "", nextUrl);
+  } else {
+    window.history.pushState({}, "", nextUrl);
+  }
+}
+
+function syncEventUrl(replaceUrl = false): void {
+  const url = new URL(window.location.href);
+  url.pathname = "/event";
   if (selectedEventId) {
     url.searchParams.set("eventId", selectedEventId);
   } else {
@@ -743,7 +930,116 @@ function syncStartUrl(): void {
     url.searchParams.delete("arenaId");
   }
   url.searchParams.delete("matchId");
-  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  if (replaceUrl) {
+    window.history.replaceState({}, "", nextUrl);
+  } else {
+    window.history.pushState({}, "", nextUrl);
+  }
+}
+
+function syncStandaloneUrl(replaceUrl = false): void {
+  syncModeUrl("/standalone", replaceUrl);
+}
+
+function syncGoogleSheetsUrl(replaceUrl = false): void {
+  const url = new URL(window.location.href);
+  url.pathname = "/google-sheets";
+  if (googleSheetsSelection.sourceSheetId) {
+    url.searchParams.set("sourceId", googleSheetsSelection.sourceSheetId);
+  } else {
+    url.searchParams.delete("sourceId");
+  }
+  if (googleSheetsSelection.destSheetId) {
+    url.searchParams.set("destId", googleSheetsSelection.destSheetId);
+  } else {
+    url.searchParams.delete("destId");
+  }
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  if (replaceUrl) {
+    window.history.replaceState({}, "", nextUrl);
+  } else {
+    window.history.pushState({}, "", nextUrl);
+  }
+}
+
+function applyGoogleSheetsLocationSelection(): void {
+  const params = new URLSearchParams(window.location.search);
+  const savedSelection = loadSavedGoogleSheetsSelection();
+  googleSheetsSelection = {
+    sourceSheetId: params.get("sourceId") ?? savedSelection?.sourceSheetId,
+    destSheetId: params.get("destId") ?? savedSelection?.destSheetId,
+  };
+  persistGoogleSheetsSelection();
+}
+
+function loadSavedGoogleSheetsSelection(): GoogleSheetsSelection | undefined {
+  try {
+    const raw = window.localStorage.getItem(googleSheetsSelectionStorageKey);
+    if (!raw) {
+      return undefined;
+    }
+    const parsed = JSON.parse(raw) as Partial<GoogleSheetsSelection>;
+    const savedSelection: GoogleSheetsSelection = {};
+    if (typeof parsed.sourceSheetId === "string") {
+      savedSelection.sourceSheetId = parsed.sourceSheetId;
+    }
+    if (typeof parsed.destSheetId === "string") {
+      savedSelection.destSheetId = parsed.destSheetId;
+    }
+    return savedSelection;
+  } catch (error) {
+    console.warn("Unable to read the saved Google Sheets selection.", error);
+    return undefined;
+  }
+}
+
+function persistGoogleSheetsSelection(): void {
+  try {
+    window.localStorage.setItem(
+      googleSheetsSelectionStorageKey,
+      JSON.stringify(googleSheetsSelection),
+    );
+  } catch (error) {
+    console.warn("Unable to save the Google Sheets selection.", error);
+  }
+}
+
+function renderGoogleSheetsScreen(): void {
+  googleSheetsSourceInput.value = googleSheetsSelection.sourceSheetId ?? "";
+  googleSheetsDestInput.value = googleSheetsSelection.destSheetId ?? "";
+  googleSheetsStatus.textContent = "";
+}
+
+async function logSourceSheetContents(): Promise<void> {
+  if (!googleSheetsSelection.sourceSheetId) {
+    return;
+  }
+
+  googleSheetsStatus.textContent = "Loading source sheet...";
+  try {
+    const values = await fetchSheetValues(googleSheetsSelection.sourceSheetId);
+    console.log("Source sheet contents:", values);
+    googleSheetsStatus.textContent = `Loaded ${values.length} row(s) — see the browser console.`;
+  } catch (error) {
+    console.error("Unable to read the source sheet.", error);
+    googleSheetsStatus.textContent =
+      error instanceof Error ? error.message : "Unable to read the source sheet.";
+  }
+}
+
+function syncModeUrl(pathname: string, replaceUrl: boolean): void {
+  const url = new URL(window.location.href);
+  url.pathname = pathname;
+  url.searchParams.delete("eventId");
+  url.searchParams.delete("arenaId");
+  url.searchParams.delete("matchId");
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  if (replaceUrl) {
+    window.history.replaceState({}, "", nextUrl);
+  } else {
+    window.history.pushState({}, "", nextUrl);
+  }
 }
 
 function syncFightUrl(matchId: string, replaceUrl: boolean): void {
@@ -841,17 +1137,71 @@ function persistSelection(): void {
   }
 }
 
-function isFightRoute(): boolean {
-  return normalizePath(window.location.pathname) === "/match";
+function resolveRoute(): AppRoute {
+  const pathname = normalizePath(window.location.pathname);
+  if (pathname === "/match") {
+    return "fight";
+  }
+  if (pathname === "/event") {
+    return "event";
+  }
+  if (pathname === "/standalone") {
+    return "standalone";
+  }
+  if (pathname === "/google-sheets") {
+    return "google-sheets";
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  if (params.has("matchId")) {
+    return "fight";
+  }
+  if (params.has("eventId") || params.has("arenaId")) {
+    return "event";
+  }
+  return "launcher";
 }
 
-function showStartScreen(): void {
+function showLauncherScreen(): void {
+  launcherScreen.hidden = false;
+  standaloneScreen.hidden = true;
+  googleSheetsScreen.hidden = true;
+  startScreenView.hidden = true;
+  fightView.hidden = true;
+  document.body.dataset.mode = "launcher";
+}
+
+function showEventScreen(): void {
+  launcherScreen.hidden = true;
+  standaloneScreen.hidden = true;
+  googleSheetsScreen.hidden = true;
   startScreenView.hidden = false;
   fightView.hidden = true;
-  document.body.dataset.mode = "start";
+  document.body.dataset.mode = "event";
+}
+
+function showStandaloneScreen(): void {
+  launcherScreen.hidden = true;
+  standaloneScreen.hidden = false;
+  googleSheetsScreen.hidden = true;
+  startScreenView.hidden = true;
+  fightView.hidden = true;
+  document.body.dataset.mode = "standalone";
+}
+
+function showGoogleSheetsScreen(): void {
+  launcherScreen.hidden = true;
+  standaloneScreen.hidden = true;
+  googleSheetsScreen.hidden = false;
+  startScreenView.hidden = true;
+  fightView.hidden = true;
+  document.body.dataset.mode = "google-sheets";
 }
 
 function showFightScreen(): void {
+  launcherScreen.hidden = true;
+  standaloneScreen.hidden = true;
+  googleSheetsScreen.hidden = true;
   startScreenView.hidden = true;
   fightView.hidden = false;
   document.body.dataset.mode = "fight";

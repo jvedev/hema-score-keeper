@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@hema/event-admin-api": "*",
+    "@hema/match-engine": "*",
     "@hema/ui": "*"
   },
   "devDependencies": {

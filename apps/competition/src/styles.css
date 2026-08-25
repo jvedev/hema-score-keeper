@@ -1,0 +1,81 @@
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  background: var(--hema-bg);
+  color: var(--hema-text);
+  font-family: var(--hema-font-ui);
+  height: 100%;
+  margin: 0;
+  overscroll-behavior: none;
+}
+
+button {
+  cursor: pointer;
+}
+
+competition-selector-view[hidden],
+ranking-view[hidden],
+participants-view[hidden],
+bouts-view[hidden],
+bout-details-view[hidden],
+new-bout-view[hidden],
+fight-view[hidden],
+match-publish-view[hidden] {
+  display: none;
+}
+
+.mode-screen[hidden] {
+  display: none;
+}
+
+.mode-screen {
+  align-items: center;
+  display: flex;
+  min-height: 100%;
+  padding: 24px 20px 28px;
+}
+
+.mode-card {
+  background: #111723;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  display: grid;
+  gap: 14px;
+  margin: 0 auto;
+  max-width: 480px;
+  padding: 24px;
+  width: 100%;
+}
+
+.mode-eyebrow,
+.mode-card h1,
+.mode-copy {
+  margin: 0;
+}
+
+.mode-eyebrow {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.mode-card h1 {
+  font-size: 26px;
+  letter-spacing: 0.04em;
+}
+
+.mode-copy {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.sign-in-error {
+  color: var(--hema-danger);
+  min-height: 1em;
+}

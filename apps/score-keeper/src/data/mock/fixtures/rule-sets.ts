@@ -1,4 +1,4 @@
-import type { RuleSet } from "../../../domain/rule-set";
+import type { RuleSet } from "@hema/match-engine";
 
 export const ruleSets: Readonly<Record<string, RuleSet>> = {
   "rule-set-1": {

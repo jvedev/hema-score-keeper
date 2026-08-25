@@ -1,0 +1,150 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+.bouts-view {
+  background: var(--hema-bg);
+  box-sizing: border-box;
+  color: var(--hema-text);
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 32px 20px 96px;
+}
+
+header,
+main {
+  margin: 0 auto;
+  max-width: 480px;
+  width: 100%;
+}
+
+header {
+  border-bottom: 1px solid var(--hema-line);
+  margin-bottom: 28px;
+  padding-bottom: 24px;
+}
+
+.back-button {
+  background: none;
+  border: none;
+  color: var(--hema-text-dim);
+  cursor: pointer;
+  display: block;
+  font-family: var(--hema-font-ui);
+  font-size: 13px;
+  margin: 0 0 14px;
+  padding: 0;
+}
+
+.back-button:hover,
+.back-button:focus-visible {
+  color: var(--hema-text);
+  outline: none;
+}
+
+header p,
+header h1 {
+  font-family: var(--hema-font-display);
+  text-transform: uppercase;
+}
+
+header p {
+  color: var(--hema-text-dim);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  margin: 0 0 8px;
+}
+
+header h1 {
+  font-size: 26px;
+  letter-spacing: 0.06em;
+  margin: 0;
+}
+
+.message {
+  color: var(--hema-text-dim);
+  font-size: 14px;
+  margin-bottom: 14px;
+}
+
+.message.is-error {
+  color: var(--hema-danger);
+}
+
+.bout-list {
+  display: grid;
+  gap: 8px;
+}
+
+.bout-row {
+  background: var(--hema-surface);
+  border: 1px solid var(--hema-line);
+  border-left-width: 4px;
+  border-radius: var(--hema-radius);
+  color: var(--hema-text);
+  display: grid;
+  font-family: var(--hema-font-ui);
+  gap: 4px;
+  padding: 12px 16px;
+  text-align: left;
+  width: 100%;
+}
+
+.bout-row:hover,
+.bout-row:focus-visible {
+  outline: none;
+}
+
+.bout-row-win {
+  border-left-color: var(--hema-left-color);
+}
+
+.bout-row-loss {
+  border-left-color: var(--hema-danger);
+}
+
+.bout-row-draw {
+  border-left-color: var(--hema-text-dim);
+}
+
+.bout-score,
+.bout-date {
+  color: var(--hema-text-dim);
+  font-family: var(--hema-font-display);
+  font-size: 12px;
+}
+
+footer {
+  bottom: 0;
+  box-sizing: border-box;
+  left: 0;
+  padding: 16px 20px;
+  position: fixed;
+  width: 100%;
+}
+
+.primary-button {
+  background: var(--hema-left-color);
+  border: none;
+  border-radius: var(--hema-radius);
+  color: #071a0d;
+  font-family: var(--hema-font-ui);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 14px 16px;
+}
+
+.primary-button:hover,
+.primary-button:focus-visible {
+  filter: brightness(1.1);
+  outline: none;
+}
+
+.new-bout-button {
+  display: block;
+  margin: 0 auto;
+  max-width: 480px;
+  width: 100%;
+}

@@ -258,6 +258,14 @@ if (!customElements.get("fight-view")) {
 }
 
 declare global {
+  interface HTMLElementEventMap {
+    "hit-requested": CustomEvent<{ elapsedTimeSeconds: number }>;
+    "warning-requested": CustomEvent<{ elapsedTimeSeconds: number }>;
+    "match-reset-requested": CustomEvent<void>;
+    "end-match-requested": CustomEvent<void>;
+    "forfeit-requested": CustomEvent<void>;
+  }
+
   interface HTMLElementTagNameMap {
     "fight-view": FightView;
   }

@@ -1,4 +1,4 @@
-import type { Arena } from "../../../domain/arena";
+import type { Arena } from "@hema/match-engine";
 
 export const arenas: Readonly<Record<string, Arena>> = {
   "arena-1": {

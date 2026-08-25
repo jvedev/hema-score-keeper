@@ -1,4 +1,4 @@
-import type { RuleSet } from "../domain/rule-set";
+import type { RuleSet } from "@hema/match-engine";
 
 export interface RuleSetRepository {
   getRuleSet(ruleSetId: string): Promise<RuleSet>;

@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma.js";
+import { readSheetValues, writeSheetValues } from "./google-sheets.js";
 import {
   ensureJsonValue,
   ensureObject,
@@ -24,6 +25,8 @@ interface Route {
 
 const routes: Route[] = [
   { method: "GET", pattern: /^\/health$/, handler: health },
+  { method: "GET", pattern: /^\/api\/v1\/google-sheets\/values$/, handler: getGoogleSheetValues },
+  { method: "PUT", pattern: /^\/api\/v1\/google-sheets\/values$/, handler: putGoogleSheetValues },
   { method: "GET", pattern: /^\/api\/v1\/users$/, handler: listUsers },
   { method: "POST", pattern: /^\/api\/v1\/users$/, handler: createUser },
   { method: "GET", pattern: /^\/api\/v1\/users\/([^/]+)$/, handler: getUser },
@@ -281,6 +284,26 @@ function param(params: Record<string, string>, index: number, label: string): st
 }
 
 async function health(): Promise<unknown> {
+  return { ok: true };
+}
+
+async function getGoogleSheetValues(request: IncomingMessage): Promise<unknown> {
+  const url = new URL(request.url ?? "/", "http://localhost");
+  const spreadsheetId = requireString(url.searchParams.get("spreadsheetId"), "spreadsheetId");
+  const range = requireString(url.searchParams.get("range"), "range");
+  const values = await readSheetValues(spreadsheetId, range);
+  return { values };
+}
+
+async function putGoogleSheetValues(request: IncomingMessage): Promise<unknown> {
+  const body = ensureObject(await readJsonBody(request), "Google Sheets values");
+  const spreadsheetId = requireString(body.spreadsheetId, "Spreadsheet ID");
+  const range = requireString(body.range, "Range");
+  if (!Array.isArray(body.values)) {
+    throw new HttpError(400, "values must be an array of rows.");
+  }
+
+  await writeSheetValues(spreadsheetId, range, body.values as unknown[][]);
   return { ok: true };
 }
 

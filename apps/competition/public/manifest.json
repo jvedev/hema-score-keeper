@@ -1,0 +1,16 @@
+{
+  "name": "HEMA Competition",
+  "short_name": "Competition",
+  "description": "Record HEMA competition bouts and track participant ranking",
+  "start_url": "/hema-score-keeper/competition/",
+  "scope": "/hema-score-keeper/competition/",
+  "id": "/hema-score-keeper/competition/",
+  "display": "standalone",
+  "display_override": ["standalone"],
+  "orientation": "portrait",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
