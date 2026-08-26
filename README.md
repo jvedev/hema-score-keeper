@@ -1,4 +1,4 @@
-# HEMA Score Keeper
+# HEMA Score Keeper (beware this is in development and in no way production ready)
 
 TypeScript monorepo voor een installable HEMA-scorekeeper en een herbruikbare
 Web Components-library.
