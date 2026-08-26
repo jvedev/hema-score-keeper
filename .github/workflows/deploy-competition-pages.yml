@@ -43,13 +43,19 @@ jobs:
       - name: Build competition app
         run: npm run build --workspace @hema/competition
 
+      - name: Stage Pages content
+        run: |
+          rm -rf ./pages
+          mkdir -p ./pages/competition
+          cp -R ./apps/competition/dist/. ./pages/competition/
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./apps/competition/dist
+          path: ./pages
 
       - name: Deploy to GitHub Pages
         id: deployment
