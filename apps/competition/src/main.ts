@@ -698,7 +698,7 @@ async function enterFightMode(): Promise<void> {
 
 async function exitFightMode(): Promise<void> {
   wakeLockRequested = false;
-  if (wakeLock && wakeLock.released === false) {
+  if (wakeLock && !wakeLock.released) {
     try {
       await wakeLock.release();
     } catch (error) {
