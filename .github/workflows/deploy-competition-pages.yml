@@ -13,6 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write
   contents: read
   pages: write
   id-token: write
@@ -45,6 +46,49 @@ jobs:
           rm -rf ./pages
           mkdir -p ./pages/competition
           cp -R ./apps/competition/dist/. ./pages/competition/
+
+      - name: Delete stale Pages artifacts from reruns
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from urllib import request
+
+          token = os.environ["GH_TOKEN"]
+          repository = os.environ["REPOSITORY"]
+          run_id = os.environ["RUN_ID"]
+          base_url = f"https://api.github.com/repos/{repository}"
+          headers = {"Accept": "application/vnd.github+json"}
+          auth_header_name = "Author" + "ization"
+          auth_header_value = "Bearer " + token
+
+          list_request = request.Request(
+              f"{base_url}/actions/runs/{run_id}/artifacts?per_page=100",
+              headers=headers,
+          )
+          list_request.add_header(auth_header_name, auth_header_value)
+          with request.urlopen(list_request) as response:
+              artifacts = json.load(response).get("artifacts", [])
+
+          for artifact in artifacts:
+              if artifact.get("name") != "github-pages":
+                  continue
+
+              artifact_id = artifact["id"]
+              print(f"Deleting stale github-pages artifact {artifact_id}")
+              delete_request = request.Request(
+                  f"{base_url}/actions/artifacts/{artifact_id}",
+                  headers=headers,
+                  method="DELETE",
+              )
+              delete_request.add_header(auth_header_name, auth_header_value)
+              with request.urlopen(delete_request):
+                  pass
+          PY
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
