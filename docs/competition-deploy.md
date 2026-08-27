@@ -4,7 +4,8 @@
 
 1. Go to **Settings → Pages** and use **GitHub Actions** as the source.
 2. Push to `master`.
-3. In **Settings → Secrets and variables → Actions → Variables**, set:
+3. In **Settings → Secrets and variables → Actions**, set these as either
+   **Variables** or **Secrets**:
 
 ```text
 COMPETITION_APPS_SCRIPT_URL=<the Web app URL>
