@@ -27,8 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VITE_USE_MOCK_API: "false"
-      VITE_APPS_SCRIPT_URL: ${{ vars.COMPETITION_APPS_SCRIPT_URL }}
-      VITE_GOOGLE_CLIENT_ID: ${{ vars.COMPETITION_GOOGLE_CLIENT_ID }}
+      VITE_APPS_SCRIPT_URL: ${{ vars.COMPETITION_APPS_SCRIPT_URL || secrets.COMPETITION_APPS_SCRIPT_URL }}
+      VITE_GOOGLE_CLIENT_ID: ${{ vars.COMPETITION_GOOGLE_CLIENT_ID || secrets.COMPETITION_GOOGLE_CLIENT_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,11 +45,11 @@ jobs:
       - name: Validate competition env
         run: |
           if [ -z "$VITE_APPS_SCRIPT_URL" ]; then
-            echo "COMPETITION_APPS_SCRIPT_URL is not set in repository variables."
+            echo "COMPETITION_APPS_SCRIPT_URL is not set in repository variables or secrets."
             exit 1
           fi
           if [ -z "$VITE_GOOGLE_CLIENT_ID" ]; then
-            echo "COMPETITION_GOOGLE_CLIENT_ID is not set in repository variables."
+            echo "COMPETITION_GOOGLE_CLIENT_ID is not set in repository variables or secrets."
             exit 1
           fi
 
