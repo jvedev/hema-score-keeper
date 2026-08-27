@@ -131,6 +131,17 @@ VITE_APPS_SCRIPT_URL=<the Web app URL from step 5>
 VITE_GOOGLE_CLIENT_ID=<the OAuth client ID from step 3>
 ```
 
+For GitHub Pages deployments, set the same values in the repository's
+**Settings → Secrets and variables → Actions → Variables** as:
+
+```
+COMPETITION_APPS_SCRIPT_URL=<the Web app URL from step 5>
+COMPETITION_GOOGLE_CLIENT_ID=<the OAuth client ID from step 3>
+```
+
+The Pages workflow injects those variables into the Vite build as
+`VITE_APPS_SCRIPT_URL` and `VITE_GOOGLE_CLIENT_ID`.
+
 ## 7. Verify it works
 
 Open the Web app URL in a browser with `?action=listCompetitions` appended —
