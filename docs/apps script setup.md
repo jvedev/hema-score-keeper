@@ -132,7 +132,8 @@ VITE_GOOGLE_CLIENT_ID=<the OAuth client ID from step 3>
 ```
 
 For GitHub Pages deployments, set the same values in the repository's
-**Settings → Secrets and variables → Actions → Variables** as:
+**Settings → Secrets and variables → Actions** as either **Variables** or
+**Secrets**:
 
 ```
 COMPETITION_APPS_SCRIPT_URL=<the Web app URL from step 5>
