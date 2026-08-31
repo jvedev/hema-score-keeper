@@ -47,7 +47,7 @@ van de app. Als backend- en UI-data ooit verschillen, is de backend leidend.
 
 ## Backend
 
-De backend staat in `apps/backend` en gebruikt Prisma met SQLite. Start hem met:
+De backend staat in `apps/backend` en gebruikt better-sqlite3 + Kysely met SQLite. Start hem met:
 
 ```sh
 npm run backend:build
@@ -57,3 +57,6 @@ npm run backend:dev
 De API luistert standaard op `http://localhost:3001` en biedt nu CRUD voor
 clubs, vechters en toernooien, plus toernooi-arena's, poolindeling, bouts en
 losse exchanges.
+
+De oude database-migrations zijn omgezet naar losse SQL-migrations in
+`apps/backend/sql/migrations`, en seeden doe je via `npm run backend:db:seed`.

@@ -21,9 +21,7 @@
     "storybook": "npm run storybook --workspace @hema/ui",
     "backend:dev": "npm run dev --workspace @hema/backend",
     "backend:build": "npm run build --workspace @hema/backend",
-    "backend:prisma:generate": "npm run prisma:generate --workspace @hema/backend",
-    "backend:prisma:migrate": "npm run prisma:migrate --workspace @hema/backend",
-    "backend:prisma:seed": "npm run prisma:seed --workspace @hema/backend"
+    "backend:db:seed": "npm run db:seed --workspace @hema/backend"
   },
   "engines": {
     "node": ">=22",

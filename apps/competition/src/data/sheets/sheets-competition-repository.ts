@@ -16,6 +16,7 @@ import { getIdToken } from "../../identity/session";
 export class SheetsCompetitionRepository implements CompetitionRepository {
   readonly #index: CompetitionsIndexService;
   readonly #sheets: CompetitionSheetService;
+  readonly #draftBouts = new Map<string, Bout>();
 
   constructor() {
     const client = new AppsScriptClient({ baseUrl: requireAppsScriptUrl(), getIdToken });
@@ -28,6 +29,9 @@ export class SheetsCompetitionRepository implements CompetitionRepository {
     return entries.map((entry) => ({
       id: entry.spreadsheetId,
       name: entry.name,
+      slug: entry.spreadsheetId,
+      status: "ACTIVE",
+      date: entry.startDate,
       startDate: entry.startDate,
       endDate: entry.endDate,
     }));
@@ -38,6 +42,9 @@ export class SheetsCompetitionRepository implements CompetitionRepository {
     return {
       id: competitionId,
       name: settings.name,
+      slug: competitionId,
+      status: "ACTIVE",
+      date: settings.startDate,
       startDate: settings.startDate,
       endDate: settings.endDate,
     };
@@ -85,10 +92,13 @@ export class SheetsCompetitionRepository implements CompetitionRepository {
   }
 
   async getBoutsForParticipant(competitionId: string, participantId: string): Promise<Bout[]> {
+    const rows = await this.getBouts(competitionId);
+    return rows.filter((row) => row.fighterAId === participantId || row.fighterBId === participantId);
+  }
+
+  async getBouts(competitionId: string): Promise<Bout[]> {
     const rows = await this.#sheets.getBouts(competitionId);
-    return rows
-      .filter((row) => row.fighterAId === participantId || row.fighterBId === participantId)
-      .map((row) => toBout(competitionId, row));
+    return rows.map((row) => toBout(competitionId, row));
   }
 
   async getBout(competitionId: string, boutId: string): Promise<Bout> {
@@ -100,16 +110,36 @@ export class SheetsCompetitionRepository implements CompetitionRepository {
     return toBout(competitionId, row);
   }
 
-  async publishBout(competitionId: string, input: NewBoutInput): Promise<Bout> {
+  async createBout(competitionId: string, input: NewBoutInput): Promise<Bout> {
+    await this.#requireParticipants(competitionId, input.fighterAId, input.fighterBId);
+    const bout: Bout = {
+      id: `bout-${crypto.randomUUID()}`,
+      competitionId,
+      fighterAId: input.fighterAId,
+      fighterBId: input.fighterBId,
+      scoreA: input.scoreA,
+      scoreB: input.scoreB,
+      winnerParticipantId: input.winnerParticipantId,
+      date: input.date,
+      published: false,
+      details: input.details,
+    };
+    this.#draftBouts.set(bout.id, bout);
+    return structuredClone(bout);
+  }
+
+  async publishBout(competitionId: string, boutId: string, input: NewBoutInput): Promise<Bout> {
+    await this.#requireParticipants(competitionId, input.fighterAId, input.fighterBId);
+    const draft = this.#draftBouts.get(boutId);
     const [participants, ranking] = await Promise.all([
       this.#sheets.getParticipants(competitionId),
       this.#sheets.getRanking(competitionId),
     ]);
 
     const boutRow: BoutRow = {
-      id: `bout-${crypto.randomUUID()}`,
-      fighterAId: input.fighterAId,
-      fighterBId: input.fighterBId,
+      id: boutId,
+      fighterAId: draft?.fighterAId ?? input.fighterAId,
+      fighterBId: draft?.fighterBId ?? input.fighterBId,
       scoreA: input.scoreA,
       scoreB: input.scoreB,
       winnerParticipantId: input.winnerParticipantId,
@@ -119,13 +149,37 @@ export class SheetsCompetitionRepository implements CompetitionRepository {
 
     const currentRatings = new Map(ranking.map((entry) => [entry.participantId, entry.rating]));
     const nextRanking = publishBoutRanking(participants, currentRatings, {
-      fighterAId: input.fighterAId,
-      fighterBId: input.fighterBId,
+      fighterAId: boutRow.fighterAId,
+      fighterBId: boutRow.fighterBId,
       winnerParticipantId: input.winnerParticipantId,
     });
 
     await this.#sheets.publishBout(competitionId, boutRow, nextRanking);
+    this.#draftBouts.delete(boutId);
     return toBout(competitionId, boutRow);
+  }
+
+  async declineBout(_competitionId: string, _boutId: string): Promise<Bout> {
+    const draft = this.#draftBouts.get(_boutId);
+    if (!draft) {
+      throw new Error("Declining published bouts is not supported by the Google Sheets repository.");
+    }
+    this.#draftBouts.delete(_boutId);
+    return structuredClone(draft);
+  }
+
+  async #requireParticipants(competitionId: string, fighterAId: string, fighterBId: string): Promise<void> {
+    if (fighterAId === fighterBId) {
+      throw new Error("A bout requires two different participants.");
+    }
+
+    const participants = await this.getParticipants(competitionId);
+    if (!participants.some((participant) => participant.id === fighterAId)) {
+      throw new Error(`Participant "${fighterAId}" does not exist in competition "${competitionId}".`);
+    }
+    if (!participants.some((participant) => participant.id === fighterBId)) {
+      throw new Error(`Participant "${fighterBId}" does not exist in competition "${competitionId}".`);
+    }
   }
 }
 
@@ -140,6 +194,7 @@ function toBout(competitionId: string, row: BoutRow): Bout {
     winnerParticipantId: row.winnerParticipantId,
     date: row.date,
     published: true,
+    details: row.details,
   };
 }
 

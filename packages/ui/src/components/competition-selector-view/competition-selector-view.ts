@@ -7,16 +7,33 @@ export interface CompetitionOption {
   name: string;
   startDate: string;
   endDate: string;
+  status?: string;
+}
+
+export type CompetitionSelectorTab = "my" | "archive" | "public";
+
+export interface CompetitionSelectorTabOption {
+  key: CompetitionSelectorTab;
+  label: string;
+  count: number;
 }
 
 export interface CompetitionSelectorConfig {
   loading: boolean;
   error: string | null;
+  activeTab: CompetitionSelectorTab;
+  tabs: readonly CompetitionSelectorTabOption[];
   competitions: readonly CompetitionOption[];
 }
 
 export class CompetitionSelectorView extends BaseComponent {
-  #config: CompetitionSelectorConfig = { loading: true, error: null, competitions: [] };
+  #config: CompetitionSelectorConfig = {
+    loading: true,
+    error: null,
+    activeTab: "my",
+    tabs: [],
+    competitions: [],
+  };
 
   connectedCallback(): void {
     this.#render();
@@ -48,8 +65,30 @@ export class CompetitionSelectorView extends BaseComponent {
       message.classList.add("is-error");
       return;
     }
+
+    const tabs = document.createElement("div");
+    tabs.className = "tabs";
+    for (const tab of this.#config.tabs) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `tab-button${tab.key === this.#config.activeTab ? " is-active" : ""}`;
+      button.textContent = `${tab.label} (${tab.count})`;
+      this.registerEvent(button, "click", () => {
+        this.dispatchEvent(
+          new CustomEvent("tab-selected", {
+            bubbles: true,
+            detail: { tab: tab.key },
+          }),
+        );
+      });
+      tabs.append(button);
+    }
+    if (tabs.childElementCount > 0) {
+      list.before(tabs);
+    }
+
     if (this.#config.competitions.length === 0) {
-      message.textContent = "No competitions are available yet.";
+      message.textContent = "No competitions are available in this section.";
       return;
     }
 
@@ -84,6 +123,7 @@ if (!customElements.get("competition-selector-view")) {
 declare global {
   interface HTMLElementEventMap {
     "competition-selected": CustomEvent<{ competitionId: string }>;
+    "tab-selected": CustomEvent<{ tab: CompetitionSelectorTab }>;
   }
 
   interface HTMLElementTagNameMap {

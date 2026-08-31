@@ -14,6 +14,10 @@ export interface NewBoutConfig {
 
 export class NewBoutView extends BaseComponent {
   #config: NewBoutConfig = { participants: [], preselectedParticipantId: null };
+  #submitting = false;
+  #submitError: string | null = null;
+  #createButton?: HTMLButtonElement;
+  #message?: HTMLElement;
 
   connectedCallback(): void {
     this.#render();
@@ -25,7 +29,19 @@ export class NewBoutView extends BaseComponent {
 
   configure(config: NewBoutConfig): void {
     this.#config = config;
+    this.#submitting = false;
+    this.#submitError = null;
     this.#render();
+  }
+
+  setSubmitting(isSubmitting: boolean): void {
+    this.#submitting = isSubmitting;
+    this.#applyState();
+  }
+
+  setSubmitError(message: string | null): void {
+    this.#submitError = message;
+    this.#applyState();
   }
 
   #render(): void {
@@ -41,6 +57,9 @@ export class NewBoutView extends BaseComponent {
 
     fighterASelect.replaceChildren();
     fighterBSelect.replaceChildren();
+    this.#createButton = createButton;
+    this.#message = message;
+    this.#applyState();
     message.textContent = "";
     message.classList.remove("is-error");
 
@@ -68,14 +87,16 @@ export class NewBoutView extends BaseComponent {
     }
 
     const canCreate = this.#config.participants.length >= 2;
-    fighterASelect.disabled = !canCreate;
-    fighterBSelect.disabled = !canCreate;
-    createButton.disabled = !canCreate;
+    const isDisabled = !canCreate || this.#submitting;
+    fighterASelect.disabled = isDisabled;
+    fighterBSelect.disabled = isDisabled;
+    createButton.disabled = isDisabled;
     if (!canCreate) {
       message.textContent = "Add at least two participants before creating a bout.";
     }
 
     this.registerEvent(createButton, "click", () => {
+      if (this.#submitting) return;
       const fighterAId = fighterASelect.value;
       const fighterBId = fighterBSelect.value;
       if (!fighterAId || !fighterBId) return;
@@ -91,6 +112,16 @@ export class NewBoutView extends BaseComponent {
         }),
       );
     });
+  }
+
+  #applyState(): void {
+    if (this.#createButton) {
+      this.#createButton.disabled = this.#submitting || this.#config.participants.length < 2;
+    }
+    if (this.#message) {
+      this.#message.textContent = this.#submitError ?? "";
+      this.#message.classList.toggle("is-error", Boolean(this.#submitError));
+    }
   }
 }
 

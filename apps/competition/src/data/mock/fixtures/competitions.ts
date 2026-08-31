@@ -4,12 +4,18 @@ export const competitions: readonly Competition[] = [
   {
     id: "competition-1",
     name: "Autumn Longsword Open",
+    slug: "autumn-longsword-open",
+    status: "ACTIVE",
+    date: "2026-09-12",
     startDate: "2026-09-12",
     endDate: "2026-09-13",
   },
   {
     id: "competition-2",
     name: "Winter Sabre Cup",
+    slug: "winter-sabre-cup",
+    status: "PUBLIC",
+    date: "2026-12-05",
     startDate: "2026-12-05",
     endDate: "2026-12-06",
   },
@@ -35,6 +41,7 @@ export const bouts: readonly Bout[] = [
     winnerParticipantId: "participant-1",
     date: "2026-09-12",
     published: true,
+    details: { exchanges: [] },
   },
   {
     id: "bout-2",
@@ -46,5 +53,6 @@ export const bouts: readonly Bout[] = [
     winnerParticipantId: null,
     date: "2026-09-12",
     published: true,
+    details: { exchanges: [] },
   },
 ];

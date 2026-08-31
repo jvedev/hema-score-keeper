@@ -1,4 +1,4 @@
-import { applyEloBout, DEFAULT_ELO_RATING, type EloBoutResult } from "./elo";
+import { applyEloBout, DEFAULT_ELO_RATING, type EloBoutResult } from "./elo.js";
 
 export interface RankingParticipant {
   id: string;

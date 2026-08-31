@@ -3,12 +3,15 @@ import type { BoutSummary } from "@hema/ui";
 import { MatchStore, createInitialMatchState, type MatchState } from "@hema/match-engine";
 import "./styles.css";
 import { createCompetitionRepository } from "./data/create-competition-repository";
-import { getCurrentUser, requireCurrentUser, setSession } from "./identity/session";
+import { getCurrentUser, setSession } from "./identity/session";
 import { decodeGoogleIdTokenPayload, renderGoogleSignInButton } from "./identity/google-sign-in";
 import type { CompetitionRepository } from "./data/competition-repository";
-import type { Bout } from "./domain/competition";
+import type { Bout, Competition } from "./domain/competition";
+import { shouldUseMockApi } from "./data/use-mock-api";
+import { shouldUseSheetsApi } from "./data/use-backend-api";
 
 type CompetitionTab = "ranking" | "participants";
+type SelectorTab = "my" | "archive" | "public";
 
 type Route =
   | { screen: "selector" }
@@ -84,17 +87,26 @@ try {
 
 let currentCompetitionId: string | undefined;
 let currentParticipantId: string | undefined;
+let currentSelectorTab: SelectorTab = "my";
+let currentBoutId: string | undefined;
 let activeMatch: ActiveMatch | undefined;
 let pendingResult: PendingBoutResult | undefined;
 let wakeLock: WakeLockSentinel | undefined;
 let wakeLockRequested = false;
 let isPublishing = false;
+let isCreatingBout = false;
 let isSubmittingParticipant = false;
 
 registerServiceWorker();
+registerManifest();
 
 competitionSelectorView.addEventListener("competition-selected", (event) => {
   navigateTo({ screen: "competition", competitionId: event.detail.competitionId, tab: "ranking" });
+});
+
+competitionSelectorView.addEventListener("tab-selected", (event) => {
+  currentSelectorTab = event.detail.tab;
+  void renderSelector();
 });
 
 rankingView.addEventListener("back-requested", () => {
@@ -195,14 +207,7 @@ newBoutView.addEventListener("back-requested", () => {
   navigateTo({ screen: "competition", competitionId: currentCompetitionId, tab: "participants" });
 });
 newBoutView.addEventListener("bout-create-requested", (event) => {
-  if (!currentCompetitionId) return;
-  navigateTo({
-    screen: "fight",
-    competitionId: currentCompetitionId,
-    participantId: currentParticipantId ?? null,
-    fighterAId: event.detail.fighterAId,
-    fighterBId: event.detail.fighterBId,
-  });
+  void handleCreateBout(event.detail.fighterAId, event.detail.fighterBId);
 });
 
 fightView.addEventListener("hit-requested", (event) => {
@@ -248,6 +253,12 @@ async function bootstrap(): Promise<void> {
     showSignInScreen();
     googleSignInButtonContainer.hidden = true;
     signInError.textContent = startupError;
+    return;
+  }
+
+  if (!shouldUseMockApi() && !shouldUseSheetsApi()) {
+    hideSignInScreen();
+    await renderRoute(resolveRoute());
     return;
   }
 
@@ -340,6 +351,41 @@ async function completeFight(): Promise<void> {
   });
 }
 
+async function handleCreateBout(fighterAId: string, fighterBId: string): Promise<void> {
+  if (!currentCompetitionId || isCreatingBout) return;
+
+  isCreatingBout = true;
+  newBoutView.setSubmitting(true);
+  newBoutView.setSubmitError(null);
+  try {
+    const bout = await competitionRepository.createBout(currentCompetitionId, {
+      fighterAId,
+      fighterBId,
+      scoreA: 0,
+      scoreB: 0,
+      winnerParticipantId: null,
+      date: new Date().toISOString().slice(0, 10),
+      details: {},
+    });
+    currentBoutId = bout.id;
+    navigateTo(
+      {
+        screen: "fight",
+        competitionId: currentCompetitionId,
+        participantId: currentParticipantId ?? null,
+        fighterAId,
+        fighterBId,
+      },
+      true,
+    );
+  } catch (error) {
+    newBoutView.setSubmitError(error instanceof Error ? error.message : "Unable to start the bout.");
+  } finally {
+    isCreatingBout = false;
+    newBoutView.setSubmitting(false);
+  }
+}
+
 function resolveWinnerParticipantId(match: ActiveMatch, state: MatchState): string | null {
   if (state.disqualifiedFighter === "A") return match.fighterBId;
   if (state.disqualifiedFighter === "B") return match.fighterAId;
@@ -349,15 +395,16 @@ function resolveWinnerParticipantId(match: ActiveMatch, state: MatchState): stri
 }
 
 async function handlePublish(): Promise<void> {
-  if (!currentCompetitionId || !pendingResult || isPublishing) return;
+  if (!currentCompetitionId || !pendingResult || !currentBoutId || isPublishing) return;
   const competitionId = currentCompetitionId;
   const result = pendingResult;
+  const boutId = currentBoutId;
 
   isPublishing = true;
   matchPublishView.setPublishing(true);
   matchPublishView.setError(null);
   try {
-    const bout = await competitionRepository.publishBout(competitionId, {
+    const bout = await competitionRepository.publishBout(competitionId, boutId, {
       fighterAId: result.fighterAId,
       fighterBId: result.fighterBId,
       scoreA: result.scoreA,
@@ -375,6 +422,7 @@ async function handlePublish(): Promise<void> {
       },
       true,
     );
+    currentBoutId = undefined;
   } catch (error) {
     matchPublishView.setError(
       error instanceof Error ? error.message : "Unable to publish the bout. Please try again.",
@@ -386,16 +434,28 @@ async function handlePublish(): Promise<void> {
 }
 
 async function handleDecline(): Promise<void> {
-  if (!currentCompetitionId) return;
-  pendingResult = undefined;
-  if (currentParticipantId) {
-    navigateTo(
-      { screen: "bouts", competitionId: currentCompetitionId, participantId: currentParticipantId },
-      true,
+  if (!currentCompetitionId || !currentBoutId) return;
+  matchPublishView.setPublishing(true);
+  matchPublishView.setError(null);
+  try {
+    await competitionRepository.declineBout(currentCompetitionId, currentBoutId);
+    pendingResult = undefined;
+    currentBoutId = undefined;
+    if (currentParticipantId) {
+      navigateTo(
+        { screen: "bouts", competitionId: currentCompetitionId, participantId: currentParticipantId },
+        true,
+      );
+      return;
+    }
+    navigateTo({ screen: "competition", competitionId: currentCompetitionId, tab: "participants" }, true);
+  } catch (error) {
+    matchPublishView.setError(
+      error instanceof Error ? error.message : "Unable to discard the bout. Please try again.",
     );
-    return;
+  } finally {
+    matchPublishView.setPublishing(false);
   }
-  navigateTo({ screen: "competition", competitionId: currentCompetitionId, tab: "participants" }, true);
 }
 
 function showScreen(active: Element, mode: string): void {
@@ -410,6 +470,7 @@ async function renderRoute(route: Route): Promise<void> {
     case "selector":
       currentCompetitionId = undefined;
       currentParticipantId = undefined;
+      currentBoutId = undefined;
       await renderSelector();
       return;
     case "competition":
@@ -451,17 +512,86 @@ async function renderRoute(route: Route): Promise<void> {
 
 async function renderSelector(): Promise<void> {
   showScreen(competitionSelectorView, "selector");
-  competitionSelectorView.configure({ loading: true, error: null, competitions: [] });
+  competitionSelectorView.configure({
+    loading: true,
+    error: null,
+    activeTab: currentSelectorTab,
+    tabs: [],
+    competitions: [],
+  });
   try {
     const competitions = await competitionRepository.listCompetitions();
-    competitionSelectorView.configure({ loading: false, error: null, competitions });
+    const currentUser = getCurrentUser();
+    const withMembers = await Promise.all(
+      competitions.map(async (competition) => ({
+        competition,
+        participants: await competitionRepository.getParticipants(competition.id),
+      })),
+    );
+    const userEmail = currentUser?.email ?? null;
+    const selector = classifyCompetitions(withMembers, userEmail);
+    if (!selector.competitionsByTab[currentSelectorTab].length) {
+      currentSelectorTab = firstNonEmptyTab(selector.competitionsByTab) ?? currentSelectorTab;
+    }
+    competitionSelectorView.configure({
+      loading: false,
+      error: null,
+      activeTab: currentSelectorTab,
+      tabs: [
+        { key: "my", label: "My competitions", count: selector.competitionsByTab.my.length },
+        { key: "archive", label: "Archive", count: selector.competitionsByTab.archive.length },
+        { key: "public", label: "Public competitions", count: selector.competitionsByTab.public.length },
+      ],
+      competitions: selector.competitionsByTab[currentSelectorTab],
+    });
   } catch (error) {
     competitionSelectorView.configure({
       loading: false,
       error: error instanceof Error ? error.message : "Unable to load competitions.",
+      activeTab: currentSelectorTab,
+      tabs: [],
       competitions: [],
     });
   }
+}
+
+function classifyCompetitions(
+  competitions: readonly { competition: Competition; participants: readonly { linkedUserEmail: string | null }[] }[],
+  userEmail: string | null,
+): { competitionsByTab: Record<SelectorTab, readonly Competition[]> } {
+  const competitionsByTab: Record<SelectorTab, Competition[]> = {
+    my: [],
+    archive: [],
+    public: [],
+  };
+
+  for (const item of competitions) {
+    const competition = item.competition;
+    const isMember = userEmail !== null && item.participants.some((participant) => participant.linkedUserEmail === userEmail);
+
+    if (isMember && competition.status !== "ARCHIVED") {
+      competitionsByTab.my.push(competition);
+      continue;
+    }
+
+    if (isMember && competition.status === "ARCHIVED") {
+      competitionsByTab.archive.push(competition);
+      continue;
+    }
+
+    competitionsByTab.public.push(competition);
+  }
+
+  return { competitionsByTab };
+}
+
+function firstNonEmptyTab(
+  competitionsByTab: Record<SelectorTab, readonly Competition[]>,
+): SelectorTab | undefined {
+  if (competitionsByTab.my.length > 0) return "my";
+  if (competitionsByTab.archive.length > 0) return "archive";
+  if (competitionsByTab.public.length > 0) return "public";
+  return undefined;
 }
 
 async function renderRanking(
@@ -499,7 +629,7 @@ async function renderParticipants(
   });
   try {
     const participants = await competitionRepository.getParticipants(competitionId, options);
-    const currentUserEmail = requireCurrentUser().email;
+    const currentUserEmail = getCurrentUser()?.email ?? null;
     const linked = participants.find((participant) => participant.linkedUserEmail === currentUserEmail);
     participantsView.configure({
       loading: false,
@@ -610,7 +740,7 @@ async function renderBoutDetails(competitionId: string, boutId: string): Promise
 async function renderNewBout(competitionId: string, participantId: string | null): Promise<void> {
   showScreen(newBoutView, "new-bout");
   const participants = await competitionRepository.getParticipants(competitionId);
-  const currentUserEmail = requireCurrentUser().email;
+  const currentUserEmail = getCurrentUser()?.email ?? null;
   const linked = participants.find((participant) => participant.linkedUserEmail === currentUserEmail);
   newBoutView.configure({
     participants: participants.map((participant) => ({ id: participant.id, name: participant.name })),
@@ -660,7 +790,7 @@ async function renderFight(competitionId: string, fighterAId: string, fighterBId
 }
 
 async function renderPublish(): Promise<void> {
-  if (!pendingResult || !currentCompetitionId) {
+  if (!pendingResult || !currentCompetitionId || !currentBoutId) {
     navigateTo({ screen: "selector" }, true);
     return;
   }
@@ -863,9 +993,25 @@ function navigateTo(route: Route, replace = false): void {
 
 function registerServiceWorker(): void {
   if (!("serviceWorker" in navigator)) return;
+  if (import.meta.env.DEV) {
+    void navigator.serviceWorker.getRegistrations().then((registrations) => {
+      for (const registration of registrations) {
+        void registration.unregister();
+      }
+    });
+    return;
+  }
   window.addEventListener("load", () => {
     void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, {
       scope: import.meta.env.BASE_URL,
     });
   });
+}
+
+function registerManifest(): void {
+  if (import.meta.env.DEV) return;
+  const link = document.createElement("link");
+  link.rel = "manifest";
+  link.href = `${import.meta.env.BASE_URL}manifest.json`;
+  document.head.append(link);
 }

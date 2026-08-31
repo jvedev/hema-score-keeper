@@ -1,0 +1,1 @@
+-- SQLite stores enum values as TEXT, so no table alteration is required.

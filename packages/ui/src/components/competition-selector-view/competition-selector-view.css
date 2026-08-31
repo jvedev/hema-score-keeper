@@ -52,6 +52,28 @@ header h1 {
   color: var(--hema-danger);
 }
 
+.tabs {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, 1fr);
+  margin-bottom: 14px;
+}
+
+.tab-button {
+  background: var(--hema-surface);
+  border: 1px solid var(--hema-line);
+  border-radius: 999px;
+  color: var(--hema-text-dim);
+  font-family: var(--hema-font-ui);
+  font-size: 12px;
+  padding: 10px 12px;
+}
+
+.tab-button.is-active {
+  background: var(--hema-left-color);
+  color: var(--hema-on-left-color);
+}
+
 .competition-list {
   display: grid;
   gap: 10px;

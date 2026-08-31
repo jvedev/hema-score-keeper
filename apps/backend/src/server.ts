@@ -60,11 +60,32 @@ import {
   loadEvents,
   loadUsers,
 } from "./read-model.js";
+import {
+  listBouts,
+  listCompetitions,
+  listParticipants,
+  listRanking,
+  createBout,
+  declineBout,
+  publishBout,
+  requireBout,
+  requireCompetition,
+} from "./competition-model.js";
 
 const tournamentColors = ["#5B8CFF", "#E06C75", "#98C379", "#E5C07B", "#C678DD", "#56B6C2"];
 
 export function createApp(database: Kysely<BackendDatabase> = db) {
   const app = Fastify();
+
+  app.addHook("onRequest", async (request, reply) => {
+    reply.header("Access-Control-Allow-Origin", "*");
+    reply.header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+    reply.header("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization");
+    reply.header("Vary", "Origin");
+    if (request.method === "OPTIONS") {
+      reply.status(204).send();
+    }
+  });
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof HttpError) {
@@ -111,6 +132,79 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
     }
     await writeSheetValues(spreadsheetId, range, body.values as unknown[][]);
     return { ok: true };
+  });
+
+  app.get("/api/v1/competitions", async () => listCompetitions(database));
+  app.get("/api/v1/competitions/:id", async (request) =>
+    requireCompetition(database, requirePathParam(request, "id")));
+  app.get("/api/v1/competitions/:id/participants", async (request) =>
+    listParticipants(database, requirePathParam(request, "id")));
+  app.get("/api/v1/competitions/:id/ranking", async (request) =>
+    listRanking(database, requirePathParam(request, "id")));
+  app.get("/api/v1/competitions/:id/bouts", async (request) =>
+    listBouts(database, requirePathParam(request, "id")));
+  app.get("/api/v1/competitions/:id/bouts/:boutId", async (request) => {
+    const competitionId = requirePathParam(request, "id");
+    const params = ensureObject(request.params ?? {}, "Route parameters");
+    const boutId = requireString(params.boutId, "Bout ID");
+    return requireBout(database, competitionId, boutId);
+  });
+  app.post("/api/v1/competitions/:id/bouts", async (request) => {
+    const competitionId = requirePathParam(request, "id");
+    const body = ensureObject(request.body, "Bout");
+    const fighterAId = requireString(body.fighterAId, "Fighter A ID");
+    const fighterBId = requireString(body.fighterBId, "Fighter B ID");
+    const scoreA = requireInteger(body.scoreA, "Score A");
+    const scoreB = requireInteger(body.scoreB, "Score B");
+    const winnerParticipantId =
+      body.winnerParticipantId === null || body.winnerParticipantId === undefined
+        ? null
+        : requireString(body.winnerParticipantId, "Winner participant ID");
+    const date = requireString(body.date, "Date");
+    const details = body.details === undefined ? {} : ensureJsonValue(body.details);
+
+    return createBout(database, competitionId, generateId(), {
+      fighterAId,
+      fighterBId,
+      scoreA,
+      scoreB,
+      winnerParticipantId,
+      date,
+      details,
+    });
+  });
+  app.put("/api/v1/competitions/:id/bouts/:boutId", async (request) => {
+    const competitionId = requirePathParam(request, "id");
+    const params = ensureObject(request.params ?? {}, "Route parameters");
+    const boutId = requireString(params.boutId, "Bout ID");
+    const body = ensureObject(request.body, "Bout");
+    const fighterAId = requireString(body.fighterAId, "Fighter A ID");
+    const fighterBId = requireString(body.fighterBId, "Fighter B ID");
+    const scoreA = requireInteger(body.scoreA, "Score A");
+    const scoreB = requireInteger(body.scoreB, "Score B");
+    const winnerParticipantId =
+      body.winnerParticipantId === null || body.winnerParticipantId === undefined
+        ? null
+        : requireString(body.winnerParticipantId, "Winner participant ID");
+    const date = requireString(body.date, "Date");
+    const details = body.details === undefined ? {} : ensureJsonValue(body.details);
+
+    return publishBout(database, competitionId, boutId, {
+      fighterAId,
+      fighterBId,
+      scoreA,
+      scoreB,
+      winnerParticipantId,
+      date,
+      details,
+    });
+  });
+  app.delete("/api/v1/competitions/:id/bouts/:boutId", async (request) => {
+    const competitionId = requirePathParam(request, "id");
+    const params = ensureObject(request.params ?? {}, "Route parameters");
+    const boutId = requireString(params.boutId, "Bout ID");
+    const bout = await declineBout(database, competitionId, boutId);
+    return bout;
   });
 
   app.get("/api/v1/users", async () => loadUsers(database));

@@ -1,3 +1,4 @@
+export { BackendCompetitionRepository } from "./backend-competition-repository.js";
 export type {
   Bout,
   Competition,
@@ -7,4 +8,4 @@ export type {
   Participant,
   RankingEntry,
   RepositoryGetOptions,
-} from "@hema/competition-api";
+} from "./types.js";

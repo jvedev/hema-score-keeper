@@ -26,7 +26,16 @@ describe("MockCompetitionRepository", () => {
 
   it("publishing a bout makes it appear in both fighters' history immediately", async () => {
     const repository = new MockCompetitionRepository();
-    const bout = await repository.publishBout("competition-1", {
+    const draft = await repository.createBout("competition-1", {
+      fighterAId: "participant-1",
+      fighterBId: "participant-2",
+      scoreA: 0,
+      scoreB: 0,
+      winnerParticipantId: null,
+      date: "2026-09-14",
+      details: { exchanges: [] },
+    });
+    const bout = await repository.publishBout("competition-1", draft.id, {
       fighterAId: "participant-1",
       fighterBId: "participant-2",
       scoreA: 5,

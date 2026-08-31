@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import BetterSqlite3 from "better-sqlite3";
 import { Kysely, SqliteDialect, type Transaction } from "kysely";
 import type { EntryKind, ScheduleRole, StageOfficialRole, StageType } from "./api-types.js";
+import { initializeCompetitionDatabase } from "./competition-bootstrap.js";
 
 export type SqliteBoolean = 0 | 1;
 
@@ -139,6 +140,35 @@ interface ExchangeTable {
   details: string | null;
 }
 
+interface CompetitionTable {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  date: string;
+  rulesetJson: string;
+}
+
+interface CompetitionParticipantTable {
+  id: string;
+  competitionId: string;
+  name: string;
+  linkedUserEmail: string | null;
+}
+
+interface CompetitionBoutTable {
+  id: string;
+  competitionId: string;
+  fighterAId: string;
+  fighterBId: string;
+  scoreA: number;
+  scoreB: number;
+  winnerParticipantId: string | null;
+  date: string;
+  published: SqliteBoolean;
+  details: string;
+}
+
 export interface BackendDatabase {
   User: UserTable;
   Skill: SkillTable;
@@ -163,6 +193,9 @@ export interface BackendDatabase {
     definition: string | null;
   };
   Exchange: ExchangeTable;
+  Competition: CompetitionTable;
+  CompetitionParticipant: CompetitionParticipantTable;
+  CompetitionBout: CompetitionBoutTable;
 }
 
 export type DbExecutor = Kysely<BackendDatabase> | Transaction<BackendDatabase>;
@@ -174,19 +207,20 @@ function resolveDatabasePath(databaseUrl = process.env.DATABASE_URL ?? "file:./d
 
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
   const appRoot = path.resolve(moduleDir, "..");
-  const prismaDir = path.join(appRoot, "prisma");
+  const databaseDir = path.join(appRoot, "data");
   const filePath = databaseUrl.slice("file:".length);
 
   if (filePath === ":memory:") {
     return filePath;
   }
 
-  return path.isAbsolute(filePath) ? filePath : path.resolve(prismaDir, filePath);
+  return path.isAbsolute(filePath) ? filePath : path.resolve(databaseDir, filePath);
 }
 
 export function createDatabase(): Kysely<BackendDatabase> {
   const native = new BetterSqlite3(resolveDatabasePath());
   native.pragma("foreign_keys = ON");
+  initializeCompetitionDatabase(native);
 
   return new Kysely<BackendDatabase>({
     dialect: new SqliteDialect({ database: native }),

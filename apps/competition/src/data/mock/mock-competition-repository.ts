@@ -25,6 +25,12 @@ export class MockCompetitionRepository implements CompetitionRepository {
     return structuredClone(mockRuleSet);
   }
 
+  async getBouts(competitionId: string): Promise<Bout[]> {
+    return structuredClone(
+      this.#bouts.filter((bout) => bout.competitionId === competitionId && bout.published),
+    );
+  }
+
   async getRanking(competitionId: string, _options: RepositoryGetOptions = {}): Promise<RankingEntry[]> {
     let ratings = new Map<string, number>();
     for (const participant of this.#participants) {
@@ -105,7 +111,7 @@ export class MockCompetitionRepository implements CompetitionRepository {
     return structuredClone(this.#requireBout(competitionId, boutId));
   }
 
-  async publishBout(competitionId: string, input: NewBoutInput): Promise<Bout> {
+  async createBout(competitionId: string, input: NewBoutInput): Promise<Bout> {
     this.#requireParticipant(competitionId, input.fighterAId);
     this.#requireParticipant(competitionId, input.fighterBId);
 
@@ -118,9 +124,35 @@ export class MockCompetitionRepository implements CompetitionRepository {
       scoreB: input.scoreB,
       winnerParticipantId: input.winnerParticipantId,
       date: input.date,
-      published: true,
+      published: false,
+      details: input.details,
     };
     this.#bouts.push(bout);
+    return structuredClone(bout);
+  }
+
+  async publishBout(competitionId: string, boutId: string, input: NewBoutInput): Promise<Bout> {
+    const bout = this.#requireBout(competitionId, boutId);
+    this.#requireParticipant(competitionId, input.fighterAId);
+    this.#requireParticipant(competitionId, input.fighterBId);
+
+    bout.fighterAId = input.fighterAId;
+    bout.fighterBId = input.fighterBId;
+    bout.scoreA = input.scoreA;
+    bout.scoreB = input.scoreB;
+    bout.winnerParticipantId = input.winnerParticipantId;
+    bout.date = input.date;
+    bout.published = true;
+    bout.details = input.details;
+    return structuredClone(bout);
+  }
+
+  async declineBout(competitionId: string, boutId: string): Promise<Bout> {
+    const bout = this.#requireBout(competitionId, boutId);
+    if (bout.published) {
+      throw new Error(`Mock bout "${boutId}" is already published and cannot be declined.`);
+    }
+    this.#bouts = this.#bouts.filter((candidate) => candidate.id !== bout.id);
     return structuredClone(bout);
   }
 

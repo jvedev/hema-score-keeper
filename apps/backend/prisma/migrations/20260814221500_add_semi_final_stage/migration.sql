@@ -1,1 +1,0 @@
--- SQLite stores Prisma enum values as TEXT, so no table alteration is required.
