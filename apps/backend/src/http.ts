@@ -1,6 +1,3 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Prisma } from "@prisma/client";
-
 export class HttpError extends Error {
   constructor(
     public readonly statusCode: number,
@@ -11,55 +8,8 @@ export class HttpError extends Error {
   }
 }
 
-export async function readJsonBody(request: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-
-  if (chunks.length === 0) {
-    return undefined;
-  }
-
-  const raw = Buffer.concat(chunks).toString("utf8");
-  if (!raw.trim()) {
-    return undefined;
-  }
-
-  try {
-    return JSON.parse(raw) as unknown;
-  } catch {
-    throw new HttpError(400, "Request body must be valid JSON.");
-  }
-}
-
-export function sendJson(
-  response: ServerResponse,
-  statusCode: number,
-  body: unknown,
-): void {
-  response.statusCode = statusCode;
-  response.setHeader("Content-Type", "application/json; charset=utf-8");
-  response.end(JSON.stringify(body));
-}
-
-export function sendError(
-  response: ServerResponse,
-  error: unknown,
-): void {
-  if (error instanceof HttpError) {
-    sendJson(response, error.statusCode, {
-      error: error.message,
-      details: error.details,
-    });
-    return;
-  }
-
-  console.error(error);
-  sendJson(response, 500, {
-    error: "Internal Server Error",
-  });
-}
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
 export function requireString(
   value: unknown,
@@ -94,26 +44,20 @@ export function requirePositiveInteger(value: unknown, label: string): number {
   return value;
 }
 
+export function requireInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new HttpError(400, `${label} must be an integer.`);
+  }
+
+  return value;
+}
+
 export function requireBoolean(value: unknown, label: string): boolean {
   if (typeof value !== "boolean") {
     throw new HttpError(400, `${label} must be a boolean.`);
   }
 
   return value;
-}
-
-export function optionalDate(value: unknown): Date | undefined {
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-
-  const text = requireString(value, "Date");
-  const date = new Date(text);
-  if (Number.isNaN(date.getTime())) {
-    throw new HttpError(400, "Date must be a valid ISO timestamp.");
-  }
-
-  return date;
 }
 
 export function ensureObject(value: unknown, label: string): Record<string, unknown> {
@@ -124,9 +68,9 @@ export function ensureObject(value: unknown, label: string): Record<string, unkn
   return value as Record<string, unknown>;
 }
 
-export function ensureJsonValue(value: unknown): Prisma.InputJsonValue {
+export function ensureJsonValue(value: unknown): JsonValue {
   if (value === null) {
-    return null as unknown as Prisma.InputJsonValue;
+    return null;
   }
 
   switch (typeof value) {
@@ -146,8 +90,26 @@ export function ensureJsonValue(value: unknown): Prisma.InputJsonValue {
           }
           return [key, ensureJsonValue(item)];
         }),
-      ) as Prisma.InputJsonValue;
+      );
     default:
       throw new HttpError(400, "Value must be valid JSON.");
   }
+}
+
+export function parseJsonValue<T>(value: string | null): T | null {
+  return value === null ? null : (JSON.parse(value) as T);
+}
+
+export function stringifyJsonValue(value: JsonValue | null): string | null {
+  return value === null ? null : JSON.stringify(value);
+}
+
+export function isSqliteConstraintError(error: unknown): error is { code: string; message: string } {
+  return Boolean(
+    error
+    && typeof error === "object"
+    && "code" in error
+    && typeof (error as { code: unknown }).code === "string"
+    && (error as { code: string }).code.startsWith("SQLITE_CONSTRAINT"),
+  );
 }
