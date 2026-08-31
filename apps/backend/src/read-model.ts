@@ -111,7 +111,10 @@ function toApiSkill(row: SkillRow): ApiSkill {
 function toApiUser(row: UserRow, skills: ApiSkill[]): ApiUser {
   return {
     id: row.id,
+    clubId: row.clubId,
     username: row.username,
+    role: row.role as ApiUser["role"],
+    status: row.status,
     judgeVolunteer: fromSqliteBoolean(row.judgeVolunteer),
     juryVolunteer: fromSqliteBoolean(row.juryVolunteer),
     tableVolunteer: fromSqliteBoolean(row.tableVolunteer),

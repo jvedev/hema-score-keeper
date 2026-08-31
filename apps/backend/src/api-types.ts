@@ -2,6 +2,15 @@ export type StageType = "POOL" | "ELIMINATION" | "SEMI_FINAL" | "FINAL";
 export type EntryKind = "FIGHTER" | "VOLUNTEER" | "BOTH";
 export type StageOfficialRole = "JUDGE" | "JURY" | "TABLE";
 export type ScheduleRole = "JUDGE" | "JURY" | "TABLE" | "FIGHTER";
+export type AccessVisibility = "PUBLIC" | "CLUB_ONLY";
+export type AccountRole = "USER" | "COMPETITION_ADMIN" | "SYSTEM_ADMIN";
+export type ParticipantKind = "MEMBER" | "GUEST";
+
+export interface ApiClub {
+  id: string;
+  name: string;
+  slug: string;
+}
 
 export interface ApiPenaltyRule {
   description: string;
@@ -44,7 +53,10 @@ export interface ApiSkill {
 
 export interface ApiUser {
   id: string;
+  clubId: string | null;
   username: string;
+  role: AccountRole;
+  status: string;
   judgeVolunteer: boolean;
   juryVolunteer: boolean;
   tableVolunteer: boolean;
@@ -68,6 +80,18 @@ export interface ApiEntry {
   kind: EntryKind;
   seed: number | null;
   user: ApiUser;
+}
+
+export interface ApiParticipant {
+  id: string;
+  competitionId: string;
+  name: string;
+  displayName: string | null;
+  linkedUserEmail: string | null;
+  linkedUserEmailHash?: string | null;
+  clubId?: string | null;
+  userId?: string | null;
+  kind: ParticipantKind;
 }
 
 export interface ApiStageOfficial {

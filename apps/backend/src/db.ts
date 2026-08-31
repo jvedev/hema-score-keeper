@@ -9,11 +9,49 @@ export type SqliteBoolean = 0 | 1;
 
 interface UserTable {
   id: string;
+  clubId: string | null;
   username: string;
+  passwordHash: string | null;
+  emailHash: string | null;
+  role: string;
+  status: string;
   judgeVolunteer: SqliteBoolean;
   juryVolunteer: SqliteBoolean;
   tableVolunteer: SqliteBoolean;
   otherVolunteer: SqliteBoolean;
+}
+
+interface ClubTable {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+interface UserSessionTable {
+  id: string;
+  userId: string;
+  refreshTokenHash: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  rememberMe: SqliteBoolean;
+}
+
+interface EnrollmentTokenTable {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: string;
+  consumedAt: string | null;
+  defaultClubId: string | null;
+}
+
+interface PasswordResetTokenTable {
+  id: string;
+  userId: string;
+  emailHash: string;
+  tokenHash: string;
+  expiresAt: string;
+  consumedAt: string | null;
 }
 
 interface SkillTable {
@@ -147,6 +185,8 @@ interface CompetitionTable {
   status: string;
   date: string;
   rulesetJson: string;
+  visibility: string;
+  clubId: string | null;
 }
 
 interface CompetitionParticipantTable {
@@ -154,6 +194,11 @@ interface CompetitionParticipantTable {
   competitionId: string;
   name: string;
   linkedUserEmail: string | null;
+  displayName: string | null;
+  linkedUserEmailHash: string | null;
+  clubId: string | null;
+  userId: string | null;
+  kind: string;
 }
 
 interface CompetitionBoutTable {
@@ -170,7 +215,11 @@ interface CompetitionBoutTable {
 }
 
 export interface BackendDatabase {
+  Club: ClubTable;
   User: UserTable;
+  UserSession: UserSessionTable;
+  EnrollmentToken: EnrollmentTokenTable;
+  PasswordResetToken: PasswordResetTokenTable;
   Skill: SkillTable;
   Event: EventTable;
   EventSchedule: EventScheduleTable;

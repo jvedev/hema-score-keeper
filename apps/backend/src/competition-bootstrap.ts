@@ -25,20 +25,34 @@ const defaultRuleset = {
 
 export function initializeCompetitionDatabase(database: NativeDatabase): void {
   database.exec(`
+    CREATE TABLE IF NOT EXISTS Club (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE
+    );
+
     CREATE TABLE IF NOT EXISTS Competition (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       slug TEXT NOT NULL UNIQUE,
       status TEXT NOT NULL,
       date TEXT NOT NULL,
-      rulesetJson TEXT NOT NULL
+      rulesetJson TEXT NOT NULL,
+      visibility TEXT NOT NULL DEFAULT 'PUBLIC',
+      clubId TEXT,
+      FOREIGN KEY (clubId) REFERENCES Club(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS CompetitionParticipant (
       id TEXT PRIMARY KEY,
       competitionId TEXT NOT NULL,
       name TEXT NOT NULL,
+      displayName TEXT,
       linkedUserEmail TEXT,
+      linkedUserEmailHash TEXT,
+      clubId TEXT,
+      userId TEXT,
+      kind TEXT NOT NULL DEFAULT 'MEMBER',
       FOREIGN KEY (competitionId) REFERENCES Competition(id) ON DELETE CASCADE
     );
 
@@ -59,10 +73,59 @@ export function initializeCompetitionDatabase(database: NativeDatabase): void {
       FOREIGN KEY (winnerParticipantId) REFERENCES CompetitionParticipant(id) ON DELETE SET NULL
     );
 
+    CREATE TABLE IF NOT EXISTS Club (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE
+    );
+
+    CREATE TABLE IF NOT EXISTS UserSession (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      refreshTokenHash TEXT NOT NULL,
+      expiresAt TEXT NOT NULL,
+      revokedAt TEXT,
+      rememberMe INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (userId) REFERENCES User(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS EnrollmentToken (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      tokenHash TEXT NOT NULL UNIQUE,
+      expiresAt TEXT NOT NULL,
+      consumedAt TEXT,
+      defaultClubId TEXT,
+      FOREIGN KEY (userId) REFERENCES User(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS PasswordResetToken (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      emailHash TEXT NOT NULL,
+      tokenHash TEXT NOT NULL UNIQUE,
+      expiresAt TEXT NOT NULL,
+      consumedAt TEXT,
+      FOREIGN KEY (userId) REFERENCES User(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_competition_status ON Competition(status);
     CREATE INDEX IF NOT EXISTS idx_competition_date ON Competition(date);
+    CREATE INDEX IF NOT EXISTS idx_competition_visibility ON Competition(visibility);
+    CREATE INDEX IF NOT EXISTS idx_competition_clubId ON Competition(clubId);
     CREATE INDEX IF NOT EXISTS idx_competition_participant_competitionId ON CompetitionParticipant(competitionId);
+    CREATE INDEX IF NOT EXISTS idx_competition_participant_userId ON CompetitionParticipant(userId);
+    CREATE INDEX IF NOT EXISTS idx_competition_participant_clubId ON CompetitionParticipant(clubId);
+    CREATE INDEX IF NOT EXISTS idx_competition_participant_kind ON CompetitionParticipant(kind);
     CREATE INDEX IF NOT EXISTS idx_competition_bout_competitionId ON CompetitionBout(competitionId);
+    CREATE INDEX IF NOT EXISTS idx_user_session_userId ON UserSession(userId);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_user_session_refreshTokenHash ON UserSession(refreshTokenHash);
+    CREATE INDEX IF NOT EXISTS idx_enrollment_token_userId ON EnrollmentToken(userId);
+    CREATE INDEX IF NOT EXISTS idx_enrollment_token_defaultClubId ON EnrollmentToken(defaultClubId);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollment_token_tokenHash ON EnrollmentToken(tokenHash);
+    CREATE INDEX IF NOT EXISTS idx_password_reset_token_userId ON PasswordResetToken(userId);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_password_reset_token_tokenHash ON PasswordResetToken(tokenHash);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_user_emailHash ON User(emailHash);
   `);
 
   const competitionCount = database.prepare("SELECT COUNT(*) as count FROM Competition").get() as { count: number };
@@ -74,7 +137,7 @@ export function initializeCompetitionDatabase(database: NativeDatabase): void {
     "INSERT INTO Competition (id, name, slug, status, date, rulesetJson) VALUES (?, ?, ?, ?, ?, ?)",
   );
   const insertParticipant = database.prepare(
-    "INSERT INTO CompetitionParticipant (id, competitionId, name, linkedUserEmail) VALUES (?, ?, ?, ?)",
+    "INSERT INTO CompetitionParticipant (id, competitionId, name, linkedUserEmail, kind) VALUES (?, ?, ?, ?, ?)",
   );
   const insertMatch = database.prepare(
     "INSERT INTO CompetitionBout (id, competitionId, fighterAId, fighterBId, scoreA, scoreB, winnerParticipantId, date, published, details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -88,10 +151,10 @@ export function initializeCompetitionDatabase(database: NativeDatabase): void {
       status: "ACTIVE",
       date: "2026-09-12",
       participants: [
-        { id: "participant-1", name: "Alex Meyer", linkedUserEmail: null },
-        { id: "participant-2", name: "Blake Novak", linkedUserEmail: null },
-        { id: "participant-3", name: "Casey Silva", linkedUserEmail: null },
-        { id: "participant-4", name: "Drew Fischer", linkedUserEmail: null },
+        { id: "participant-1", name: "Alex Meyer", linkedUserEmail: null, kind: "MEMBER" },
+        { id: "participant-2", name: "Blake Novak", linkedUserEmail: null, kind: "MEMBER" },
+        { id: "participant-3", name: "Casey Silva", linkedUserEmail: null, kind: "MEMBER" },
+        { id: "participant-4", name: "Drew Fischer", linkedUserEmail: null, kind: "MEMBER" },
       ],
       matches: [
         {
@@ -123,8 +186,8 @@ export function initializeCompetitionDatabase(database: NativeDatabase): void {
       status: "ARCHIVED",
       date: "2026-12-05",
       participants: [
-        { id: "participant-5", name: "Emery Janssen", linkedUserEmail: null },
-        { id: "participant-6", name: "Frankie Ruiz", linkedUserEmail: null },
+        { id: "participant-5", name: "Emery Janssen", linkedUserEmail: null, kind: "MEMBER" },
+        { id: "participant-6", name: "Frankie Ruiz", linkedUserEmail: null, kind: "MEMBER" },
       ],
       matches: [
         {
@@ -166,6 +229,7 @@ export function initializeCompetitionDatabase(database: NativeDatabase): void {
         competition.id,
         participant.name,
         participant.linkedUserEmail,
+        participant.kind ?? "MEMBER",
       );
     }
 

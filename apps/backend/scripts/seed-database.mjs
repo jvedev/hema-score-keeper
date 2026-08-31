@@ -46,6 +46,10 @@ const clearTables = [
   "Arena",
   "Ruleset",
   "Skill",
+  "PasswordResetToken",
+  "EnrollmentToken",
+  "UserSession",
+  "Club",
   "Tournament",
   "Event",
   "User",
@@ -55,7 +59,7 @@ const clearTables = [
 ];
 
 const insertUser = database.prepare(
-  "INSERT INTO User (id, username, judgeVolunteer, juryVolunteer, tableVolunteer, otherVolunteer) VALUES (?, ?, ?, ?, ?, ?)",
+  "INSERT INTO User (id, clubId, username, passwordHash, emailHash, role, status, judgeVolunteer, juryVolunteer, tableVolunteer, otherVolunteer) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 );
 const insertSkill = database.prepare(
   "INSERT INTO Skill (id, userId, skillName, skillLevel) VALUES (?, ?, ?, ?)",
@@ -104,11 +108,51 @@ const insertCompetition = database.prepare(
   "INSERT INTO Competition (id, name, slug, status, date, rulesetJson) VALUES (?, ?, ?, ?, ?, ?)",
 );
 const insertCompetitionParticipant = database.prepare(
-  "INSERT INTO CompetitionParticipant (id, competitionId, name, linkedUserEmail) VALUES (?, ?, ?, ?)",
+  "INSERT INTO CompetitionParticipant (id, competitionId, name, linkedUserEmail, kind) VALUES (?, ?, ?, ?, ?)",
 );
 const insertCompetitionBout = database.prepare(
   "INSERT INTO CompetitionBout (id, competitionId, fighterAId, fighterBId, scoreA, scoreB, winnerParticipantId, date, published, details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 );
+const insertClub = database.prepare(
+  "INSERT INTO Club (id, name, slug) VALUES (?, ?, ?)",
+);
+
+database.exec(`
+  CREATE TABLE IF NOT EXISTS Club (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE
+  );
+
+  CREATE TABLE IF NOT EXISTS UserSession (
+    id TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    refreshTokenHash TEXT NOT NULL,
+    expiresAt TEXT NOT NULL,
+    revokedAt TEXT,
+    rememberMe INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (userId) REFERENCES User(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS EnrollmentToken (
+    id TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    tokenHash TEXT NOT NULL UNIQUE,
+    expiresAt TEXT NOT NULL,
+    consumedAt TEXT,
+    FOREIGN KEY (userId) REFERENCES User(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS PasswordResetToken (
+    id TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    emailHash TEXT NOT NULL,
+    tokenHash TEXT NOT NULL UNIQUE,
+    expiresAt TEXT NOT NULL,
+    consumedAt TEXT,
+    FOREIGN KEY (userId) REFERENCES User(id) ON DELETE CASCADE
+  );
+`);
 
 function clearDatabase() {
   for (const table of clearTables) {
@@ -118,6 +162,7 @@ function clearDatabase() {
 
 function main() {
   const ids = {
+    club: "club-legacy",
     event: crypto.randomUUID(),
     ruleset: crypto.randomUUID(),
     tournament: crypto.randomUUID(),
@@ -149,10 +194,10 @@ function main() {
     status: "ACTIVE",
     date: "2026-09-12",
     participants: [
-      { id: "participant-1", name: "Alex Meyer", linkedUserEmail: null },
-      { id: "participant-2", name: "Blake Novak", linkedUserEmail: null },
-      { id: "participant-3", name: "Casey Silva", linkedUserEmail: null },
-      { id: "participant-4", name: "Drew Fischer", linkedUserEmail: null },
+      { id: "participant-1", name: "Alex Meyer", linkedUserEmail: null, kind: "MEMBER" },
+      { id: "participant-2", name: "Blake Novak", linkedUserEmail: null, kind: "MEMBER" },
+      { id: "participant-3", name: "Casey Silva", linkedUserEmail: null, kind: "MEMBER" },
+      { id: "participant-4", name: "Drew Fischer", linkedUserEmail: null, kind: "MEMBER" },
     ],
     bouts: [
       {
@@ -185,8 +230,8 @@ function main() {
     status: "ARCHIVED",
     date: "2026-12-05",
     participants: [
-      { id: "participant-5", name: "Emery Janssen", linkedUserEmail: null },
-      { id: "participant-6", name: "Frankie Ruiz", linkedUserEmail: null },
+      { id: "participant-5", name: "Emery Janssen", linkedUserEmail: null, kind: "MEMBER" },
+      { id: "participant-6", name: "Frankie Ruiz", linkedUserEmail: null, kind: "MEMBER" },
     ],
     bouts: [
       {
@@ -215,6 +260,7 @@ function main() {
   const seedTransaction = database.transaction(() => {
     clearDatabase();
 
+    insertClub.run(ids.club, "Legacy Club", "legacy-club");
     insertEvent.run(ids.event, "HEMA Championship 2026", null, 1);
     insertRuleset.run(ids.ruleset, ids.event, "Longsword Standard", 1, JSON.stringify({
       weaponClass: "",
@@ -248,7 +294,7 @@ function main() {
     insertScheduledPhase.run(ids.phase2, ids.poolStage, ids.arenaB, ids.slot1);
 
     for (const user of users) {
-      insertUser.run(user.id, user.username, 0, 0, 0, 0);
+      insertUser.run(user.id, ids.club, user.username, null, null, "USER", "ACTIVE", 0, 0, 0, 0);
       insertSkill.run(crypto.randomUUID(), user.id, `Skill ${user.seed}`, user.seed);
     }
 
@@ -355,6 +401,7 @@ function main() {
           competition.id,
           participant.name,
           participant.linkedUserEmail,
+          participant.kind,
         );
       }
 

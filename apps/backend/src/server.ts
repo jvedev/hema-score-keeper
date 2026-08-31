@@ -3,6 +3,15 @@ import type { FastifyRequest } from "fastify";
 import type { Kysely } from "kysely";
 import type { ApiRulesetDefinition, EntryKind, ScheduleRole, StageOfficialRole, StageType } from "./api-types.js";
 import { db, type BackendDatabase, toSqliteBoolean } from "./db.js";
+import {
+  createAuthTokenPair,
+  generateToken,
+  hashEmail,
+  hashPassword,
+  hashToken,
+  verifyJwt,
+  verifyPassword,
+} from "./auth.js";
 import { readSheetValues, writeSheetValues } from "./google-sheets.js";
 import {
   ensureJsonValue,
@@ -74,6 +83,79 @@ import {
 } from "./competition-model.js";
 
 const tournamentColors = ["#5B8CFF", "#E06C75", "#98C379", "#E5C07B", "#C678DD", "#56B6C2"];
+const loginRefreshTtlSeconds = 7 * 24 * 60 * 60;
+
+const accountRoles = new Set(["USER", "COMPETITION_ADMIN", "SYSTEM_ADMIN"]);
+const participantKinds = new Set(["MEMBER", "GUEST"]);
+
+function requireAccountRole(value: unknown, label: string): "USER" | "COMPETITION_ADMIN" | "SYSTEM_ADMIN" {
+  if (typeof value !== "string" || !accountRoles.has(value)) {
+    throw new HttpError(400, `${label} must be USER, COMPETITION_ADMIN, or SYSTEM_ADMIN.`);
+  }
+  return value as "USER" | "COMPETITION_ADMIN" | "SYSTEM_ADMIN";
+}
+
+function requireParticipantKind(value: unknown, label: string): "MEMBER" | "GUEST" {
+  if (typeof value !== "string" || !participantKinds.has(value)) {
+    throw new HttpError(400, `${label} must be MEMBER or GUEST.`);
+  }
+  return value as "MEMBER" | "GUEST";
+}
+
+interface AccessUser {
+  id: string;
+  clubId: string | null;
+  role: "USER" | "COMPETITION_ADMIN" | "SYSTEM_ADMIN";
+}
+
+async function resolveAccessUser(request: FastifyRequest, database: Kysely<BackendDatabase>): Promise<AccessUser | null> {
+  const authorization = request.headers.authorization;
+  const header = Array.isArray(authorization) ? authorization[0] : authorization;
+  if (!header || !header.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = header.slice("Bearer ".length).trim();
+  if (!token) {
+    return null;
+  }
+
+  const claims = verifyJwt(token, "access");
+  const user = await database.selectFrom("User").selectAll().where("id", "=", claims.sub).executeTakeFirst();
+  if (!user) {
+    throw new HttpError(401, "Authenticated user not found.");
+  }
+
+  return {
+    id: user.id,
+    clubId: user.clubId,
+    role: user.role as AccessUser["role"],
+  };
+}
+
+function canAccessCompetition(user: AccessUser | null, competition: { visibility: string; clubId: string | null }): boolean {
+  if (competition.visibility === "PUBLIC") {
+    return true;
+  }
+
+  if (!user) {
+    return false;
+  }
+
+  if (user.role === "SYSTEM_ADMIN" || user.role === "COMPETITION_ADMIN") {
+    return true;
+  }
+
+  return user.clubId !== null && user.clubId === competition.clubId;
+}
+
+async function requireAdminUser(request: FastifyRequest, database: Kysely<BackendDatabase>): Promise<AccessUser> {
+  const user = await resolveAccessUser(request, database);
+  if (!user || user.role === "USER") {
+    throw new HttpError(403, "Competition admin access required.");
+  }
+  return user;
+}
 
 export function createApp(database: Kysely<BackendDatabase> = db) {
   const app = Fastify();
@@ -135,15 +217,46 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
     return { ok: true };
   });
 
-  app.get("/api/v1/competitions", async () => listCompetitions(database));
-  app.get("/api/v1/competitions/:id", async (request) =>
-    requireCompetition(database, requirePathParam(request, "id")));
-  app.get("/api/v1/competitions/:id/participants", async (request) =>
-    listParticipants(database, requirePathParam(request, "id")));
-  app.get("/api/v1/competitions/:id/ranking", async (request) =>
-    listRanking(database, requirePathParam(request, "id")));
-  app.get("/api/v1/competitions/:id/bouts", async (request) =>
-    listBouts(database, requirePathParam(request, "id")));
+  app.get("/api/v1/competitions", async (request) => {
+    const user = await resolveAccessUser(request, database);
+    const competitions = await listCompetitions(database);
+    return competitions.filter((competition) => canAccessCompetition(user, competition));
+  });
+  app.get("/api/v1/competitions/:id", async (request) => {
+    const user = await resolveAccessUser(request, database);
+    const competition = await requireCompetition(database, requirePathParam(request, "id"));
+    if (!canAccessCompetition(user, competition)) {
+      throw new HttpError(404, `Competition "${competition.id}" not found.`);
+    }
+    return competition;
+  });
+  app.get("/api/v1/competitions/:id/participants", async (request) => {
+    const user = await resolveAccessUser(request, database);
+    const competitionId = requirePathParam(request, "id");
+    const competition = await requireCompetition(database, competitionId);
+    if (!canAccessCompetition(user, competition)) {
+      throw new HttpError(404, `Competition "${competition.id}" not found.`);
+    }
+    return listParticipants(database, competitionId);
+  });
+  app.get("/api/v1/competitions/:id/ranking", async (request) => {
+    const user = await resolveAccessUser(request, database);
+    const competitionId = requirePathParam(request, "id");
+    const competition = await requireCompetition(database, competitionId);
+    if (!canAccessCompetition(user, competition)) {
+      throw new HttpError(404, `Competition "${competition.id}" not found.`);
+    }
+    return listRanking(database, competitionId);
+  });
+  app.get("/api/v1/competitions/:id/bouts", async (request) => {
+    const user = await resolveAccessUser(request, database);
+    const competitionId = requirePathParam(request, "id");
+    const competition = await requireCompetition(database, competitionId);
+    if (!canAccessCompetition(user, competition)) {
+      throw new HttpError(404, `Competition "${competition.id}" not found.`);
+    }
+    return listBouts(database, competitionId);
+  });
   app.get("/api/v1/competitions/:id/bouts/:boutId", async (request) => {
     const competitionId = requirePathParam(request, "id");
     const params = ensureObject(request.params ?? {}, "Route parameters");
@@ -208,14 +321,23 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
     return bout;
   });
 
-  app.get("/api/v1/users", async () => loadUsers(database));
+  app.get("/api/v1/users", async (request) => {
+    await requireAdminUser(request, database);
+    return loadUsers(database);
+  });
 
   app.post("/api/v1/users", async (request) => {
+    await requireAdminUser(request, database);
     const body = ensureObject(request.body, "User");
     const id = generateId();
     await database.insertInto("User").values({
       id,
+      clubId: body.clubId === undefined || body.clubId === null ? null : requireString(body.clubId, "Club ID"),
       username: requireString(body.username, "Username"),
+      passwordHash: body.passwordHash === undefined || body.passwordHash === null ? null : requireString(body.passwordHash, "Password hash"),
+      emailHash: body.emailHash === undefined || body.emailHash === null ? null : requireString(body.emailHash, "Email hash"),
+      role: body.role === undefined ? "USER" : requireAccountRole(body.role, "Role"),
+      status: body.status === undefined ? "ACTIVE" : requireString(body.status, "Status"),
       judgeVolunteer: 0,
       juryVolunteer: 0,
       tableVolunteer: 0,
@@ -224,14 +346,539 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
     return requireUserApi(database, id);
   });
 
+  app.get("/api/v1/clubs", async () =>
+    database.selectFrom("Club").selectAll().orderBy("name").orderBy("slug").execute());
+
+  app.post("/api/v1/clubs", async (request) => {
+    await requireAdminUser(request, database);
+    const body = ensureObject(request.body, "Club");
+    const id = generateId();
+    await database.insertInto("Club").values({
+      id,
+      name: requireString(body.name, "Club name"),
+      slug: requireString(body.slug, "Club slug"),
+    }).execute();
+    return database.selectFrom("Club").selectAll().where("id", "=", id).executeTakeFirstOrThrow();
+  });
+
+  app.get("/api/v1/competitions/admin", async (request) => {
+    const user = await requireAdminUser(request, database);
+    const competitions = await listCompetitions(database);
+    if (user.role === "SYSTEM_ADMIN") {
+      return competitions;
+    }
+    return competitions.filter((competition) => competition.clubId === user.clubId || competition.clubId === null);
+  });
+
+  app.post("/api/v1/competitions", async (request) => {
+    const user = await requireAdminUser(request, database);
+    const body = ensureObject(request.body, "Competition");
+    const clubId = body.clubId === undefined || body.clubId === null ? null : requireString(body.clubId, "Club ID");
+    const visibility = body.visibility === undefined ? "PUBLIC" : requireString(body.visibility, "Visibility");
+    if (visibility !== "PUBLIC" && visibility !== "CLUB_ONLY") {
+      throw new HttpError(400, "Visibility must be PUBLIC or CLUB_ONLY.");
+    }
+    if (visibility === "CLUB_ONLY" && clubId === null) {
+      throw new HttpError(400, "Club-only competitions require a club.");
+    }
+    if (clubId !== null) {
+      const club = await database.selectFrom("Club").selectAll().where("id", "=", clubId).executeTakeFirst();
+      if (!club) {
+        throw new HttpError(404, `Club "${clubId}" not found.`);
+      }
+      if (user.role !== "SYSTEM_ADMIN" && user.clubId !== clubId) {
+        throw new HttpError(403, "You can only manage competitions for your own club.");
+      }
+    }
+
+    const id = generateId();
+    await database.insertInto("Competition").values({
+      id,
+      name: requireString(body.name, "Competition name"),
+      slug: requireString(body.slug, "Competition slug"),
+      status: body.status === undefined ? "DRAFT" : requireString(body.status, "Status"),
+      date: requireString(body.date, "Date"),
+      rulesetJson: JSON.stringify(body.rulesetJson ?? defaultRulesetDefinition()),
+      visibility,
+      clubId,
+    }).execute();
+    return requireCompetition(database, id);
+  });
+
+  app.patch("/api/v1/competitions/:id", async (request) => {
+    const user = await requireAdminUser(request, database);
+    const competitionId = requirePathParam(request, "id");
+    const existing = await requireCompetition(database, competitionId);
+    if (user.role !== "SYSTEM_ADMIN" && existing.clubId !== null && existing.clubId !== user.clubId) {
+      throw new HttpError(403, "You can only manage competitions for your own club.");
+    }
+
+    const body = ensureObject(request.body, "Competition");
+    const changes: Record<string, unknown> = {};
+    if (body.name !== undefined) {
+      changes.name = requireString(body.name, "Competition name");
+    }
+    if (body.slug !== undefined) {
+      changes.slug = requireString(body.slug, "Competition slug");
+    }
+    if (body.status !== undefined) {
+      changes.status = requireString(body.status, "Status");
+    }
+    if (body.date !== undefined) {
+      changes.date = requireString(body.date, "Date");
+    }
+    if (body.visibility !== undefined) {
+      const visibility = requireString(body.visibility, "Visibility");
+      if (visibility !== "PUBLIC" && visibility !== "CLUB_ONLY") {
+        throw new HttpError(400, "Visibility must be PUBLIC or CLUB_ONLY.");
+      }
+      changes.visibility = visibility;
+    }
+    if (body.clubId !== undefined) {
+      const clubId = body.clubId === null ? null : requireString(body.clubId, "Club ID");
+      if (clubId !== null) {
+        const club = await database.selectFrom("Club").selectAll().where("id", "=", clubId).executeTakeFirst();
+        if (!club) {
+          throw new HttpError(404, `Club "${clubId}" not found.`);
+        }
+        if (user.role !== "SYSTEM_ADMIN" && user.clubId !== clubId) {
+          throw new HttpError(403, "You can only manage competitions for your own club.");
+        }
+      }
+      changes.clubId = clubId;
+    }
+    if (body.rulesetJson !== undefined) {
+      changes.rulesetJson = JSON.stringify(body.rulesetJson);
+    }
+
+    if (Object.keys(changes).length > 0) {
+      await database.updateTable("Competition").set(changes).where("id", "=", competitionId).execute();
+    }
+    return requireCompetition(database, competitionId);
+  });
+
+  app.post("/api/v1/competitions/:id/participants", async (request) => {
+    const user = await requireAdminUser(request, database);
+    const competitionId = requirePathParam(request, "id");
+    const competition = await requireCompetition(database, competitionId);
+    if (user.role !== "SYSTEM_ADMIN" && competition.clubId !== null && competition.clubId !== user.clubId) {
+      throw new HttpError(403, "You can only manage competitions for your own club.");
+    }
+
+    const body = ensureObject(request.body, "Participant");
+    const id = generateId();
+    const kind = body.kind === undefined ? "MEMBER" : requireParticipantKind(body.kind, "Participant kind");
+    const userId = body.userId === undefined || body.userId === null ? null : requireString(body.userId, "User ID");
+    let clubId = body.clubId === undefined || body.clubId === null ? null : requireString(body.clubId, "Club ID");
+    if (kind === "GUEST" && clubId === null) {
+      clubId = competition.clubId ?? user.clubId;
+    }
+    if (kind === "GUEST" && userId !== null) {
+      throw new HttpError(400, "Guest participants cannot be linked to a user account.");
+    }
+    if (kind === "GUEST" && clubId === null) {
+      throw new HttpError(400, "Guest participants require a club.");
+    }
+    if (userId !== null) {
+      const linkedUser = await requireUserRow(database, userId);
+      if (clubId !== null && linkedUser.clubId !== clubId) {
+        throw new HttpError(400, "Participant club must match the linked user club.");
+      }
+    }
+    if (clubId !== null) {
+      const club = await database.selectFrom("Club").selectAll().where("id", "=", clubId).executeTakeFirst();
+      if (!club) {
+        throw new HttpError(404, `Club "${clubId}" not found.`);
+      }
+    }
+
+    await database.insertInto("CompetitionParticipant").values({
+      id,
+      competitionId,
+      name: requireString(body.name, "Participant name"),
+      displayName: body.displayName === undefined ? requireString(body.name, "Participant name") : requireString(body.displayName, "Display name"),
+      linkedUserEmail: body.linkedUserEmail === undefined ? null : requireString(body.linkedUserEmail, "Linked user email"),
+      linkedUserEmailHash: body.linkedUserEmail === undefined ? null : hashEmail(requireString(body.linkedUserEmail, "Linked user email")),
+      clubId,
+      userId,
+      kind,
+    }).execute();
+
+    return database.selectFrom("CompetitionParticipant").selectAll().where("id", "=", id).executeTakeFirstOrThrow();
+  });
+
+  app.post("/api/v1/auth/enrollment-tokens", async (request) => {
+    const admin = await requireAdminUser(request, database);
+    const body = ensureObject(request.body, "Enrollment token");
+    const userId = requireString(body.userId, "User ID");
+    const targetUser = await requireUserRow(database, userId);
+    const token = generateToken();
+    const tokenHash = hashToken(token);
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const defaultClubId = admin.clubId ?? targetUser.clubId;
+
+    await database.insertInto("EnrollmentToken").values({
+      id: generateId(),
+      userId,
+      tokenHash,
+      expiresAt,
+      consumedAt: null,
+      defaultClubId,
+    }).execute();
+
+    return {
+      token,
+      expiresAt,
+      defaultClubId,
+      defaultClubSlug: defaultClubId
+        ? (await database.selectFrom("Club").selectAll().where("id", "=", defaultClubId).executeTakeFirst())?.slug ?? null
+        : null,
+    };
+  });
+
+  app.get("/api/v1/auth/enrollment-tokens/:token", async (request) => {
+    const token = requireString(requirePathParam(request, "token"), "Enrollment token");
+    const tokenHash = hashToken(token);
+    const row = await database
+      .selectFrom("EnrollmentToken")
+      .selectAll()
+      .where("tokenHash", "=", tokenHash)
+      .executeTakeFirst();
+    if (!row) {
+      throw new HttpError(404, "Enrollment token not found.");
+    }
+
+    const club = row.defaultClubId
+      ? await database.selectFrom("Club").selectAll().where("id", "=", row.defaultClubId).executeTakeFirst()
+      : null;
+    return {
+      token: row.tokenHash,
+      defaultClubId: row.defaultClubId,
+      defaultClubName: club?.name ?? null,
+      defaultClubSlug: club?.slug ?? null,
+      expiresAt: row.expiresAt,
+      consumedAt: row.consumedAt,
+    };
+  });
+
+  app.post("/api/v1/auth/register", async (request) => {
+    const body = ensureObject(request.body, "Registration");
+    const password = requireString(body.password, "Password");
+    const email = optionalString(body.email);
+    const enrollmentToken = optionalString(body.enrollmentToken);
+    const emailHash = email ? hashEmail(email) : null;
+
+    if (enrollmentToken) {
+      const tokenHash = hashToken(enrollmentToken);
+      const tokenRow = await database
+        .selectFrom("EnrollmentToken")
+        .selectAll()
+        .where("tokenHash", "=", tokenHash)
+        .executeTakeFirst();
+      if (!tokenRow) {
+        throw new HttpError(404, "Enrollment token not found.");
+      }
+      if (tokenRow.consumedAt !== null) {
+        throw new HttpError(409, "Enrollment token has already been used.");
+      }
+      if (new Date(tokenRow.expiresAt).getTime() <= Date.now()) {
+        throw new HttpError(409, "Enrollment token has expired.");
+      }
+
+      const user = await requireUserRow(database, tokenRow.userId);
+      const passwordHash = hashPassword(password);
+      const updates: Partial<BackendDatabase["User"]> = {
+        passwordHash,
+        status: "ACTIVE",
+      };
+      const requestedClubSlug = optionalString(body.clubSlug);
+      const requestedClubId = optionalString(body.clubId);
+      if (requestedClubSlug || requestedClubId) {
+        const club = requestedClubId
+          ? await database.selectFrom("Club").selectAll().where("id", "=", requestedClubId).executeTakeFirst()
+          : await database.selectFrom("Club").selectAll().where("slug", "=", requestedClubSlug ?? "").executeTakeFirst();
+        if (!club) {
+          throw new HttpError(404, "Selected club not found.");
+        }
+        updates.clubId = club.id;
+      }
+      if (emailHash) {
+        updates.emailHash = emailHash;
+      }
+
+      await database.updateTable("User").set(updates).where("id", "=", user.id).execute();
+      await database.updateTable("EnrollmentToken").set({ consumedAt: new Date().toISOString() }).where("id", "=", tokenRow.id).execute();
+
+      const account = await requireUserApi(database, user.id);
+      const tokens = createAuthTokenPair(
+        { sub: user.id, role: user.role as "USER" | "COMPETITION_ADMIN" | "SYSTEM_ADMIN", clubId: user.clubId },
+        loginRefreshTtlSeconds,
+      );
+      await database.insertInto("UserSession").values({
+        id: generateId(),
+        userId: user.id,
+        refreshTokenHash: tokens.refreshTokenHash,
+        expiresAt: tokens.refreshTokenExpiresAt,
+        revokedAt: null,
+        rememberMe: 1,
+      }).execute();
+
+      return {
+        user: account,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+      };
+    }
+
+    const clubSlug = requireString(body.clubSlug, "Club slug");
+    const username = requireString(body.username, "Username");
+    const club = await database.selectFrom("Club").selectAll().where("slug", "=", clubSlug).executeTakeFirst();
+    if (!club) {
+      throw new HttpError(404, `Club "${clubSlug}" not found.`);
+    }
+
+    const existingUser = await database
+      .selectFrom("User")
+      .selectAll()
+      .where("clubId", "=", club.id)
+      .where("username", "=", username)
+      .executeTakeFirst();
+    if (existingUser) {
+      throw new HttpError(409, `Username "${username}" is already taken in club "${clubSlug}".`);
+    }
+
+    const userId = generateId();
+    const passwordHash = hashPassword(password);
+    await database.insertInto("User").values({
+      id: userId,
+      clubId: club.id,
+      username,
+      passwordHash,
+      emailHash,
+      role: "USER",
+      status: "ACTIVE",
+      judgeVolunteer: 0,
+      juryVolunteer: 0,
+      tableVolunteer: 0,
+      otherVolunteer: 0,
+    }).execute();
+
+    const account = await requireUserApi(database, userId);
+    const tokens = createAuthTokenPair(
+      { sub: userId, role: "USER", clubId: club.id },
+      loginRefreshTtlSeconds,
+    );
+    await database.insertInto("UserSession").values({
+      id: generateId(),
+      userId,
+      refreshTokenHash: tokens.refreshTokenHash,
+      expiresAt: tokens.refreshTokenExpiresAt,
+      revokedAt: null,
+      rememberMe: 1,
+    }).execute();
+
+    return {
+      user: account,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    };
+  });
+
+  app.post("/api/v1/auth/login", async (request) => {
+    const body = ensureObject(request.body, "Login");
+    const clubSlug = requireString(body.clubSlug, "Club slug");
+    const username = requireString(body.username, "Username");
+    const password = requireString(body.password, "Password");
+    const rememberMe = body.rememberMe === undefined ? true : requireBoolean(body.rememberMe, "Remember me");
+
+    const club = await database.selectFrom("Club").selectAll().where("slug", "=", clubSlug).executeTakeFirst();
+    if (!club) {
+      throw new HttpError(404, `Club "${clubSlug}" not found.`);
+    }
+
+    const user = await database
+      .selectFrom("User")
+      .selectAll()
+      .where("clubId", "=", club.id)
+      .where("username", "=", username)
+      .executeTakeFirst();
+    if (!user || !user.passwordHash || !verifyPassword(password, user.passwordHash)) {
+      throw new HttpError(401, "Invalid credentials.");
+    }
+    if (user.status !== "ACTIVE") {
+      throw new HttpError(403, "User account is not active.");
+    }
+
+    const tokens = createAuthTokenPair(
+      { sub: user.id, role: user.role as "USER" | "COMPETITION_ADMIN" | "SYSTEM_ADMIN", clubId: user.clubId },
+      rememberMe ? 30 * 24 * 60 * 60 : loginRefreshTtlSeconds,
+    );
+
+    await database.insertInto("UserSession").values({
+      id: generateId(),
+      userId: user.id,
+      refreshTokenHash: tokens.refreshTokenHash,
+      expiresAt: tokens.refreshTokenExpiresAt,
+      revokedAt: null,
+      rememberMe: toSqliteBoolean(rememberMe),
+    }).execute();
+
+    return {
+      user: await requireUserApi(database, user.id),
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    };
+  });
+
+  app.post("/api/v1/auth/refresh", async (request) => {
+    const body = ensureObject(request.body, "Refresh token");
+    const refreshToken = requireString(body.refreshToken, "Refresh token");
+    const claims = verifyJwt(refreshToken, "refresh");
+    const tokenHash = hashToken(refreshToken);
+
+    const session = await database
+      .selectFrom("UserSession")
+      .selectAll()
+      .where("refreshTokenHash", "=", tokenHash)
+      .where("revokedAt", "is", null)
+      .executeTakeFirst();
+    if (!session) {
+      throw new HttpError(401, "Refresh token is not active.");
+    }
+
+    const user = await requireUserRow(database, session.userId);
+    if (user.status !== "ACTIVE") {
+      throw new HttpError(403, "User account is not active.");
+    }
+    if (claims.sub !== user.id) {
+      throw new HttpError(401, "Refresh token does not match the user.");
+    }
+
+    const nextTokens = createAuthTokenPair(
+      { sub: user.id, role: user.role as "USER" | "COMPETITION_ADMIN" | "SYSTEM_ADMIN", clubId: user.clubId },
+      session.rememberMe ? 30 * 24 * 60 * 60 : loginRefreshTtlSeconds,
+    );
+
+    await database.updateTable("UserSession").set({
+      refreshTokenHash: nextTokens.refreshTokenHash,
+      expiresAt: nextTokens.refreshTokenExpiresAt,
+    }).where("id", "=", session.id).execute();
+
+    return {
+      user: await requireUserApi(database, user.id),
+      accessToken: nextTokens.accessToken,
+      refreshToken: nextTokens.refreshToken,
+    };
+  });
+
+  app.post("/api/v1/auth/logout", async (request) => {
+    const body = ensureObject(request.body, "Logout");
+    const refreshToken = requireString(body.refreshToken, "Refresh token");
+    const tokenHash = hashToken(refreshToken);
+    const session = await database
+      .selectFrom("UserSession")
+      .selectAll()
+      .where("refreshTokenHash", "=", tokenHash)
+      .where("revokedAt", "is", null)
+      .executeTakeFirst();
+    if (!session) {
+      throw new HttpError(404, "Session not found.");
+    }
+
+    await database.updateTable("UserSession").set({ revokedAt: new Date().toISOString() }).where("id", "=", session.id).execute();
+    return { ok: true };
+  });
+
+  app.get("/api/v1/auth/me", async (request) => {
+    const user = await resolveAccessUser(request, database);
+    if (!user) {
+      throw new HttpError(401, "Not authenticated.");
+    }
+    return requireUserApi(database, user.id);
+  });
+
+  app.post("/api/v1/auth/password-reset/request", async (request) => {
+    const body = ensureObject(request.body, "Password reset request");
+    const email = requireString(body.email, "Email");
+    const emailHash = hashEmail(email);
+    const user = await database.selectFrom("User").selectAll().where("emailHash", "=", emailHash).executeTakeFirst();
+    if (!user) {
+      throw new HttpError(404, "No account found for that e-mail address.");
+    }
+
+    const token = generateToken();
+    const tokenHash = hashToken(token);
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    await database.insertInto("PasswordResetToken").values({
+      id: generateId(),
+      userId: user.id,
+      emailHash,
+      tokenHash,
+      expiresAt,
+      consumedAt: null,
+    }).execute();
+
+    return { resetToken: token, expiresAt };
+  });
+
+  app.post("/api/v1/auth/password-reset/confirm", async (request) => {
+    const body = ensureObject(request.body, "Password reset confirmation");
+    const email = requireString(body.email, "Email");
+    const token = requireString(body.token, "Reset token");
+    const password = requireString(body.password, "Password");
+    const emailHash = hashEmail(email);
+    const tokenHash = hashToken(token);
+
+    const resetToken = await database
+      .selectFrom("PasswordResetToken")
+      .selectAll()
+      .where("tokenHash", "=", tokenHash)
+      .where("emailHash", "=", emailHash)
+      .executeTakeFirst();
+    if (!resetToken) {
+      throw new HttpError(404, "Reset token not found.");
+    }
+    if (resetToken.consumedAt !== null) {
+      throw new HttpError(409, "Reset token has already been used.");
+    }
+    if (new Date(resetToken.expiresAt).getTime() <= Date.now()) {
+      throw new HttpError(409, "Reset token has expired.");
+    }
+
+    const newPasswordHash = hashPassword(password);
+    await database.updateTable("User").set({
+      passwordHash: newPasswordHash,
+      status: "ACTIVE",
+    }).where("id", "=", resetToken.userId).execute();
+    await database.updateTable("PasswordResetToken").set({ consumedAt: new Date().toISOString() }).where("id", "=", resetToken.id).execute();
+
+    return { ok: true };
+  });
+
   app.patch("/api/v1/users/:id", async (request) => {
+    await requireAdminUser(request, database);
     const id = requirePathParam(request, "id");
     await requireUserRow(database, id);
     const body = ensureObject(request.body, "User");
     const changes: Partial<BackendDatabase["User"]> = {};
 
+    if (body.clubId !== undefined) {
+      changes.clubId = body.clubId === null ? null : requireString(body.clubId, "Club ID");
+    }
     if (body.username !== undefined) {
       changes.username = requireString(body.username, "Username");
+    }
+    if (body.passwordHash !== undefined) {
+      changes.passwordHash = body.passwordHash === null ? null : requireString(body.passwordHash, "Password hash");
+    }
+    if (body.emailHash !== undefined) {
+      changes.emailHash = body.emailHash === null ? null : requireString(body.emailHash, "Email hash");
+    }
+    if (body.role !== undefined) {
+      changes.role = requireAccountRole(body.role, "Role");
+    }
+    if (body.status !== undefined) {
+      changes.status = requireString(body.status, "Status");
     }
     if (body.judgeVolunteer !== undefined) {
       changes.judgeVolunteer = toSqliteBoolean(requireBoolean(body.judgeVolunteer, "Judge volunteer"));

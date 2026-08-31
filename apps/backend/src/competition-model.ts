@@ -47,6 +47,8 @@ export interface CompetitionSummary {
   date: string;
   startDate: string;
   endDate: string;
+  visibility: string;
+  clubId: string | null;
 }
 
 export interface CompetitionDetail extends CompetitionSummary {
@@ -57,7 +59,12 @@ export interface CompetitionParticipant {
   id: string;
   competitionId: string;
   name: string;
+  displayName: string | null;
   linkedUserEmail: string | null;
+  linkedUserEmailHash: string | null;
+  clubId: string | null;
+  userId: string | null;
+  kind: "MEMBER" | "GUEST";
 }
 
 export interface CompetitionMatch {
@@ -103,6 +110,8 @@ function toSummary(row: CompetitionRow): CompetitionSummary {
     date: row.date,
     startDate: row.date,
     endDate: row.date,
+    visibility: row.visibility,
+    clubId: row.clubId,
   };
 }
 
@@ -322,6 +331,11 @@ function toParticipant(row: CompetitionParticipantRow): CompetitionParticipant {
     competitionId: row.competitionId,
     name: row.name,
     linkedUserEmail: row.linkedUserEmail,
+    displayName: row.displayName,
+    linkedUserEmailHash: row.linkedUserEmailHash,
+    clubId: row.clubId,
+    userId: row.userId,
+    kind: row.kind === "GUEST" ? "GUEST" : "MEMBER",
   };
 }
 

@@ -20,6 +20,8 @@ interface CompetitionDetailResponse {
   date: string;
   startDate: string;
   endDate: string;
+  visibility?: "PUBLIC" | "CLUB_ONLY";
+  clubId?: string | null;
   rulesetJson: unknown;
 }
 
@@ -31,6 +33,8 @@ interface CompetitionSummaryResponse {
   date: string;
   startDate: string;
   endDate: string;
+  visibility?: "PUBLIC" | "CLUB_ONLY";
+  clubId?: string | null;
 }
 
 interface ParticipantResponse {
@@ -38,6 +42,9 @@ interface ParticipantResponse {
   competitionId: string;
   name: string;
   linkedUserEmail: string | null;
+  clubId?: string | null;
+  userId?: string | null;
+  kind?: "MEMBER" | "GUEST";
 }
 
 interface RankingResponse {
@@ -107,6 +114,9 @@ export class BackendCompetitionRepository implements CompetitionRepository {
       competitionId: participant.competitionId,
       name: participant.name,
       linkedUserEmail: participant.linkedUserEmail,
+      ...(participant.clubId === undefined ? {} : { clubId: participant.clubId }),
+      ...(participant.userId === undefined ? {} : { userId: participant.userId }),
+      ...(participant.kind === undefined ? {} : { kind: participant.kind }),
     }));
   }
 
@@ -210,7 +220,7 @@ export class BackendCompetitionRepository implements CompetitionRepository {
 }
 
 function toCompetition(response: CompetitionSummaryResponse): Competition {
-  return {
+  const competition: Competition = {
     id: response.id,
     name: response.name,
     slug: response.slug,
@@ -219,6 +229,13 @@ function toCompetition(response: CompetitionSummaryResponse): Competition {
     startDate: response.startDate,
     endDate: response.endDate,
   };
+  if (response.visibility !== undefined) {
+    competition.visibility = response.visibility;
+  }
+  if (response.clubId !== undefined) {
+    competition.clubId = response.clubId;
+  }
+  return competition;
 }
 
 function toRuleSet(response: CompetitionDetailResponse): RuleSet {

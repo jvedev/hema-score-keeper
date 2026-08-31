@@ -10,6 +10,8 @@ export interface Competition {
   date: string;
   startDate: string;
   endDate: string;
+  visibility?: "PUBLIC" | "CLUB_ONLY";
+  clubId?: string | null;
 }
 
 export interface Participant {
@@ -17,6 +19,9 @@ export interface Participant {
   competitionId: string;
   name: string;
   linkedUserEmail: string | null;
+  clubId?: string | null;
+  userId?: string | null;
+  kind?: "MEMBER" | "GUEST";
 }
 
 export interface RankingEntry {
