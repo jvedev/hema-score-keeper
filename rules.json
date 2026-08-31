@@ -1,0 +1,142 @@
+{
+  "weaponClass": "Longsword",
+  "matchParameters": {
+    "maxDurationSeconds": 180,
+    "stopOnTimeOut": true,
+    "maxPointsCap": 0,
+    "pointSpreadVictory": 99,
+    "scores": [
+      1,
+      2,
+      3
+    ],
+    "maxDoubles": 0,
+    "allowAfterBlow": true,
+    "countDoubles": true,
+    "useNetScore": false,
+    "penalties": [
+      {
+        "description": "Turning the back to the opponent before “break” has been called.",
+        "penalties": [
+          0,
+          1,
+          1
+        ],
+        "disqualify": true
+      },
+      {
+        "description": "Taking off the mask before “break” has been called.",
+        "penalties": [
+          0,
+          1
+        ],
+        "disqualify": true
+      },
+      {
+        "description": "Striking after “break” has been called",
+        "penalties": [
+          0,
+          1
+        ],
+        "disqualify": true
+      },
+      {
+        "description": "Deliberatly or repeatedly making after-blows or double hits in stead of defending oneself",
+        "penalties": [
+          0,
+          1
+        ],
+        "disqualify": true
+      },
+      {
+        "description": "Uncontrolled fencing",
+        "penalties": [
+          0,
+          1
+        ],
+        "disqualify": true
+      },
+      {
+        "description": "Violent, dangerous or vindictive action",
+        "penalties": [
+          0,
+          1
+        ],
+        "disqualify": true
+      },
+      {
+        "description": "Participating while under the influence of alcohol or drugs",
+        "penalties": [
+        ],
+        "disqualify": true
+      },
+      {
+        "description": "Severe violent, dangerous, or vindictive action, or intentional brutality",
+        "penalties": [
+          0,
+          1
+        ],
+        "disqualify": true
+      },
+      {
+        "description": "Influencing the judges or referee",
+        "penalties": [
+          0,
+          1
+        ],
+        "disqualify": true
+      },
+      {
+        "description": "Refusal to obey the referee",
+        "penalties": [
+          0,
+          1
+        ],
+        "disqualify": true
+      },
+      {
+        "description": "Refusal to salute the opponent",
+        "penalties": [
+          0,
+          1
+        ],
+        "disqualify": true
+      },
+      {
+        "description": "Refusal to face a registered contestant",
+        "penalties": [
+          0,
+          1
+        ],
+        "disqualify": true
+      },
+      {
+        "description": "Interference with the order on the mat",
+        "penalties": [
+          0,
+          1
+        ],
+        "disqualify": true
+      },
+      {
+        "description": "Deliberately or repeatedly stepping out of the ring",
+        "penalties": [
+          0,
+          1
+        ],
+        "disqualify": true
+      },
+      {
+        "description": "Violation against sportsmanlike\nspirit",
+        "penalties": [],
+        "disqualify": true
+      },
+      {
+        "description": "Favouring the opponent or benefit\nfrom unauthorised agreements\n",
+        "penalties": [
+        ],
+        "disqualify": true
+      }
+    ]
+  }
+}
