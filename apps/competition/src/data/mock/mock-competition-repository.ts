@@ -31,6 +31,10 @@ export class MockCompetitionRepository implements CompetitionRepository {
     );
   }
 
+  async getMatches(competitionId: string): Promise<Bout[]> {
+    return this.getBouts(competitionId);
+  }
+
   async getRanking(competitionId: string, _options: RepositoryGetOptions = {}): Promise<RankingEntry[]> {
     let ratings = new Map<string, number>();
     for (const participant of this.#participants) {
@@ -107,8 +111,16 @@ export class MockCompetitionRepository implements CompetitionRepository {
     );
   }
 
+  async getMatchesForParticipant(competitionId: string, participantId: string): Promise<Bout[]> {
+    return this.getBoutsForParticipant(competitionId, participantId);
+  }
+
   async getBout(competitionId: string, boutId: string): Promise<Bout> {
     return structuredClone(this.#requireBout(competitionId, boutId));
+  }
+
+  async getMatch(competitionId: string, matchId: string): Promise<Bout> {
+    return this.getBout(competitionId, matchId);
   }
 
   async createBout(competitionId: string, input: NewBoutInput): Promise<Bout> {
@@ -131,6 +143,10 @@ export class MockCompetitionRepository implements CompetitionRepository {
     return structuredClone(bout);
   }
 
+  async createMatch(competitionId: string, input: NewBoutInput): Promise<Bout> {
+    return this.createBout(competitionId, input);
+  }
+
   async publishBout(competitionId: string, boutId: string, input: NewBoutInput): Promise<Bout> {
     const bout = this.#requireBout(competitionId, boutId);
     this.#requireParticipant(competitionId, input.fighterAId);
@@ -147,6 +163,10 @@ export class MockCompetitionRepository implements CompetitionRepository {
     return structuredClone(bout);
   }
 
+  async publishMatch(competitionId: string, matchId: string, input: NewBoutInput): Promise<Bout> {
+    return this.publishBout(competitionId, matchId, input);
+  }
+
   async declineBout(competitionId: string, boutId: string): Promise<Bout> {
     const bout = this.#requireBout(competitionId, boutId);
     if (bout.published) {
@@ -154,6 +174,10 @@ export class MockCompetitionRepository implements CompetitionRepository {
     }
     this.#bouts = this.#bouts.filter((candidate) => candidate.id !== bout.id);
     return structuredClone(bout);
+  }
+
+  async declineMatch(competitionId: string, matchId: string): Promise<Bout> {
+    return this.declineBout(competitionId, matchId);
   }
 
   #requireCompetition(competitionId: string): Competition {

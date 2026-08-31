@@ -15,6 +15,11 @@ Dit is een **competition-first** integratie: de app werkt op een competition, ni
 - De app doet nu veel client-side: selectie, bouten, score flow, publish/decline.
 - De bestaande backend heeft al veel van de nodige data: tournaments, entries, matches, rounds, rulesets.
 - OAuth afbouwen komt later; die wijziging koppelen we niet aan deze eerste integratiestap.
+- De huidige `details`-velden zijn voorlopig JSON-blobs; daar kan later een
+  typed match timeline uit ontstaan met exchanges, warnings, timeouts en
+  disqualifications.
+- `Round` blijft in de backend voorlopig een tournament-planning begrip; een
+  in-match ronde is iets anders en komt pas later als apart model of eventlaag.
 
 ## Jouw keuzes
 - Competition krijgt een **eigen backend-entiteit**.
@@ -48,6 +53,11 @@ Dit is een **competition-first** integratie: de app werkt op een competition, ni
 - publish bout
 - decline bout
 - ranking opnieuw berekenen / opslaan
+
+### 4b. Houd ruimte voor globale ranking
+- Laat competition/tournament expliciet aangeven of resultaten meetellen voor
+  lokale ranking, globale ranking of beide.
+- Standalone matches krijgen voorlopig geen ranking-context.
 
 ### 5. Houd Google Docs tijdelijk als referentie, niet als bron van waarheid
 - De competition app kan eerst de nieuwe backend lezen.

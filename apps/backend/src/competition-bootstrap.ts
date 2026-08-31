@@ -76,7 +76,7 @@ export function initializeCompetitionDatabase(database: NativeDatabase): void {
   const insertParticipant = database.prepare(
     "INSERT INTO CompetitionParticipant (id, competitionId, name, linkedUserEmail) VALUES (?, ?, ?, ?)",
   );
-  const insertBout = database.prepare(
+  const insertMatch = database.prepare(
     "INSERT INTO CompetitionBout (id, competitionId, fighterAId, fighterBId, scoreA, scoreB, winnerParticipantId, date, published, details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
 
@@ -93,7 +93,7 @@ export function initializeCompetitionDatabase(database: NativeDatabase): void {
         { id: "participant-3", name: "Casey Silva", linkedUserEmail: null },
         { id: "participant-4", name: "Drew Fischer", linkedUserEmail: null },
       ],
-      bouts: [
+      matches: [
         {
           id: "bout-1",
           fighterAId: "participant-1",
@@ -102,7 +102,7 @@ export function initializeCompetitionDatabase(database: NativeDatabase): void {
           scoreB: 3,
           winnerParticipantId: "participant-1",
           date: "2026-09-12",
-          details: { note: "Pool bout 1" },
+          details: { note: "Pool match 1", events: [] },
         },
         {
           id: "bout-2",
@@ -112,7 +112,7 @@ export function initializeCompetitionDatabase(database: NativeDatabase): void {
           scoreB: 2,
           winnerParticipantId: null,
           date: "2026-09-12",
-          details: { note: "Pool bout 2" },
+          details: { note: "Pool match 2", events: [] },
         },
       ],
     },
@@ -126,7 +126,7 @@ export function initializeCompetitionDatabase(database: NativeDatabase): void {
         { id: "participant-5", name: "Emery Janssen", linkedUserEmail: null },
         { id: "participant-6", name: "Frankie Ruiz", linkedUserEmail: null },
       ],
-      bouts: [
+      matches: [
         {
           id: "bout-3",
           fighterAId: "participant-5",
@@ -135,7 +135,7 @@ export function initializeCompetitionDatabase(database: NativeDatabase): void {
           scoreB: 1,
           winnerParticipantId: "participant-5",
           date: "2026-12-05",
-          details: { note: "Knockout bout" },
+          details: { note: "Knockout match", events: [] },
         },
       ],
     },
@@ -146,7 +146,7 @@ export function initializeCompetitionDatabase(database: NativeDatabase): void {
       status: "PUBLIC",
       date: "2027-03-21",
       participants: [],
-      bouts: [],
+      matches: [],
     },
   ];
 
@@ -169,18 +169,18 @@ export function initializeCompetitionDatabase(database: NativeDatabase): void {
       );
     }
 
-    for (const bout of competition.bouts) {
-      insertBout.run(
-        bout.id,
+    for (const match of competition.matches) {
+      insertMatch.run(
+        match.id,
         competition.id,
-        bout.fighterAId,
-        bout.fighterBId,
-        bout.scoreA,
-        bout.scoreB,
-        bout.winnerParticipantId,
-        bout.date,
+        match.fighterAId,
+        match.fighterBId,
+        match.scoreA,
+        match.scoreB,
+        match.winnerParticipantId,
+        match.date,
         1,
-        JSON.stringify(bout.details),
+        JSON.stringify(match.details),
       );
     }
   }

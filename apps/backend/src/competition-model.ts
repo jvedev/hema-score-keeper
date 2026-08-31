@@ -5,7 +5,39 @@ import { HttpError, parseJsonValue } from "./http.js";
 
 type CompetitionRow = Selectable<BackendDatabase["Competition"]>;
 type CompetitionParticipantRow = Selectable<BackendDatabase["CompetitionParticipant"]>;
-type CompetitionBoutRow = Selectable<BackendDatabase["CompetitionBout"]>;
+type CompetitionMatchRow = Selectable<BackendDatabase["CompetitionBout"]>;
+
+type MatchEvent =
+  | {
+      type: "exchange";
+      scoreA: number;
+      scoreB: number;
+      details?: unknown;
+    }
+  | {
+      type: "warning";
+      fighterId: string;
+      elapsedTimeSeconds: number;
+      description: string;
+      pointsDeducted?: number;
+    }
+  | {
+      type: "timeout";
+      fighterId: string;
+      elapsedTimeSeconds: number;
+      details?: unknown;
+    }
+  | {
+      type: "disqualification";
+      fighterId: string;
+      elapsedTimeSeconds: number;
+      description: string;
+    };
+
+interface MatchDetails {
+  events?: readonly MatchEvent[];
+  [key: string]: unknown;
+}
 
 export interface CompetitionSummary {
   id: string;
@@ -28,7 +60,7 @@ export interface CompetitionParticipant {
   linkedUserEmail: string | null;
 }
 
-export interface CompetitionBout {
+export interface CompetitionMatch {
   id: string;
   competitionId: string;
   fighterAId: string;
@@ -38,18 +70,22 @@ export interface CompetitionBout {
   winnerParticipantId: string | null;
   date: string;
   published: boolean;
-  details: unknown;
+  details: MatchDetails;
 }
 
-export interface CompetitionBoutInput {
+export type CompetitionBout = CompetitionMatch;
+
+export interface CompetitionMatchInput {
   fighterAId: string;
   fighterBId: string;
   scoreA: number;
   scoreB: number;
   winnerParticipantId: string | null;
   date: string;
-  details: unknown;
+  details: MatchDetails;
 }
+
+export type CompetitionBoutInput = CompetitionMatchInput;
 
 export interface CompetitionRankingEntry {
   participantId: string;
@@ -122,7 +158,7 @@ export async function listParticipants(executor: DbExecutor, competitionId: stri
   return rows.map(toParticipant);
 }
 
-export async function listBouts(executor: DbExecutor, competitionId: string): Promise<CompetitionBout[]> {
+export async function listMatches(executor: DbExecutor, competitionId: string): Promise<CompetitionMatch[]> {
   await requireCompetition(executor, competitionId);
   const rows = await executor
     .selectFrom("CompetitionBout")
@@ -132,30 +168,34 @@ export async function listBouts(executor: DbExecutor, competitionId: string): Pr
     .orderBy("date")
     .orderBy("id")
     .execute();
-  return rows.map(toBout);
+  return rows.map(toMatch);
 }
 
-export async function requireBout(
+export const listBouts = listMatches;
+
+export async function requireMatch(
   executor: DbExecutor,
   competitionId: string,
-  boutId: string,
-): Promise<CompetitionBout> {
+  matchId: string,
+): Promise<CompetitionMatch> {
   const row = await executor
     .selectFrom("CompetitionBout")
     .selectAll()
     .where("competitionId", "=", competitionId)
-    .where("id", "=", boutId)
+    .where("id", "=", matchId)
     .executeTakeFirst();
   if (!row) {
-    throw new HttpError(404, `Bout "${boutId}" not found.`);
+    throw new HttpError(404, `Match "${matchId}" not found.`);
   }
-  return toBout(row);
+  return toMatch(row);
 }
+
+export const requireBout = requireMatch;
 
 export async function listRanking(executor: DbExecutor, competitionId: string): Promise<CompetitionRankingEntry[]> {
   await requireCompetition(executor, competitionId);
   const participants = await listParticipants(executor, competitionId);
-  const bouts = await executor
+  const matches = await executor
     .selectFrom("CompetitionBout")
     .selectAll()
     .where("competitionId", "=", competitionId)
@@ -165,11 +205,11 @@ export async function listRanking(executor: DbExecutor, competitionId: string): 
     .execute();
 
   let ratings = new Map<string, number>(participants.map((participant) => [participant.id, DEFAULT_ELO_RATING]));
-  for (const bout of bouts) {
+  for (const match of matches) {
     ratings = applyEloBout(ratings, {
-      fighterAId: bout.fighterAId,
-      fighterBId: bout.fighterBId,
-      winnerParticipantId: bout.winnerParticipantId,
+      fighterAId: match.fighterAId,
+      fighterBId: match.fighterBId,
+      winnerParticipantId: match.winnerParticipantId,
     });
   }
 
@@ -179,12 +219,12 @@ export async function listRanking(executor: DbExecutor, competitionId: string): 
   );
 }
 
-export async function createBout(
+export async function createMatch(
   executor: DbExecutor,
   competitionId: string,
   id: string,
-  input: CompetitionBoutInput,
-): Promise<CompetitionBout> {
+  input: CompetitionMatchInput,
+): Promise<CompetitionMatch> {
   await requireCompetition(executor, competitionId);
   await requireParticipant(executor, competitionId, input.fighterAId);
   await requireParticipant(executor, competitionId, input.fighterBId);
@@ -209,17 +249,19 @@ export async function createBout(
     })
     .execute();
 
-  return requireBout(executor, competitionId, id);
+  return requireMatch(executor, competitionId, id);
 }
 
-export async function publishBout(
+export const createBout = createMatch;
+
+export async function publishMatch(
   executor: DbExecutor,
   competitionId: string,
-  boutId: string,
-  input: CompetitionBoutInput,
-): Promise<CompetitionBout> {
+  matchId: string,
+  input: CompetitionMatchInput,
+): Promise<CompetitionMatch> {
   await requireCompetition(executor, competitionId);
-  const existing = await requireBout(executor, competitionId, boutId);
+  const existing = await requireMatch(executor, competitionId, matchId);
   await requireParticipant(executor, competitionId, input.fighterAId);
   await requireParticipant(executor, competitionId, input.fighterBId);
   assertDistinctFighters(input.fighterAId, input.fighterBId);
@@ -240,7 +282,7 @@ export async function publishBout(
       details: JSON.stringify(input.details),
     })
     .where("competitionId", "=", competitionId)
-    .where("id", "=", boutId)
+    .where("id", "=", matchId)
     .execute();
 
   return {
@@ -256,19 +298,23 @@ export async function publishBout(
   };
 }
 
-export async function declineBout(
+export const publishBout = publishMatch;
+
+export async function declineMatch(
   executor: DbExecutor,
   competitionId: string,
-  boutId: string,
-): Promise<CompetitionBout> {
+  matchId: string,
+): Promise<CompetitionMatch> {
   await requireCompetition(executor, competitionId);
-  const existing = await requireBout(executor, competitionId, boutId);
+  const existing = await requireMatch(executor, competitionId, matchId);
   if (existing.published) {
-    throw new HttpError(400, "Published bouts cannot be declined.");
+    throw new HttpError(400, "Published matches cannot be declined.");
   }
-  await executor.deleteFrom("CompetitionBout").where("competitionId", "=", competitionId).where("id", "=", boutId).execute();
+  await executor.deleteFrom("CompetitionBout").where("competitionId", "=", competitionId).where("id", "=", matchId).execute();
   return existing;
 }
+
+export const declineBout = declineMatch;
 
 function toParticipant(row: CompetitionParticipantRow): CompetitionParticipant {
   return {
@@ -281,11 +327,11 @@ function toParticipant(row: CompetitionParticipantRow): CompetitionParticipant {
 
 function assertDistinctFighters(fighterAId: string, fighterBId: string): void {
   if (fighterAId === fighterBId) {
-    throw new HttpError(400, "A bout requires two different participants.");
+    throw new HttpError(400, "A match requires two different participants.");
   }
 }
 
-function toBout(row: CompetitionBoutRow): CompetitionBout {
+function toMatch(row: CompetitionMatchRow): CompetitionMatch {
   return {
     id: row.id,
     competitionId: row.competitionId,
@@ -296,6 +342,6 @@ function toBout(row: CompetitionBoutRow): CompetitionBout {
     winnerParticipantId: row.winnerParticipantId,
     date: row.date,
     published: row.published === 1,
-    details: parseJsonValue(row.details),
+    details: parseJsonValue(row.details) as MatchDetails,
   };
 }

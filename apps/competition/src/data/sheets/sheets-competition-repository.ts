@@ -96,9 +96,17 @@ export class SheetsCompetitionRepository implements CompetitionRepository {
     return rows.filter((row) => row.fighterAId === participantId || row.fighterBId === participantId);
   }
 
+  async getMatchesForParticipant(competitionId: string, participantId: string): Promise<Bout[]> {
+    return this.getBoutsForParticipant(competitionId, participantId);
+  }
+
   async getBouts(competitionId: string): Promise<Bout[]> {
     const rows = await this.#sheets.getBouts(competitionId);
     return rows.map((row) => toBout(competitionId, row));
+  }
+
+  async getMatches(competitionId: string): Promise<Bout[]> {
+    return this.getBouts(competitionId);
   }
 
   async getBout(competitionId: string, boutId: string): Promise<Bout> {
@@ -108,6 +116,10 @@ export class SheetsCompetitionRepository implements CompetitionRepository {
       throw new Error(`Bout "${boutId}" was not found in competition "${competitionId}".`);
     }
     return toBout(competitionId, row);
+  }
+
+  async getMatch(competitionId: string, matchId: string): Promise<Bout> {
+    return this.getBout(competitionId, matchId);
   }
 
   async createBout(competitionId: string, input: NewBoutInput): Promise<Bout> {
@@ -126,6 +138,10 @@ export class SheetsCompetitionRepository implements CompetitionRepository {
     };
     this.#draftBouts.set(bout.id, bout);
     return structuredClone(bout);
+  }
+
+  async createMatch(competitionId: string, input: NewBoutInput): Promise<Bout> {
+    return this.createBout(competitionId, input);
   }
 
   async publishBout(competitionId: string, boutId: string, input: NewBoutInput): Promise<Bout> {
@@ -159,6 +175,10 @@ export class SheetsCompetitionRepository implements CompetitionRepository {
     return toBout(competitionId, boutRow);
   }
 
+  async publishMatch(competitionId: string, matchId: string, input: NewBoutInput): Promise<Bout> {
+    return this.publishBout(competitionId, matchId, input);
+  }
+
   async declineBout(_competitionId: string, _boutId: string): Promise<Bout> {
     const draft = this.#draftBouts.get(_boutId);
     if (!draft) {
@@ -166,6 +186,10 @@ export class SheetsCompetitionRepository implements CompetitionRepository {
     }
     this.#draftBouts.delete(_boutId);
     return structuredClone(draft);
+  }
+
+  async declineMatch(competitionId: string, matchId: string): Promise<Bout> {
+    return this.declineBout(competitionId, matchId);
   }
 
   async #requireParticipants(competitionId: string, fighterAId: string, fighterBId: string): Promise<void> {
@@ -194,7 +218,7 @@ function toBout(competitionId: string, row: BoutRow): Bout {
     winnerParticipantId: row.winnerParticipantId,
     date: row.date,
     published: true,
-    details: row.details,
+    details: row.details as Bout["details"],
   };
 }
 

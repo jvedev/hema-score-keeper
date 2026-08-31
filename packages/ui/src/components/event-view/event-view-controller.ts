@@ -583,7 +583,6 @@ function renderStageOfficialCreateForm(tournament: ApiTournament, stage: ApiStag
           <select class="text-input" name="role">
             <option value="JUDGE">Scheids</option>
             <option value="JURY">Jury</option>
-            <option value="TELLER">Teller</option>
             <option value="TABLE">Tafel</option>
           </select>
         </label>
@@ -953,7 +952,7 @@ function renderEditorFields(
       const availableOfficials = tournament?.entries.filter((entry) => entry.kind !== "FIGHTER" && !assignedEntryIds.has(entry.id)) ?? [];
       return `
         ${renderSelect("entryId", "Vrijwilliger", availableOfficials.map((entry) => [entry.id, entry.user.username]), "Geen vrije vrijwilligers")}
-        ${renderSelect("role", "Rol", [["JUDGE", "Scheids"], ["JURY", "Jury"], ["TELLER", "Teller"], ["TABLE", "Tafel"]])}
+        ${renderSelect("role", "Rol", [["JUDGE", "Scheids"], ["JURY", "Jury"], ["TABLE", "Tafel"]])}
       `;
     }
   }
@@ -2402,8 +2401,6 @@ function roleName(role: StageOfficialRole): string {
       return "Scheids";
     case "JURY":
       return "Jury";
-    case "TELLER":
-      return "Teller";
     case "TABLE":
       return "Tafel";
   }

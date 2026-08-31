@@ -68,6 +68,7 @@ import {
   createBout,
   declineBout,
   publishBout,
+  type CompetitionMatchInput,
   requireBout,
   requireCompetition,
 } from "./competition-model.js";
@@ -170,7 +171,7 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
       scoreB,
       winnerParticipantId,
       date,
-      details,
+      details: details as CompetitionMatchInput["details"],
     });
   });
   app.put("/api/v1/competitions/:id/bouts/:boutId", async (request) => {
@@ -196,7 +197,7 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
       scoreB,
       winnerParticipantId,
       date,
-      details,
+      details: details as CompetitionMatchInput["details"],
     });
   });
   app.delete("/api/v1/competitions/:id/bouts/:boutId", async (request) => {
@@ -1213,8 +1214,8 @@ function parseEntryKind(value: unknown): EntryKind {
 
 function parseStageOfficialRole(value: unknown): StageOfficialRole {
   const role = requireString(value, "Stage official role");
-  if (!["JUDGE", "JURY", "TELLER", "TABLE"].includes(role)) {
-    throw new HttpError(400, "Stage official role must be JUDGE, JURY, TELLER, or TABLE.");
+  if (!["JUDGE", "JURY", "TABLE"].includes(role)) {
+    throw new HttpError(400, "Stage official role must be JUDGE, JURY, or TABLE.");
   }
   return role as StageOfficialRole;
 }

@@ -9,10 +9,12 @@
 
 - **Event**: bevat tournaments en arenas.
 - **Tournament**: bevat entries en stages.
+- **Competition**: losse entry point voor een vlakke set wedstrijden.
 - **Entry**: uniek per tournament.
 - **Stage**: heeft optioneel een regelsysteem, tijdslot en gekoppelde arenas.
 - **StageOfficial**: stage-gebonden officials/vrijwilligers.
-- **Match / Exchange**: live scoring in de score-keeper-app.
+- **Match**: canonieke wedstrijdeenheid; "bout" is alleen een UI-term.
+- **Exchange / event timeline**: per match vastgelegde score- en statusgebeurtenissen.
 
 ## Regelsysteem
 
@@ -27,6 +29,10 @@ Als een stage een ruleset heeft, wint die dus altijd van tournament- of event-ni
 Een ruleset is event-gebonden, versieerbaar en alleen nog de basis voor
 naam + versie. Stage-specifieke instellingen (pool sizes, eliminatie-aantal,
 tijd tussen matches) zitten op `Stage` en hangen af van `StageType`.
+
+De term `Round` blijft voorlopig alleen voor tournament-planning bedoeld.
+In-match rondes of losse warning/timeout events gaan later in de match-timeline
+en niet als extra relationele tabel.
 
 Een rulesetversie die al in een match gebruikt is, blijft readonly. Voor aanpassingen maak je een nieuwe versie.
 

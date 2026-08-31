@@ -3,6 +3,9 @@ import type {
   Bout,
   Competition,
   CompetitionRepository,
+  Match,
+  MatchDetails,
+  MatchInput,
   NewBoutInput,
   Participant,
   RankingEntry,
@@ -44,7 +47,7 @@ interface RankingResponse {
   rating: number;
 }
 
-interface BoutResponse {
+interface MatchResponse {
   id: string;
   competitionId: string;
   fighterAId: string;
@@ -116,23 +119,35 @@ export class BackendCompetitionRepository implements CompetitionRepository {
     return match;
   }
 
-  async getBouts(competitionId: string): Promise<Bout[]> {
-    const bouts = await this.#getJson<BoutResponse[]>(
+  async getMatches(competitionId: string): Promise<Match[]> {
+    const matches = await this.#getJson<MatchResponse[]>(
       `/api/v1/competitions/${encodeURIComponent(competitionId)}/bouts`,
     );
-    return bouts.map(toBout);
+    return matches.map(toMatch);
+  }
+
+  async getBouts(competitionId: string): Promise<Bout[]> {
+    return this.getMatches(competitionId);
+  }
+
+  async getMatch(competitionId: string, matchId: string): Promise<Match> {
+    const match = await this.#getJson<MatchResponse>(
+      `/api/v1/competitions/${encodeURIComponent(competitionId)}/bouts/${encodeURIComponent(matchId)}`,
+    );
+    return toMatch(match);
   }
 
   async getBout(competitionId: string, boutId: string): Promise<Bout> {
-    const bout = await this.#getJson<BoutResponse>(
-      `/api/v1/competitions/${encodeURIComponent(competitionId)}/bouts/${encodeURIComponent(boutId)}`,
-    );
-    return toBout(bout);
+    return this.getMatch(competitionId, boutId);
+  }
+
+  async getMatchesForParticipant(competitionId: string, participantId: string): Promise<Match[]> {
+    const matches = await this.getMatches(competitionId);
+    return matches.filter((match) => match.fighterAId === participantId || match.fighterBId === participantId);
   }
 
   async getBoutsForParticipant(competitionId: string, participantId: string): Promise<Bout[]> {
-    const bouts = await this.getBouts(competitionId);
-    return bouts.filter((bout) => bout.fighterAId === participantId || bout.fighterBId === participantId);
+    return this.getMatchesForParticipant(competitionId, participantId);
   }
 
   async addParticipant(_competitionId: string, _name: string): Promise<Participant> {
@@ -143,36 +158,35 @@ export class BackendCompetitionRepository implements CompetitionRepository {
     throw new Error("Competition write operations are not available through the backend repository yet.");
   }
 
-  async createBout(_competitionId: string, _input: NewBoutInput): Promise<Bout> {
-    const bout = await this.#getJson<BoutResponse>(
-      `/api/v1/competitions/${encodeURIComponent(_competitionId)}/bouts`,
-      {
-        method: "POST",
-        body: JSON.stringify(_input),
-      },
-    );
-    return toBout(bout);
+  async createMatch(_competitionId: string, _input: MatchInput): Promise<Match> {
+    throw new Error("Competition write operations are not available through the backend repository yet.");
   }
 
-  async publishBout(competitionId: string, boutId: string, input: NewBoutInput): Promise<Bout> {
-    const bout = await this.#getJson<BoutResponse>(
-      `/api/v1/competitions/${encodeURIComponent(competitionId)}/bouts/${encodeURIComponent(boutId)}`,
+  async createBout(competitionId: string, input: NewBoutInput): Promise<Bout> {
+    return this.createMatch(competitionId, input);
+  }
+
+  async publishMatch(competitionId: string, matchId: string, input: MatchInput): Promise<Match> {
+    const match = await this.#getJson<MatchResponse>(
+      `/api/v1/competitions/${encodeURIComponent(competitionId)}/bouts/${encodeURIComponent(matchId)}`,
       {
         method: "PUT",
         body: JSON.stringify(input),
       },
     );
-    return toBout(bout);
+    return toMatch(match);
+  }
+
+  async publishBout(competitionId: string, boutId: string, input: NewBoutInput): Promise<Bout> {
+    return this.publishMatch(competitionId, boutId, input);
+  }
+
+  async declineMatch(_competitionId: string, _matchId: string): Promise<Match> {
+    throw new Error("Competition write operations are not available through the backend repository yet.");
   }
 
   async declineBout(_competitionId: string, _boutId: string): Promise<Bout> {
-    const bout = await this.#getJson<BoutResponse>(
-      `/api/v1/competitions/${encodeURIComponent(_competitionId)}/bouts/${encodeURIComponent(_boutId)}`,
-      {
-        method: "DELETE",
-      },
-    );
-    return toBout(bout);
+    return this.declineMatch(_competitionId, _boutId);
   }
 
   async #getJson<T>(
@@ -226,7 +240,7 @@ function toRuleSet(response: CompetitionDetailResponse): RuleSet {
   };
 }
 
-function toBout(response: BoutResponse): Bout {
+function toMatch(response: MatchResponse): Match {
   return {
     id: response.id,
     competitionId: response.competitionId,
@@ -237,6 +251,6 @@ function toBout(response: BoutResponse): Bout {
     winnerParticipantId: response.winnerParticipantId,
     date: response.date,
     published: response.published,
-    details: response.details,
+    details: response.details as MatchDetails,
   };
 }

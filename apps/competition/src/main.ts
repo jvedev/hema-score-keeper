@@ -34,7 +34,7 @@ interface PendingBoutResult {
   scoreA: number;
   scoreB: number;
   winnerParticipantId: string | null;
-  details: unknown;
+  details: Bout["details"];
 }
 
 const leftFighterStyle = { backgroundColor: "#21c15b", textColor: "#071a0d" };
@@ -339,7 +339,7 @@ async function completeFight(): Promise<void> {
     scoreA: state.fighterAScore,
     scoreB: state.fighterBScore,
     winnerParticipantId: resolveWinnerParticipantId(activeMatch, state),
-    details: activeMatch.matchStore.events,
+    details: { events: activeMatch.matchStore.events },
   };
 
   await exitFightMode();
