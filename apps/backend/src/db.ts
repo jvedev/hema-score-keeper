@@ -1,9 +1,10 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import BetterSqlite3 from "better-sqlite3";
-import { Kysely, SqliteDialect, type Transaction } from "kysely";
+import { Kysely, SqliteDialect, type Generated, type Transaction } from "kysely";
 import type { EntryKind, ScheduleRole, StageOfficialRole, StageType } from "./api-types.js";
 import { initializeCompetitionDatabase } from "./competition-bootstrap.js";
+import { applySchemaMigrations } from "./schema-migrations.js";
 
 export type SqliteBoolean = 0 | 1;
 
@@ -20,12 +21,15 @@ interface UserTable {
   juryVolunteer: SqliteBoolean;
   tableVolunteer: SqliteBoolean;
   otherVolunteer: SqliteBoolean;
+  language: Generated<string>;
 }
 
 interface ClubTable {
   id: string;
   name: string;
   slug: string;
+  area: string | null;
+  countryCode: string | null;
 }
 
 interface UserSessionTable {
@@ -188,6 +192,19 @@ interface CompetitionTable {
   rulesetJson: string;
   visibility: string;
   clubId: string | null;
+  scopeKind: Generated<string>;
+  scopeValuesJson: Generated<string>;
+}
+
+interface CompetitionAdminTable {
+  competitionId: string;
+  userId: string;
+  role: "OWNER" | "CO_ADMIN";
+}
+
+interface SchemaMigrationTable {
+  name: string;
+  appliedAt: string;
 }
 
 interface CompetitionParticipantTable {
@@ -246,6 +263,8 @@ export interface BackendDatabase {
   Competition: CompetitionTable;
   CompetitionParticipant: CompetitionParticipantTable;
   CompetitionBout: CompetitionBoutTable;
+  CompetitionAdmin: CompetitionAdminTable;
+  SchemaMigration: SchemaMigrationTable;
 }
 
 export type DbExecutor = Kysely<BackendDatabase> | Transaction<BackendDatabase>;
@@ -267,10 +286,11 @@ function resolveDatabasePath(databaseUrl = process.env.DATABASE_URL ?? "file:./d
   return path.isAbsolute(filePath) ? filePath : path.resolve(databaseDir, filePath);
 }
 
-export function createDatabase(): Kysely<BackendDatabase> {
-  const native = new BetterSqlite3(resolveDatabasePath());
+export function createDatabase(databaseUrl = process.env.DATABASE_URL ?? "file:./dev.db"): Kysely<BackendDatabase> {
+  const native = new BetterSqlite3(resolveDatabasePath(databaseUrl));
   native.pragma("foreign_keys = ON");
   initializeCompetitionDatabase(native);
+  applySchemaMigrations(native);
 
   return new Kysely<BackendDatabase>({
     dialect: new SqliteDialect({ database: native }),

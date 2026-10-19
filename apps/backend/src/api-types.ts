@@ -10,6 +10,8 @@ export interface ApiClub {
   id: string;
   name: string;
   slug: string;
+  area: string | null;
+  countryCode: string | null;
 }
 
 export interface ApiPenaltyRule {
@@ -62,6 +64,7 @@ export interface ApiUser {
   juryVolunteer: boolean;
   tableVolunteer: boolean;
   otherVolunteer: boolean;
+  language: string;
   skills?: ApiSkill[];
 }
 

@@ -1,6 +1,7 @@
 import { applyEloBout, buildRanking, DEFAULT_ELO_RATING } from "@hema/ranking";
 import type { Selectable } from "kysely";
 import type { BackendDatabase, DbExecutor } from "./db.js";
+import { scopeFromRow, type CompetitionScope } from "./competitions/scope.js";
 import { HttpError, parseJsonValue } from "./http.js";
 
 type CompetitionRow = Selectable<BackendDatabase["Competition"]>;
@@ -49,6 +50,7 @@ export interface CompetitionSummary {
   endDate: string;
   visibility: string;
   clubId: string | null;
+  scope: CompetitionScope;
 }
 
 export interface CompetitionDetail extends CompetitionSummary {
@@ -112,6 +114,7 @@ function toSummary(row: CompetitionRow): CompetitionSummary {
     endDate: row.date,
     visibility: row.visibility,
     clubId: row.clubId,
+    scope: scopeFromRow(row),
   };
 }
 

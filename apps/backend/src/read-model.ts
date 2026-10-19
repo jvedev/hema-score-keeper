@@ -120,6 +120,7 @@ function toApiUser(row: UserRow, skills: ApiSkill[]): ApiUser {
     juryVolunteer: fromSqliteBoolean(row.juryVolunteer),
     tableVolunteer: fromSqliteBoolean(row.tableVolunteer),
     otherVolunteer: fromSqliteBoolean(row.otherVolunteer),
+    language: row.language,
     skills,
   };
 }

@@ -160,7 +160,15 @@ database.exec(`
   );
 `);
 
+function hasTable(name) {
+  return Boolean(database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name));
+}
+
 function clearDatabase() {
+  // CompetitionAdmin exists once the backend has applied its schema migrations.
+  if (hasTable("CompetitionAdmin")) {
+    database.prepare("DELETE FROM CompetitionAdmin").run();
+  }
   for (const table of clearTables) {
     database.prepare(`DELETE FROM ${table}`).run();
   }
@@ -205,7 +213,7 @@ function main() {
     id: "competition-1",
     name: "Autumn Longsword Open",
     slug: "autumn-longsword-open",
-    status: "ACTIVE",
+    status: "RUNNING",
     date: "2026-09-12",
     participants: [
       { id: "participant-1", name: "Alex Meyer", linkedUserEmail: null, kind: "MEMBER" },
@@ -265,7 +273,7 @@ function main() {
     id: "competition-3",
     name: "Spring Rapier Challenge",
     slug: "spring-rapier-challenge",
-    status: "PUBLIC",
+    status: "DRAFT",
     date: "2027-03-21",
     participants: [],
     bouts: [],
@@ -447,6 +455,12 @@ function main() {
           1,
           JSON.stringify(bout.details),
         );
+      }
+
+      if (hasTable("CompetitionAdmin")) {
+        database
+          .prepare("INSERT INTO CompetitionAdmin (competitionId, userId, role) VALUES (?, ?, 'OWNER')")
+          .run(competition.id, initialAdmin.id);
       }
     }
   });

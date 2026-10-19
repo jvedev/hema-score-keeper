@@ -227,7 +227,7 @@ export function initializeCompetitionDatabase(database: NativeDatabase): void {
       id: "competition-1",
       name: "Autumn Longsword Open",
       slug: "autumn-longsword-open",
-      status: "ACTIVE",
+      status: "RUNNING",
       date: "2026-09-12",
       participants: [
         { id: "participant-1", name: "Alex Meyer", linkedUserEmail: null, kind: "MEMBER" },
@@ -285,7 +285,7 @@ export function initializeCompetitionDatabase(database: NativeDatabase): void {
       id: "competition-3",
       name: "Spring Rapier Challenge",
       slug: "spring-rapier-challenge",
-      status: "PUBLIC",
+      status: "DRAFT",
       date: "2027-03-21",
       participants: [],
       matches: [],

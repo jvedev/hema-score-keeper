@@ -1,6 +1,6 @@
+import { pathToFileURL } from "node:url";
 import Fastify from "fastify";
-import type { FastifyRequest } from "fastify";
-import type { Kysely } from "kysely";
+import type { Kysely, Updateable } from "kysely";
 import type { ApiRulesetDefinition, EntryKind, ScheduleRole, StageOfficialRole, StageType } from "./api-types.js";
 import { db, type BackendDatabase, toSqliteBoolean } from "./db.js";
 import {
@@ -12,6 +12,9 @@ import {
   verifyJwt,
   verifyPassword,
 } from "./auth.js";
+import { requireAdminUser, requirePathParam, resolveAccessUser, type AccessUser } from "./access-user.js";
+import { registerClubRoutes } from "./club-routes.js";
+import { registerCompetitionAdminRoutes } from "./competitions/admin-routes.js";
 import { readSheetValues, writeSheetValues } from "./google-sheets.js";
 import {
   ensureJsonValue,
@@ -86,51 +89,13 @@ const tournamentColors = ["#5B8CFF", "#E06C75", "#98C379", "#E5C07B", "#C678DD",
 const loginRefreshTtlSeconds = 7 * 24 * 60 * 60;
 
 const accountRoles = new Set(["USER", "COMPETITION_ADMIN", "SYSTEM_ADMIN"]);
-const participantKinds = new Set(["MEMBER", "GUEST"]);
+const SUPPORTED_LANGUAGES = new Set(["en", "nl"]);
 
 function requireAccountRole(value: unknown, label: string): "USER" | "COMPETITION_ADMIN" | "SYSTEM_ADMIN" {
   if (typeof value !== "string" || !accountRoles.has(value)) {
     throw new HttpError(400, `${label} must be USER, COMPETITION_ADMIN, or SYSTEM_ADMIN.`);
   }
   return value as "USER" | "COMPETITION_ADMIN" | "SYSTEM_ADMIN";
-}
-
-function requireParticipantKind(value: unknown, label: string): "MEMBER" | "GUEST" {
-  if (typeof value !== "string" || !participantKinds.has(value)) {
-    throw new HttpError(400, `${label} must be MEMBER or GUEST.`);
-  }
-  return value as "MEMBER" | "GUEST";
-}
-
-interface AccessUser {
-  id: string;
-  clubId: string | null;
-  role: "USER" | "COMPETITION_ADMIN" | "SYSTEM_ADMIN";
-}
-
-async function resolveAccessUser(request: FastifyRequest, database: Kysely<BackendDatabase>): Promise<AccessUser | null> {
-  const authorization = request.headers.authorization;
-  const header = Array.isArray(authorization) ? authorization[0] : authorization;
-  if (!header || !header.startsWith("Bearer ")) {
-    return null;
-  }
-
-  const token = header.slice("Bearer ".length).trim();
-  if (!token) {
-    return null;
-  }
-
-  const claims = verifyJwt(token, "access");
-  const user = await database.selectFrom("User").selectAll().where("id", "=", claims.sub).executeTakeFirst();
-  if (!user) {
-    throw new HttpError(401, "Authenticated user not found.");
-  }
-
-  return {
-    id: user.id,
-    clubId: user.clubId,
-    role: user.role as AccessUser["role"],
-  };
 }
 
 function canAccessCompetition(user: AccessUser | null, competition: { visibility: string; clubId: string | null }): boolean {
@@ -149,13 +114,6 @@ function canAccessCompetition(user: AccessUser | null, competition: { visibility
   return user.clubId !== null && user.clubId === competition.clubId;
 }
 
-async function requireAdminUser(request: FastifyRequest, database: Kysely<BackendDatabase>): Promise<AccessUser> {
-  const user = await resolveAccessUser(request, database);
-  if (!user || user.role === "USER") {
-    throw new HttpError(403, "Competition admin access required.");
-  }
-  return user;
-}
 
 export function createApp(database: Kysely<BackendDatabase> = db) {
   const app = Fastify();
@@ -328,8 +286,11 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
   });
 
   app.post("/api/v1/users", async (request) => {
-    await requireAdminUser(request, database);
+    const admin = await requireAdminUser(request, database);
     const body = ensureObject(request.body, "User");
+    if (admin.role !== "SYSTEM_ADMIN" && body.role === "SYSTEM_ADMIN") {
+      throw new HttpError(403, "Only a system admin can create system admins.");
+    }
     const id = generateId();
     await database.insertInto("User").values({
       id,
@@ -348,166 +309,8 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
     return requireUserApi(database, id);
   });
 
-  app.get("/api/v1/clubs", async () =>
-    database.selectFrom("Club").selectAll().orderBy("name").orderBy("slug").execute());
-
-  app.post("/api/v1/clubs", async (request) => {
-    await requireAdminUser(request, database);
-    const body = ensureObject(request.body, "Club");
-    const id = generateId();
-    await database.insertInto("Club").values({
-      id,
-      name: requireString(body.name, "Club name"),
-      slug: requireString(body.slug, "Club slug"),
-    }).execute();
-    return database.selectFrom("Club").selectAll().where("id", "=", id).executeTakeFirstOrThrow();
-  });
-
-  app.get("/api/v1/competitions/admin", async (request) => {
-    const user = await requireAdminUser(request, database);
-    const competitions = await listCompetitions(database);
-    if (user.role === "SYSTEM_ADMIN") {
-      return competitions;
-    }
-    return competitions.filter((competition) => competition.clubId === user.clubId || competition.clubId === null);
-  });
-
-  app.post("/api/v1/competitions", async (request) => {
-    const user = await requireAdminUser(request, database);
-    const body = ensureObject(request.body, "Competition");
-    const clubId = body.clubId === undefined || body.clubId === null ? null : requireString(body.clubId, "Club ID");
-    const visibility = body.visibility === undefined ? "PUBLIC" : requireString(body.visibility, "Visibility");
-    if (visibility !== "PUBLIC" && visibility !== "CLUB_ONLY") {
-      throw new HttpError(400, "Visibility must be PUBLIC or CLUB_ONLY.");
-    }
-    if (visibility === "CLUB_ONLY" && clubId === null) {
-      throw new HttpError(400, "Club-only competitions require a club.");
-    }
-    if (clubId !== null) {
-      const club = await database.selectFrom("Club").selectAll().where("id", "=", clubId).executeTakeFirst();
-      if (!club) {
-        throw new HttpError(404, `Club "${clubId}" not found.`);
-      }
-      if (user.role !== "SYSTEM_ADMIN" && user.clubId !== clubId) {
-        throw new HttpError(403, "You can only manage competitions for your own club.");
-      }
-    }
-
-    const id = generateId();
-    await database.insertInto("Competition").values({
-      id,
-      name: requireString(body.name, "Competition name"),
-      slug: requireString(body.slug, "Competition slug"),
-      status: body.status === undefined ? "DRAFT" : requireString(body.status, "Status"),
-      date: requireString(body.date, "Date"),
-      rulesetJson: JSON.stringify(body.rulesetJson ?? defaultRulesetDefinition()),
-      visibility,
-      clubId,
-    }).execute();
-    return requireCompetition(database, id);
-  });
-
-  app.patch("/api/v1/competitions/:id", async (request) => {
-    const user = await requireAdminUser(request, database);
-    const competitionId = requirePathParam(request, "id");
-    const existing = await requireCompetition(database, competitionId);
-    if (user.role !== "SYSTEM_ADMIN" && existing.clubId !== null && existing.clubId !== user.clubId) {
-      throw new HttpError(403, "You can only manage competitions for your own club.");
-    }
-
-    const body = ensureObject(request.body, "Competition");
-    const changes: Record<string, unknown> = {};
-    if (body.name !== undefined) {
-      changes.name = requireString(body.name, "Competition name");
-    }
-    if (body.slug !== undefined) {
-      changes.slug = requireString(body.slug, "Competition slug");
-    }
-    if (body.status !== undefined) {
-      changes.status = requireString(body.status, "Status");
-    }
-    if (body.date !== undefined) {
-      changes.date = requireString(body.date, "Date");
-    }
-    if (body.visibility !== undefined) {
-      const visibility = requireString(body.visibility, "Visibility");
-      if (visibility !== "PUBLIC" && visibility !== "CLUB_ONLY") {
-        throw new HttpError(400, "Visibility must be PUBLIC or CLUB_ONLY.");
-      }
-      changes.visibility = visibility;
-    }
-    if (body.clubId !== undefined) {
-      const clubId = body.clubId === null ? null : requireString(body.clubId, "Club ID");
-      if (clubId !== null) {
-        const club = await database.selectFrom("Club").selectAll().where("id", "=", clubId).executeTakeFirst();
-        if (!club) {
-          throw new HttpError(404, `Club "${clubId}" not found.`);
-        }
-        if (user.role !== "SYSTEM_ADMIN" && user.clubId !== clubId) {
-          throw new HttpError(403, "You can only manage competitions for your own club.");
-        }
-      }
-      changes.clubId = clubId;
-    }
-    if (body.rulesetJson !== undefined) {
-      changes.rulesetJson = JSON.stringify(body.rulesetJson);
-    }
-
-    if (Object.keys(changes).length > 0) {
-      await database.updateTable("Competition").set(changes).where("id", "=", competitionId).execute();
-    }
-    return requireCompetition(database, competitionId);
-  });
-
-  app.post("/api/v1/competitions/:id/participants", async (request) => {
-    const user = await requireAdminUser(request, database);
-    const competitionId = requirePathParam(request, "id");
-    const competition = await requireCompetition(database, competitionId);
-    if (user.role !== "SYSTEM_ADMIN" && competition.clubId !== null && competition.clubId !== user.clubId) {
-      throw new HttpError(403, "You can only manage competitions for your own club.");
-    }
-
-    const body = ensureObject(request.body, "Participant");
-    const id = generateId();
-    const kind = body.kind === undefined ? "MEMBER" : requireParticipantKind(body.kind, "Participant kind");
-    const userId = body.userId === undefined || body.userId === null ? null : requireString(body.userId, "User ID");
-    let clubId = body.clubId === undefined || body.clubId === null ? null : requireString(body.clubId, "Club ID");
-    if (kind === "GUEST" && clubId === null) {
-      clubId = competition.clubId ?? user.clubId;
-    }
-    if (kind === "GUEST" && userId !== null) {
-      throw new HttpError(400, "Guest participants cannot be linked to a user account.");
-    }
-    if (kind === "GUEST" && clubId === null) {
-      throw new HttpError(400, "Guest participants require a club.");
-    }
-    if (userId !== null) {
-      const linkedUser = await requireUserRow(database, userId);
-      if (clubId !== null && linkedUser.clubId !== clubId) {
-        throw new HttpError(400, "Participant club must match the linked user club.");
-      }
-    }
-    if (clubId !== null) {
-      const club = await database.selectFrom("Club").selectAll().where("id", "=", clubId).executeTakeFirst();
-      if (!club) {
-        throw new HttpError(404, `Club "${clubId}" not found.`);
-      }
-    }
-
-    await database.insertInto("CompetitionParticipant").values({
-      id,
-      competitionId,
-      name: requireString(body.name, "Participant name"),
-      displayName: body.displayName === undefined ? requireString(body.name, "Participant name") : requireString(body.displayName, "Display name"),
-      linkedUserEmail: body.linkedUserEmail === undefined ? null : requireString(body.linkedUserEmail, "Linked user email"),
-      linkedUserEmailHash: body.linkedUserEmail === undefined ? null : hashEmail(requireString(body.linkedUserEmail, "Linked user email")),
-      clubId,
-      userId,
-      kind,
-    }).execute();
-
-    return database.selectFrom("CompetitionParticipant").selectAll().where("id", "=", id).executeTakeFirstOrThrow();
-  });
+  registerClubRoutes(app, database);
+  registerCompetitionAdminRoutes(app, database);
 
   app.post("/api/v1/auth/enrollment-tokens", async (request) => {
     const admin = await requireAdminUser(request, database);
@@ -589,7 +392,7 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
 
       const user = await requireUserRow(database, tokenRow.userId);
       const passwordHash = hashPassword(password);
-      const updates: Partial<BackendDatabase["User"]> = {
+      const updates: Updateable<BackendDatabase["User"]> = {
         passwordHash,
         status: "ACTIVE",
       };
@@ -793,6 +596,22 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
     return requireUserApi(database, user.id);
   });
 
+  app.patch("/api/v1/auth/me", async (request) => {
+    const user = await resolveAccessUser(request, database);
+    if (!user) {
+      throw new HttpError(401, "Not authenticated.");
+    }
+    const body = ensureObject(request.body, "Profile");
+    if (body.language !== undefined) {
+      const language = requireString(body.language, "Language");
+      if (!SUPPORTED_LANGUAGES.has(language)) {
+        throw new HttpError(400, "Language must be en or nl.");
+      }
+      await database.updateTable("User").set({ language }).where("id", "=", user.id).execute();
+    }
+    return requireUserApi(database, user.id);
+  });
+
   app.post("/api/v1/auth/password-reset/request", async (request) => {
     const body = ensureObject(request.body, "Password reset request");
     const email = requireString(body.email, "Email");
@@ -852,11 +671,21 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
   });
 
   app.patch("/api/v1/users/:id", async (request) => {
-    await requireAdminUser(request, database);
+    const admin = await requireAdminUser(request, database);
     const id = requirePathParam(request, "id");
-    await requireUserRow(database, id);
+    const target = await requireUserRow(database, id);
     const body = ensureObject(request.body, "User");
-    const changes: Partial<BackendDatabase["User"]> = {};
+    if (admin.role !== "SYSTEM_ADMIN") {
+      // Without these limits a competition admin could make themselves system admin and bypass
+      // every per-competition check, or move into another club to manage it.
+      if (target.role === "SYSTEM_ADMIN" || body.role === "SYSTEM_ADMIN") {
+        throw new HttpError(403, "Only a system admin can change system admins.");
+      }
+      if (id === admin.id && (body.role !== undefined || body.clubId !== undefined)) {
+        throw new HttpError(403, "You can't change your own role or club.");
+      }
+    }
+    const changes: Updateable<BackendDatabase["User"]> = {};
 
     if (body.clubId !== undefined) {
       changes.clubId = body.clubId === null ? null : requireString(body.clubId, "Club ID");
@@ -1815,11 +1644,6 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
   return app;
 }
 
-function requirePathParam(request: FastifyRequest, key: string): string {
-  const params = ensureObject(request.params ?? {}, "Route parameters");
-  return requireString(params[key], key);
-}
-
 function parseExistingRulesetDefinition(definition: string | null | undefined): ApiRulesetDefinition {
   return definition
     ? (JSON.parse(definition) as ApiRulesetDefinition)
@@ -1915,4 +1739,7 @@ async function start(): Promise<void> {
   console.log(`HEMA backend listening on http://localhost:${port}`);
 }
 
-void start();
+// Only listen when run directly (node dist/server.js), not when imported by tests.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  void start();
+}
