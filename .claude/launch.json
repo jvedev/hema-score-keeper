@@ -4,9 +4,27 @@
     {
       "name": "competition-app",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--workspace", "@hema/competition"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--workspace",
+        "@hema/competition"
+      ],
       "port": 5173,
       "url": "http://localhost:5173"
+    },
+    {
+      "name": "ui-storybook",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "storybook",
+        "--workspace",
+        "@hema/ui",
+        "--",
+        "--no-open"
+      ],
+      "port": 6006
     }
   ]
 }

@@ -1,4 +1,6 @@
 import "./styles/tokens.css";
+export * from "./i18n/i18n.js";
+export * from "./models/competition-views.js";
 export * from "./events/match-event.js";
 export * from "./components/base-component/base-component.js";
 export * from "./components/hema-timer/hema-timer.js";
@@ -24,3 +26,10 @@ export * from "./components/bouts-view/bouts-view.js";
 export * from "./components/bout-details-view/bout-details-view.js";
 export * from "./components/new-bout-view/new-bout-view.js";
 export * from "./components/match-publish-view/match-publish-view.js";
+export * from "./components/bout-seal/bout-seal.js";
+export * from "./components/search-field/search-field.js";
+export * from "./components/participant-table/participant-table.js";
+export * from "./components/officials-grid/officials-grid.js";
+export * from "./components/bout-exchanges/bout-exchanges.js";
+export * from "./components/fighter-history/fighter-history.js";
+export * from "./components/bout-details/bout-details.js";

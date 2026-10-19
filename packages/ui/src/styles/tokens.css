@@ -12,4 +12,19 @@
   --hema-radius: 6px;
   --hema-font-display: "JetBrains Mono", ui-monospace, monospace;
   --hema-font-ui: "Oswald", sans-serif;
+
+  /* Competition apps (design spec section 6) */
+  --hema-night: #0a0f13;
+  --hema-page: #10161b;
+  --hema-plate: #172028;
+  --hema-raised: #1e2932;
+  --hema-ink: #e4e9ec;
+  --hema-muted: #8a97a1;
+  --hema-rule: #2a3640;
+  --hema-brass: #d4af5e;
+  --hema-verdigris: #55ae98;
+  --hema-rust: #e3714f;
+  --hema-font-score: "Big Shoulders Display", "Barlow Condensed", system-ui, sans-serif;
+  --hema-font-body: "Atkinson Hyperlegible", system-ui, sans-serif;
+  --hema-font-mono: "IBM Plex Mono", ui-monospace, monospace;
 }

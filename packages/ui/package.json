@@ -27,6 +27,30 @@
     "./ruleset-view": {
       "types": "./src/components/ruleset-view/ruleset-view.ts",
       "default": "./src/components/ruleset-view/ruleset-view.ts"
+    },
+    "./i18n": {
+      "types": "./src/i18n/i18n.ts",
+      "default": "./src/i18n/i18n.ts"
+    },
+    "./bout-seal": {
+      "types": "./src/components/bout-seal/bout-seal.ts",
+      "default": "./src/components/bout-seal/bout-seal.ts"
+    },
+    "./participant-table": {
+      "types": "./src/components/participant-table/participant-table.ts",
+      "default": "./src/components/participant-table/participant-table.ts"
+    },
+    "./fighter-history": {
+      "types": "./src/components/fighter-history/fighter-history.ts",
+      "default": "./src/components/fighter-history/fighter-history.ts"
+    },
+    "./bout-details": {
+      "types": "./src/components/bout-details/bout-details.ts",
+      "default": "./src/components/bout-details/bout-details.ts"
+    },
+    "./competition-views": {
+      "types": "./src/models/competition-views.ts",
+      "default": "./src/models/competition-views.ts"
     }
   },
   "dependencies": {

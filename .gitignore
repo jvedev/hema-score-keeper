@@ -14,3 +14,7 @@ test-results/
 
 # Brainstorm mockups and plan-execution scratch
 .superpowers/
+
+# Vitest browser failure screenshots
+.vitest-attachments/
+__screenshots__/

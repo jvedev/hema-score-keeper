@@ -21,6 +21,19 @@
     monospace
   );
   --font-ui: var(--hema-font-ui, "Oswald", sans-serif);
+  --night: var(--hema-night, #0a0f13);
+  --page: var(--hema-page, #10161b);
+  --plate: var(--hema-plate, #172028);
+  --raised: var(--hema-raised, #1e2932);
+  --ink: var(--hema-ink, #e4e9ec);
+  --muted: var(--hema-muted, #8a97a1);
+  --rule: var(--hema-rule, #2a3640);
+  --brass: var(--hema-brass, #d4af5e);
+  --verdigris: var(--hema-verdigris, #55ae98);
+  --rust: var(--hema-rust, #e3714f);
+  --font-score: var(--hema-font-score, "Big Shoulders Display", "Barlow Condensed", system-ui, sans-serif);
+  --font-body: var(--hema-font-body, "Atkinson Hyperlegible", system-ui, sans-serif);
+  --font-mono: var(--hema-font-mono, "IBM Plex Mono", ui-monospace, monospace);
   color: var(--text);
   font-family: var(--font-ui);
 }

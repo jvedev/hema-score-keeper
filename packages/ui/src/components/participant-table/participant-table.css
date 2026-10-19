@@ -1,0 +1,180 @@
+/* Size containment: the host takes its width from its parent, never from its rows, so the
+   parent must give it a definite width (any normal block layout does). */
+:host {
+  display: block;
+  container-type: inline-size;
+  font-family: var(--font-body);
+  color: var(--ink);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+th {
+  padding: 6px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+td {
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--rule);
+  text-align: right;
+}
+
+th[data-col="fighter"],
+td[data-col="fighter"] {
+  text-align: left;
+}
+
+tbody tr {
+  cursor: pointer;
+}
+
+tbody tr:hover td {
+  background: color-mix(in srgb, var(--raised) 60%, transparent);
+}
+
+tbody tr:focus-within td {
+  background: color-mix(in srgb, var(--raised) 60%, transparent);
+}
+
+tbody tr[aria-current="true"] td {
+  background: var(--raised);
+}
+
+tbody tr[aria-current="true"] td:first-child {
+  box-shadow: inset 3px 0 0 var(--brass);
+}
+
+.select {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.select:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.search-slot {
+  margin-bottom: 10px;
+}
+
+.search-slot:empty,
+.search-slot[hidden] {
+  display: none;
+}
+
+.position {
+  width: 26px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.name {
+  font-weight: 700;
+}
+
+.club,
+.record {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 400;
+}
+
+.record {
+  display: none;
+}
+
+.provisional {
+  margin-left: 4px;
+  padding: 0 4px;
+  border: 1px dashed var(--muted);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 400;
+}
+
+.rating {
+  font-family: var(--font-score);
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.change {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 400;
+}
+
+.change.up {
+  color: var(--verdigris);
+}
+
+.change.down {
+  color: var(--rust);
+}
+
+.warn {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--brass) 15%, transparent);
+  color: var(--brass);
+  text-align: center;
+}
+
+.warn.zero {
+  background: none;
+  color: var(--muted);
+}
+
+.empty,
+.no-results {
+  padding: 12px 2px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* Phone width: W–D–L moves under the name and the number columns hide. */
+@container (max-width: 519px) {
+  thead,
+  td[data-col="bouts"],
+  td[data-col="wins"],
+  td[data-col="draws"],
+  td[data-col="losses"],
+  td[data-col="warnings"] {
+    display: none;
+  }
+
+  .record {
+    display: block;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  tbody tr td {
+    transition: background 120ms ease;
+  }
+}

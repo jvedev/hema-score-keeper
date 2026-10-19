@@ -1,4 +1,5 @@
 import sharedStyles from "../../styles/shared.css?raw";
+import { LOCALE_CHANGE_EVENT } from "../../i18n/i18n.js";
 
 export class BaseComponent extends HTMLElement {
   readonly #root: ShadowRoot;
@@ -37,6 +38,11 @@ export class BaseComponent extends HTMLElement {
     target.addEventListener(eventName, handler as EventListener, {
       signal: this.signal,
     });
+  }
+
+  /** Calls `rerender` whenever the page language changes, until the element is disconnected. */
+  protected onLocaleChange(rerender: () => void): void {
+    this.registerEvent(window, LOCALE_CHANGE_EVENT, () => rerender());
   }
 
   protected queryRoot<ElementType extends Element>(query: string): ElementType {

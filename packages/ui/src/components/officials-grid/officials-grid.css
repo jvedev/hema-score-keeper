@@ -1,0 +1,45 @@
+:host {
+  display: block;
+  font-family: var(--font-body);
+  color: var(--ink);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.official,
+.filler {
+  min-height: 46px;
+  padding: 6px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+}
+
+.official {
+  background: var(--raised);
+}
+
+.official.referee {
+  border-color: var(--brass);
+}
+
+.filler {
+  border-style: dashed;
+}
+
+.role {
+  display: block;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.name {
+  font-size: 0.84rem;
+  font-weight: 700;
+}

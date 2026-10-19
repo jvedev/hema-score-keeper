@@ -1,0 +1,71 @@
+:host {
+  display: grid;
+  gap: 12px;
+  font-family: var(--font-body);
+  color: var(--ink);
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.versus {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.versus .name {
+  font-weight: 700;
+}
+
+.versus .name:last-child {
+  text-align: right;
+}
+
+.score {
+  font-family: var(--font-score);
+  font-size: 2.6rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.notice {
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--brass);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--brass) 6%, transparent);
+  font-size: 0.82rem;
+}
+
+.notice.objected,
+.notice.voided {
+  border-color: var(--rust);
+  background: color-mix(in srgb, var(--rust) 6%, transparent);
+}
+
+.meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 12px;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.meta dt {
+  color: var(--muted);
+}
+
+.meta dd {
+  margin: 0;
+}
