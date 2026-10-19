@@ -167,6 +167,7 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
     reply.header("Vary", "Origin");
     if (request.method === "OPTIONS") {
       reply.status(204).send();
+      return reply;
     }
   });
 
@@ -333,6 +334,7 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
     await database.insertInto("User").values({
       id,
       clubId: body.clubId === undefined || body.clubId === null ? null : requireString(body.clubId, "Club ID"),
+      name: requireString(body.name, "Name"),
       username: requireString(body.username, "Username"),
       passwordHash: body.passwordHash === undefined || body.passwordHash === null ? null : requireString(body.passwordHash, "Password hash"),
       emailHash: body.emailHash === undefined || body.emailHash === null ? null : requireString(body.emailHash, "Email hash"),
@@ -631,6 +633,7 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
     }
 
     const clubSlug = requireString(body.clubSlug, "Club slug");
+    const name = requireString(body.name, "Name");
     const username = requireString(body.username, "Username");
     const club = await database.selectFrom("Club").selectAll().where("slug", "=", clubSlug).executeTakeFirst();
     if (!club) {
@@ -640,11 +643,10 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
     const existingUser = await database
       .selectFrom("User")
       .selectAll()
-      .where("clubId", "=", club.id)
       .where("username", "=", username)
       .executeTakeFirst();
     if (existingUser) {
-      throw new HttpError(409, `Username "${username}" is already taken in club "${clubSlug}".`);
+      throw new HttpError(409, `Username "${username}" is already taken.`);
     }
 
     const userId = generateId();
@@ -652,6 +654,7 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
     await database.insertInto("User").values({
       id: userId,
       clubId: club.id,
+      name,
       username,
       passwordHash,
       emailHash,
@@ -686,20 +689,13 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
 
   app.post("/api/v1/auth/login", async (request) => {
     const body = ensureObject(request.body, "Login");
-    const clubSlug = requireString(body.clubSlug, "Club slug");
     const username = requireString(body.username, "Username");
     const password = requireString(body.password, "Password");
     const rememberMe = body.rememberMe === undefined ? true : requireBoolean(body.rememberMe, "Remember me");
 
-    const club = await database.selectFrom("Club").selectAll().where("slug", "=", clubSlug).executeTakeFirst();
-    if (!club) {
-      throw new HttpError(404, `Club "${clubSlug}" not found.`);
-    }
-
     const user = await database
       .selectFrom("User")
       .selectAll()
-      .where("clubId", "=", club.id)
       .where("username", "=", username)
       .executeTakeFirst();
     if (!user || !user.passwordHash || !verifyPassword(password, user.passwordHash)) {
@@ -864,6 +860,9 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
 
     if (body.clubId !== undefined) {
       changes.clubId = body.clubId === null ? null : requireString(body.clubId, "Club ID");
+    }
+    if (body.name !== undefined) {
+      changes.name = requireString(body.name, "Name");
     }
     if (body.username !== undefined) {
       changes.username = requireString(body.username, "Username");

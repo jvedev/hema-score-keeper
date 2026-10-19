@@ -31,6 +31,12 @@ const defaultRuleset = {
   },
 };
 
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString("base64url");
+  const derived = crypto.scryptSync(password, salt, 64);
+  return `scrypt$${salt}$${derived.toString("base64url")}`;
+}
+
 const clearTables = [
   "Exchange",
   "Match",
@@ -59,7 +65,7 @@ const clearTables = [
 ];
 
 const insertUser = database.prepare(
-  "INSERT INTO User (id, clubId, username, passwordHash, emailHash, role, status, judgeVolunteer, juryVolunteer, tableVolunteer, otherVolunteer) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "INSERT INTO User (id, clubId, name, username, passwordHash, emailHash, role, status, judgeVolunteer, juryVolunteer, tableVolunteer, otherVolunteer) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 );
 const insertSkill = database.prepare(
   "INSERT INTO Skill (id, userId, skillName, skillLevel) VALUES (?, ?, ?, ?)",
@@ -177,15 +183,23 @@ function main() {
   };
 
   const users = [
-    { id: crypto.randomUUID(), username: "Alex 'The Blade' Visser", seed: 1 },
-    { id: crypto.randomUUID(), username: "Beatrix de Ruiter", seed: 2 },
-    { id: crypto.randomUUID(), username: "Casper van Dam", seed: 3 },
-    { id: crypto.randomUUID(), username: "Daan Bakker", seed: 4 },
-    { id: crypto.randomUUID(), username: "Elena 'Shield' Smit", seed: 5 },
-    { id: crypto.randomUUID(), username: "Floris de Jong", seed: 6 },
-    { id: crypto.randomUUID(), username: "Gijs Jansen", seed: 7 },
-    { id: crypto.randomUUID(), username: "Hanna Meijer", seed: 8 },
+    { id: crypto.randomUUID(), name: "Alex 'The Blade' Visser", username: "Alex 'The Blade' Visser", seed: 1 },
+    { id: crypto.randomUUID(), name: "Beatrix de Ruiter", username: "Beatrix de Ruiter", seed: 2 },
+    { id: crypto.randomUUID(), name: "Casper van Dam", username: "Casper van Dam", seed: 3 },
+    { id: crypto.randomUUID(), name: "Daan Bakker", username: "Daan Bakker", seed: 4 },
+    { id: crypto.randomUUID(), name: "Elena 'Shield' Smit", username: "Elena 'Shield' Smit", seed: 5 },
+    { id: crypto.randomUUID(), name: "Floris de Jong", username: "Floris de Jong", seed: 6 },
+    { id: crypto.randomUUID(), name: "Gijs Jansen", username: "Gijs Jansen", seed: 7 },
+    { id: crypto.randomUUID(), name: "Hanna Meijer", username: "Hanna Meijer", seed: 8 },
   ];
+  const initialAdmin = {
+    id: "user-jeroen",
+    name: "Jeroen",
+    username: "jeroen",
+    passwordHash: hashPassword("zwaard"),
+    role: "COMPETITION_ADMIN",
+    clubId: ids.club,
+  };
 
   const competition1 = {
     id: "competition-1",
@@ -293,8 +307,23 @@ function main() {
     insertScheduledPhase.run(ids.phase1, ids.poolStage, ids.arenaA, ids.slot1);
     insertScheduledPhase.run(ids.phase2, ids.poolStage, ids.arenaB, ids.slot1);
 
+    insertUser.run(
+      initialAdmin.id,
+      initialAdmin.clubId,
+      initialAdmin.name,
+      initialAdmin.username,
+      initialAdmin.passwordHash,
+      null,
+      initialAdmin.role,
+      "ACTIVE",
+      0,
+      0,
+      0,
+      0,
+    );
+
     for (const user of users) {
-      insertUser.run(user.id, ids.club, user.username, null, null, "USER", "ACTIVE", 0, 0, 0, 0);
+      insertUser.run(user.id, ids.club, user.name, user.username, null, null, "USER", "ACTIVE", 0, 0, 0, 0);
       insertSkill.run(crypto.randomUUID(), user.id, `Skill ${user.seed}`, user.seed);
     }
 

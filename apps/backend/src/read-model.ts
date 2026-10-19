@@ -112,6 +112,7 @@ function toApiUser(row: UserRow, skills: ApiSkill[]): ApiUser {
   return {
     id: row.id,
     clubId: row.clubId,
+    name: row.name,
     username: row.username,
     role: row.role as ApiUser["role"],
     status: row.status,
@@ -165,7 +166,7 @@ export async function loadUsers(executor: DbExecutor, userIds?: readonly string[
     return [];
   }
 
-  let usersQuery = executor.selectFrom("User").selectAll().orderBy("username");
+  let usersQuery = executor.selectFrom("User").selectAll().orderBy("name").orderBy("username");
   if (ids) {
     usersQuery = usersQuery.where("id", "in", ids);
   }

@@ -1,0 +1,8 @@
+{
+  "enabledPlugins": {
+    "mcp-server-devkit@pantheon-ai-skills": true
+  },
+  "permissions": {
+    "deny": ["PowerShell"]
+  }
+}

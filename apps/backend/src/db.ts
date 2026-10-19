@@ -10,6 +10,7 @@ export type SqliteBoolean = 0 | 1;
 interface UserTable {
   id: string;
   clubId: string | null;
+  name: string;
   username: string;
   passwordHash: string | null;
   emailHash: string | null;

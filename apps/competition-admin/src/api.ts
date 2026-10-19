@@ -10,6 +10,7 @@ export interface Club {
 export interface User {
   id: string;
   clubId: string | null;
+  name: string;
   username: string;
   role: AccountRole;
   status: string;
@@ -70,7 +71,7 @@ export class CompetitionAdminApi {
     }
   }
 
-  async login(input: { clubSlug: string; username: string; password: string; rememberMe: boolean }): Promise<User> {
+  async login(input: { username: string; password: string; rememberMe: boolean }): Promise<User> {
     const response = await this.request<AuthResponse>("/api/v1/auth/login", {
       method: "POST",
       body: JSON.stringify(input),
@@ -111,6 +112,7 @@ export class CompetitionAdminApi {
 
   async createUser(input: {
     clubId: string | null;
+    name: string;
     username: string;
     passwordHash?: string | null;
     emailHash?: string | null;
@@ -123,7 +125,7 @@ export class CompetitionAdminApi {
     });
   }
 
-  async updateUser(id: string, input: Partial<{ clubId: string | null; username: string; role: AccountRole; status: string }>): Promise<User> {
+  async updateUser(id: string, input: Partial<{ clubId: string | null; name: string; username: string; role: AccountRole; status: string }>): Promise<User> {
     return this.request<User>(`/api/v1/users/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: JSON.stringify(input),

@@ -69,13 +69,9 @@ function renderLogin(): void {
       <section class="hero login-panel">
         <p class="eyebrow">Phase 1</p>
         <h1>Competition admin</h1>
-        <p class="lead">Login met club, username en password om competitions en clubs te beheren.</p>
+        <p class="lead">Login met username en password om competitions en clubs te beheren.</p>
         ${pageError ? `<p class="alert alert-error">${escapeHtml(pageError)}</p>` : ""}
         <form id="login-form" class="form-stack">
-          <label>
-            <span>Club slug</span>
-            <input name="clubSlug" autocomplete="organization" required />
-          </label>
           <label>
             <span>Username</span>
             <input name="username" autocomplete="username" required />
@@ -106,7 +102,6 @@ function renderLogin(): void {
     const data = new FormData(form);
     try {
       currentUser = await api.login({
-        clubSlug: String(data.get("clubSlug") ?? ""),
         username: String(data.get("username") ?? ""),
         password: String(data.get("password") ?? ""),
         rememberMe: data.get("rememberMe") === "on",
@@ -121,7 +116,7 @@ function renderLogin(): void {
 }
 
 function renderDashboard(): void {
-  const userLabel = currentUser ? `${currentUser.username} (${currentUser.role})` : "Unknown";
+  const userLabel = currentUser ? `${currentUser.name} (${currentUser.username})` : "Unknown";
   root.innerHTML = `
     <main class="page">
       <header class="topbar">
@@ -163,6 +158,10 @@ function renderDashboard(): void {
               <select name="clubId" required>
                 ${renderClubOptions(clubs, true)}
               </select>
+            </label>
+            <label>
+              <span>Name</span>
+              <input name="name" required />
             </label>
             <label>
               <span>Username</span>
@@ -280,6 +279,7 @@ async function handleCreateUser(event: SubmitEvent): Promise<void> {
   try {
     await api.createUser({
       clubId: toNullableString(data.get("clubId")),
+      name: String(data.get("name") ?? ""),
       username: String(data.get("username") ?? ""),
       role: (String(data.get("role") ?? "USER") as User["role"]),
       status: "INVITED",
@@ -391,7 +391,7 @@ async function handleCreateParticipant(event: SubmitEvent): Promise<void> {
 function renderCompetitionCard(competition: Competition): string {
   const participants = participantsByCompetition.get(competition.id) ?? [];
   const clubOptions = renderClubOptions(clubs, true);
-  const userOptions = `<option value="">No linked user</option>${users.map((user) => `<option value="${escapeHtml(user.id)}">${escapeHtml(user.username)} (${escapeHtml(user.role)})</option>`).join("")}`;
+  const userOptions = `<option value="">No linked user</option>${users.map((user) => `<option value="${escapeHtml(user.id)}">${escapeHtml(user.name)} · ${escapeHtml(user.username)} (${escapeHtml(user.role)})</option>`).join("")}`;
   return `
     <article class="subcard">
       <div class="subcard-head">
@@ -443,7 +443,8 @@ function renderUserRow(user: User): string {
   return `
     <form class="list-item user-row" data-user-role-form data-user-id="${escapeHtml(user.id)}">
       <div>
-        <strong>${escapeHtml(user.username)}</strong>
+        <strong>${escapeHtml(user.name)}</strong>
+        <span>${escapeHtml(user.username)}</span>
         <span>${escapeHtml(user.status)}${user.clubId ? ` · ${escapeHtml(findClubSlug(user.clubId))}` : ""}</span>
       </div>
       <select name="role">

@@ -54,6 +54,7 @@ export interface ApiSkill {
 export interface ApiUser {
   id: string;
   clubId: string | null;
+  name: string;
   username: string;
   role: AccountRole;
   status: string;

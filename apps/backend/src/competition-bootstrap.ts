@@ -23,7 +23,87 @@ const defaultRuleset = {
   },
 };
 
+function ensureUserTable(database: NativeDatabase): void {
+  const columns = database.prepare(`PRAGMA table_info('User')`).all() as Array<{ name: string }>;
+  const hasUserTable = columns.length > 0;
+  const hasNameColumn = columns.some((column) => column.name === "name");
+
+  if (!hasUserTable) {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS User (
+        id TEXT PRIMARY KEY,
+        clubId TEXT,
+        name TEXT NOT NULL,
+        username TEXT NOT NULL,
+        passwordHash TEXT,
+        emailHash TEXT,
+        role TEXT NOT NULL DEFAULT 'USER',
+        status TEXT NOT NULL DEFAULT 'ACTIVE',
+        judgeVolunteer INTEGER NOT NULL DEFAULT 0,
+        juryVolunteer INTEGER NOT NULL DEFAULT 0,
+        tableVolunteer INTEGER NOT NULL DEFAULT 0,
+        otherVolunteer INTEGER NOT NULL DEFAULT 0
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS User_username_key ON User(username);
+      CREATE INDEX IF NOT EXISTS User_clubId_idx ON User(clubId);
+      CREATE INDEX IF NOT EXISTS User_role_idx ON User(role);
+      CREATE INDEX IF NOT EXISTS User_status_idx ON User(status);
+      CREATE UNIQUE INDEX IF NOT EXISTS User_emailHash_key ON User(emailHash);
+    `);
+    return;
+  }
+
+  if (hasNameColumn) {
+    database.exec(`
+      DROP INDEX IF EXISTS User_clubId_username_key;
+      DROP INDEX IF EXISTS User_username_key;
+      CREATE UNIQUE INDEX IF NOT EXISTS User_username_key ON User(username);
+      CREATE INDEX IF NOT EXISTS User_clubId_idx ON User(clubId);
+      CREATE INDEX IF NOT EXISTS User_role_idx ON User(role);
+      CREATE INDEX IF NOT EXISTS User_status_idx ON User(status);
+      CREATE UNIQUE INDEX IF NOT EXISTS User_emailHash_key ON User(emailHash);
+    `);
+    return;
+  }
+
+  database.exec(`
+    PRAGMA foreign_keys=OFF;
+
+    CREATE TABLE "new_User" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "clubId" TEXT,
+        "name" TEXT NOT NULL,
+        "username" TEXT NOT NULL,
+        "passwordHash" TEXT,
+        "emailHash" TEXT,
+        "role" TEXT NOT NULL DEFAULT 'USER',
+        "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+        "judgeVolunteer" INTEGER NOT NULL DEFAULT 0,
+        "juryVolunteer" INTEGER NOT NULL DEFAULT 0,
+        "tableVolunteer" INTEGER NOT NULL DEFAULT 0,
+        "otherVolunteer" INTEGER NOT NULL DEFAULT 0
+    );
+
+    INSERT INTO "new_User" ("id", "clubId", "name", "username", "passwordHash", "emailHash", "role", "status", "judgeVolunteer", "juryVolunteer", "tableVolunteer", "otherVolunteer")
+    SELECT "id", "clubId", "username", "username", "passwordHash", "emailHash", "role", "status", "judgeVolunteer", "juryVolunteer", "tableVolunteer", "otherVolunteer"
+    FROM "User";
+
+    DROP TABLE "User";
+    ALTER TABLE "new_User" RENAME TO "User";
+
+    CREATE UNIQUE INDEX "User_username_key" ON "User"("username");
+    CREATE INDEX "User_clubId_idx" ON "User"("clubId");
+    CREATE INDEX "User_role_idx" ON "User"("role");
+    CREATE INDEX "User_status_idx" ON "User"("status");
+    CREATE UNIQUE INDEX "User_emailHash_key" ON "User"("emailHash");
+
+    PRAGMA foreign_keys=ON;
+  `);
+}
+
 export function initializeCompetitionDatabase(database: NativeDatabase): void {
+  ensureUserTable(database);
   database.exec(`
     CREATE TABLE IF NOT EXISTS Club (
       id TEXT PRIMARY KEY,
@@ -125,7 +205,6 @@ export function initializeCompetitionDatabase(database: NativeDatabase): void {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollment_token_tokenHash ON EnrollmentToken(tokenHash);
     CREATE INDEX IF NOT EXISTS idx_password_reset_token_userId ON PasswordResetToken(userId);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_password_reset_token_tokenHash ON PasswordResetToken(tokenHash);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_user_emailHash ON User(emailHash);
   `);
 
   const competitionCount = database.prepare("SELECT COUNT(*) as count FROM Competition").get() as { count: number };
