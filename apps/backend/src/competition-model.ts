@@ -1,4 +1,3 @@
-import { applyEloBout, buildRanking, DEFAULT_ELO_RATING } from "@hema/ranking";
 import type { Selectable } from "kysely";
 import type { BackendDatabase, DbExecutor } from "./db.js";
 import { scopeFromRow, type CompetitionScope } from "./competitions/scope.js";
@@ -84,18 +83,6 @@ export interface CompetitionMatch {
 
 export type CompetitionBout = CompetitionMatch;
 
-export interface CompetitionMatchInput {
-  fighterAId: string;
-  fighterBId: string;
-  scoreA: number;
-  scoreB: number;
-  winnerParticipantId: string | null;
-  date: string;
-  details: MatchDetails;
-}
-
-export type CompetitionBoutInput = CompetitionMatchInput;
-
 export interface CompetitionRankingEntry {
   participantId: string;
   position: number;
@@ -139,23 +126,6 @@ export async function requireCompetition(executor: DbExecutor, id: string): Prom
     ...toSummary(row),
     rulesetJson: parseJsonValue(row.rulesetJson),
   };
-}
-
-async function requireParticipant(
-  executor: DbExecutor,
-  competitionId: string,
-  participantId: string,
-): Promise<CompetitionParticipant> {
-  const row = await executor
-    .selectFrom("CompetitionParticipant")
-    .selectAll()
-    .where("competitionId", "=", competitionId)
-    .where("id", "=", participantId)
-    .executeTakeFirst();
-  if (!row) {
-    throw new HttpError(404, `Participant "${participantId}" not found in competition "${competitionId}".`);
-  }
-  return toParticipant(row);
 }
 
 export async function listParticipants(executor: DbExecutor, competitionId: string): Promise<CompetitionParticipant[]> {
@@ -204,130 +174,6 @@ export async function requireMatch(
 
 export const requireBout = requireMatch;
 
-export async function listRanking(executor: DbExecutor, competitionId: string): Promise<CompetitionRankingEntry[]> {
-  await requireCompetition(executor, competitionId);
-  const participants = await listParticipants(executor, competitionId);
-  const matches = await executor
-    .selectFrom("CompetitionBout")
-    .selectAll()
-    .where("competitionId", "=", competitionId)
-    .where("published", "=", 1)
-    .orderBy("date")
-    .orderBy("id")
-    .execute();
-
-  let ratings = new Map<string, number>(participants.map((participant) => [participant.id, DEFAULT_ELO_RATING]));
-  for (const match of matches) {
-    ratings = applyEloBout(ratings, {
-      fighterAId: match.fighterAId,
-      fighterBId: match.fighterBId,
-      winnerParticipantId: match.winnerParticipantId,
-    });
-  }
-
-  return buildRanking(
-    participants.map((participant) => ({ id: participant.id, name: participant.name })),
-    ratings,
-  );
-}
-
-export async function createMatch(
-  executor: DbExecutor,
-  competitionId: string,
-  id: string,
-  input: CompetitionMatchInput,
-): Promise<CompetitionMatch> {
-  await requireCompetition(executor, competitionId);
-  await requireParticipant(executor, competitionId, input.fighterAId);
-  await requireParticipant(executor, competitionId, input.fighterBId);
-  assertDistinctFighters(input.fighterAId, input.fighterBId);
-  if (input.winnerParticipantId !== null) {
-    await requireParticipant(executor, competitionId, input.winnerParticipantId);
-  }
-
-  await executor
-    .insertInto("CompetitionBout")
-    .values({
-      id,
-      competitionId,
-      fighterAId: input.fighterAId,
-      fighterBId: input.fighterBId,
-      scoreA: input.scoreA,
-      scoreB: input.scoreB,
-      winnerParticipantId: input.winnerParticipantId,
-      date: input.date,
-      published: 0,
-      details: JSON.stringify(input.details),
-    })
-    .execute();
-
-  return requireMatch(executor, competitionId, id);
-}
-
-export const createBout = createMatch;
-
-export async function publishMatch(
-  executor: DbExecutor,
-  competitionId: string,
-  matchId: string,
-  input: CompetitionMatchInput,
-): Promise<CompetitionMatch> {
-  await requireCompetition(executor, competitionId);
-  const existing = await requireMatch(executor, competitionId, matchId);
-  await requireParticipant(executor, competitionId, input.fighterAId);
-  await requireParticipant(executor, competitionId, input.fighterBId);
-  assertDistinctFighters(input.fighterAId, input.fighterBId);
-  if (input.winnerParticipantId !== null) {
-    await requireParticipant(executor, competitionId, input.winnerParticipantId);
-  }
-
-  await executor
-    .updateTable("CompetitionBout")
-    .set({
-      fighterAId: input.fighterAId,
-      fighterBId: input.fighterBId,
-      scoreA: input.scoreA,
-      scoreB: input.scoreB,
-      winnerParticipantId: input.winnerParticipantId,
-      date: input.date,
-      published: 1,
-      details: JSON.stringify(input.details),
-    })
-    .where("competitionId", "=", competitionId)
-    .where("id", "=", matchId)
-    .execute();
-
-  return {
-    ...existing,
-    fighterAId: input.fighterAId,
-    fighterBId: input.fighterBId,
-    scoreA: input.scoreA,
-    scoreB: input.scoreB,
-    winnerParticipantId: input.winnerParticipantId,
-    date: input.date,
-    published: true,
-    details: input.details,
-  };
-}
-
-export const publishBout = publishMatch;
-
-export async function declineMatch(
-  executor: DbExecutor,
-  competitionId: string,
-  matchId: string,
-): Promise<CompetitionMatch> {
-  await requireCompetition(executor, competitionId);
-  const existing = await requireMatch(executor, competitionId, matchId);
-  if (existing.published) {
-    throw new HttpError(400, "Published matches cannot be declined.");
-  }
-  await executor.deleteFrom("CompetitionBout").where("competitionId", "=", competitionId).where("id", "=", matchId).execute();
-  return existing;
-}
-
-export const declineBout = declineMatch;
-
 function toParticipant(row: CompetitionParticipantRow): CompetitionParticipant {
   return {
     id: row.id,
@@ -340,12 +186,6 @@ function toParticipant(row: CompetitionParticipantRow): CompetitionParticipant {
     userId: row.userId,
     kind: row.kind === "GUEST" ? "GUEST" : "MEMBER",
   };
-}
-
-function assertDistinctFighters(fighterAId: string, fighterBId: string): void {
-  if (fighterAId === fighterBId) {
-    throw new HttpError(400, "A match requires two different participants.");
-  }
 }
 
 function toMatch(row: CompetitionMatchRow): CompetitionMatch {

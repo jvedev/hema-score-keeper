@@ -232,6 +232,57 @@ interface CompetitionBoutTable {
   details: string;
 }
 
+interface BoutTable {
+  id: string;
+  fighterAUserId: string;
+  fighterBUserId: string;
+  refereeUserId: string;
+  tableUserId: string | null;
+  ring: string | null;
+  startedAt: string;
+  scoreA: number;
+  scoreB: number;
+  winnerSide: "A" | "B" | null;
+  warningsA: number;
+  warningsB: number;
+  exchangesJson: string;
+  startedInCompetitionId: string | null;
+  createdByUserId: string;
+  status: string;
+  revision: number;
+  windowStartedAt: string | null;
+  fighterApprovedA: SqliteBoolean;
+  fighterApprovedB: SqliteBoolean;
+  objectionBy: "A" | "B" | null;
+  objectionAt: string | null;
+  objectionReason: string | null;
+  voidReason: string | null;
+}
+
+interface BoutJuryTable {
+  boutId: string;
+  seat: number;
+  userId: string;
+}
+
+interface BoutCompetitionTable {
+  boutId: string;
+  competitionId: string;
+}
+
+interface BoutRevisionTable {
+  boutId: string;
+  revision: number;
+  scoreA: number;
+  scoreB: number;
+  winnerSide: "A" | "B" | null;
+  warningsA: number;
+  warningsB: number;
+  exchangesJson: string;
+  replacedAt: string;
+  replacedByUserId: string;
+}
+
 export interface BackendDatabase {
   Club: ClubTable;
   User: UserTable;
@@ -265,6 +316,10 @@ export interface BackendDatabase {
   CompetitionBout: CompetitionBoutTable;
   CompetitionAdmin: CompetitionAdminTable;
   SchemaMigration: SchemaMigrationTable;
+  Bout: BoutTable;
+  BoutJury: BoutJuryTable;
+  BoutCompetition: BoutCompetitionTable;
+  BoutRevision: BoutRevisionTable;
 }
 
 export type DbExecutor = Kysely<BackendDatabase> | Transaction<BackendDatabase>;

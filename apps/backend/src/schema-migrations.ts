@@ -70,6 +70,89 @@ const MIGRATIONS: readonly SchemaMigration[] = [
       `);
     },
   },
+  {
+    name: "2026-10-20-bout-table",
+    apply(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS Bout (
+          id TEXT PRIMARY KEY,
+          fighterAUserId TEXT NOT NULL REFERENCES User(id),
+          fighterBUserId TEXT NOT NULL REFERENCES User(id),
+          refereeUserId TEXT NOT NULL REFERENCES User(id),
+          tableUserId TEXT REFERENCES User(id),
+          ring TEXT,
+          startedAt TEXT NOT NULL,
+          scoreA INTEGER NOT NULL,
+          scoreB INTEGER NOT NULL,
+          winnerSide TEXT CHECK (winnerSide IN ('A', 'B')),
+          warningsA INTEGER NOT NULL DEFAULT 0,
+          warningsB INTEGER NOT NULL DEFAULT 0,
+          exchangesJson TEXT NOT NULL DEFAULT '[]',
+          startedInCompetitionId TEXT REFERENCES Competition(id) ON DELETE SET NULL,
+          createdByUserId TEXT NOT NULL REFERENCES User(id),
+          status TEXT NOT NULL,
+          revision INTEGER NOT NULL DEFAULT 1,
+          windowStartedAt TEXT,
+          fighterApprovedA INTEGER NOT NULL DEFAULT 0,
+          fighterApprovedB INTEGER NOT NULL DEFAULT 0,
+          objectionBy TEXT CHECK (objectionBy IN ('A', 'B')),
+          objectionAt TEXT,
+          objectionReason TEXT,
+          voidReason TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_bout_fighterA ON Bout(fighterAUserId);
+        CREATE INDEX IF NOT EXISTS idx_bout_fighterB ON Bout(fighterBUserId);
+        CREATE INDEX IF NOT EXISTS idx_bout_referee ON Bout(refereeUserId);
+      `);
+    },
+  },
+  {
+    name: "2026-10-20-bout-jury-table",
+    apply(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS BoutJury (
+          boutId TEXT NOT NULL REFERENCES Bout(id) ON DELETE CASCADE,
+          seat INTEGER NOT NULL CHECK (seat BETWEEN 1 AND 4),
+          userId TEXT NOT NULL REFERENCES User(id) ON DELETE CASCADE,
+          PRIMARY KEY (boutId, seat),
+          UNIQUE (boutId, userId)
+        );
+      `);
+    },
+  },
+  {
+    name: "2026-10-20-bout-competition-table",
+    apply(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS BoutCompetition (
+          boutId TEXT NOT NULL REFERENCES Bout(id) ON DELETE CASCADE,
+          competitionId TEXT NOT NULL REFERENCES Competition(id) ON DELETE CASCADE,
+          PRIMARY KEY (boutId, competitionId)
+        );
+        CREATE INDEX IF NOT EXISTS idx_bout_competition_competitionId ON BoutCompetition(competitionId);
+      `);
+    },
+  },
+  {
+    name: "2026-10-20-bout-revision-table",
+    apply(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS BoutRevision (
+          boutId TEXT NOT NULL REFERENCES Bout(id) ON DELETE CASCADE,
+          revision INTEGER NOT NULL,
+          scoreA INTEGER NOT NULL,
+          scoreB INTEGER NOT NULL,
+          winnerSide TEXT,
+          warningsA INTEGER NOT NULL,
+          warningsB INTEGER NOT NULL,
+          exchangesJson TEXT NOT NULL,
+          replacedAt TEXT NOT NULL,
+          replacedByUserId TEXT NOT NULL REFERENCES User(id),
+          PRIMARY KEY (boutId, revision)
+        );
+      `);
+    },
+  },
 ];
 
 export function applySchemaMigrations(database: NativeDatabase): void {

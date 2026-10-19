@@ -82,7 +82,7 @@ describe("applySchemaMigrations", () => {
     expect(() => applySchemaMigrations(database)).not.toThrow();
     expect(adminRows()).toHaveLength(admins);
     expect(database.prepare("SELECT COUNT(*) AS count FROM SchemaMigration").get()).toEqual({ count: applied });
-    expect(applied).toBe(6);
+    expect(applied).toBe(10);
   });
 });
 
@@ -99,5 +99,16 @@ describe("re-seeding after migrations", () => {
     for (const value of statuses) {
       expect(["DRAFT", "REGISTRATION_OPEN", "RUNNING", "CLOSED", "ARCHIVED"]).toContain(value);
     }
+  });
+});
+
+describe("bout tables", () => {
+  it("creates the bout tables", () => {
+    applySchemaMigrations(database);
+    const tables = (database.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map(
+      (row) => row.name,
+    );
+    expect(tables).toEqual(expect.arrayContaining(["Bout", "BoutJury", "BoutCompetition", "BoutRevision"]));
+    expect(columns("Bout")).toEqual(expect.arrayContaining(["objectionReason", "winnerSide", "exchangesJson"]));
   });
 });

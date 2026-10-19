@@ -16,7 +16,23 @@ export interface TestUser {
   clubId: string | null;
 }
 
-export async function createTestContext(): Promise<TestContext> {
+export class TestClock {
+  private current = Date.parse("2026-10-15T20:00:00.000Z");
+
+  now(): Date {
+    return new Date(this.current);
+  }
+
+  advance(ms: number): void {
+    this.current += ms;
+  }
+
+  set(iso: string): void {
+    this.current = Date.parse(iso);
+  }
+}
+
+export async function createTestContext(options: { now?: () => Date } = {}): Promise<TestContext> {
   const database = createDatabase("file::memory:");
   // Created outside the competition bootstrap in real databases; user lookups join it.
   await sql`
@@ -27,7 +43,7 @@ export async function createTestContext(): Promise<TestContext> {
       skillLevel INTEGER NOT NULL
     )
   `.execute(database);
-  const app = createApp(database);
+  const app = createApp(database, options.now ? { now: options.now } : {});
   await app.ready();
   return { app, database };
 }
@@ -69,4 +85,46 @@ export async function insertUser(
 
 export function bearer(user: TestUser): { authorization: string } {
   return { authorization: `Bearer ${signAccessToken({ sub: user.id, role: user.role, clubId: user.clubId })}` };
+}
+
+/** A competition with the given users enrolled as participants (participant id = `${competitionId}:${userId}`). */
+export async function insertCompetition(
+  database: Kysely<BackendDatabase>,
+  input: { id: string; status: string; userIds: string[]; adminUserId?: string; adminRole?: "OWNER" | "CO_ADMIN"; date?: string },
+): Promise<void> {
+  await database
+    .insertInto("Competition")
+    .values({
+      id: input.id,
+      name: input.id,
+      slug: input.id,
+      status: input.status,
+      date: input.date ?? "2026-10-01",
+      rulesetJson: "{}",
+      visibility: "PUBLIC",
+      clubId: null,
+    })
+    .execute();
+  for (const userId of input.userIds) {
+    await database
+      .insertInto("CompetitionParticipant")
+      .values({
+        id: `${input.id}:${userId}`,
+        competitionId: input.id,
+        name: userId,
+        displayName: userId,
+        linkedUserEmail: null,
+        linkedUserEmailHash: null,
+        clubId: null,
+        userId,
+        kind: "MEMBER",
+      })
+      .execute();
+  }
+  if (input.adminUserId) {
+    await database
+      .insertInto("CompetitionAdmin")
+      .values({ competitionId: input.id, userId: input.adminUserId, role: input.adminRole ?? "OWNER" })
+      .execute();
+  }
 }

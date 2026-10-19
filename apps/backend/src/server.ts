@@ -13,6 +13,8 @@ import {
   verifyPassword,
 } from "./auth.js";
 import { requireAdminUser, requirePathParam, resolveAccessUser, type AccessUser } from "./access-user.js";
+import { registerBoutRoutes } from "./bouts/bout-routes.js";
+import { competitionBoutHistory, competitionStandings } from "./bouts/standings.js";
 import { registerClubRoutes } from "./club-routes.js";
 import { registerCompetitionAdminRoutes } from "./competitions/admin-routes.js";
 import { readSheetValues, writeSheetValues } from "./google-sheets.js";
@@ -76,11 +78,6 @@ import {
   listBouts,
   listCompetitions,
   listParticipants,
-  listRanking,
-  createBout,
-  declineBout,
-  publishBout,
-  type CompetitionMatchInput,
   requireBout,
   requireCompetition,
 } from "./competition-model.js";
@@ -115,8 +112,20 @@ function canAccessCompetition(user: AccessUser | null, competition: { visibility
 }
 
 
-export function createApp(database: Kysely<BackendDatabase> = db) {
+export interface AppOptions {
+  /** Clock used for time-based rules (objection window); tests inject a controllable one. */
+  now?: () => Date;
+}
+
+declare module "fastify" {
+  interface FastifyInstance {
+    now(): Date;
+  }
+}
+
+export function createApp(database: Kysely<BackendDatabase> = db, options: AppOptions = {}) {
   const app = Fastify();
+  app.decorate("now", options.now ?? (() => new Date()));
 
   app.addHook("onRequest", async (request, reply) => {
     reply.header("Access-Control-Allow-Origin", "*");
@@ -205,7 +214,26 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
     if (!canAccessCompetition(user, competition)) {
       throw new HttpError(404, `Competition "${competition.id}" not found.`);
     }
-    return listRanking(database, competitionId);
+    const standings = await competitionStandings(database, competitionId, app.now());
+    return standings.map((row) => ({ participantId: row.participantId, position: row.position, name: row.name, rating: row.rating }));
+  });
+
+  app.get("/api/v1/competitions/:id/standings", async (request) => {
+    const user = await resolveAccessUser(request, database);
+    const competition = await requireCompetition(database, requirePathParam(request, "id"));
+    if (!canAccessCompetition(user, competition)) {
+      throw new HttpError(404, `Competition "${competition.id}" not found.`);
+    }
+    return competitionStandings(database, competition.id, app.now());
+  });
+
+  app.get("/api/v1/competitions/:id/bout-history", async (request) => {
+    const user = await resolveAccessUser(request, database);
+    const competition = await requireCompetition(database, requirePathParam(request, "id"));
+    if (!canAccessCompetition(user, competition)) {
+      throw new HttpError(404, `Competition "${competition.id}" not found.`);
+    }
+    return competitionBoutHistory(database, competition.id, app.now());
   });
   app.get("/api/v1/competitions/:id/bouts", async (request) => {
     const user = await resolveAccessUser(request, database);
@@ -222,63 +250,20 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
     const boutId = requireString(params.boutId, "Bout ID");
     return requireBout(database, competitionId, boutId);
   });
-  app.post("/api/v1/competitions/:id/bouts", async (request) => {
-    const competitionId = requirePathParam(request, "id");
-    const body = ensureObject(request.body, "Bout");
-    const fighterAId = requireString(body.fighterAId, "Fighter A ID");
-    const fighterBId = requireString(body.fighterBId, "Fighter B ID");
-    const scoreA = requireInteger(body.scoreA, "Score A");
-    const scoreB = requireInteger(body.scoreB, "Score B");
-    const winnerParticipantId =
-      body.winnerParticipantId === null || body.winnerParticipantId === undefined
-        ? null
-        : requireString(body.winnerParticipantId, "Winner participant ID");
-    const date = requireString(body.date, "Date");
-    const details = body.details === undefined ? {} : ensureJsonValue(body.details);
-
-    return createBout(database, competitionId, generateId(), {
-      fighterAId,
-      fighterBId,
-      scoreA,
-      scoreB,
-      winnerParticipantId,
-      date,
-      details: details as CompetitionMatchInput["details"],
+  // Bouts are recorded through /api/v1/bouts (score-keeper, referee approval) since phase 3.
+  for (const [method, url] of [
+    ["POST", "/api/v1/competitions/:id/bouts"],
+    ["PUT", "/api/v1/competitions/:id/bouts/:boutId"],
+    ["DELETE", "/api/v1/competitions/:id/bouts/:boutId"],
+  ] as const) {
+    app.route({
+      method,
+      url,
+      handler: async () => {
+        throw new HttpError(410, "Recording bouts moved to the score-keeper.");
+      },
     });
-  });
-  app.put("/api/v1/competitions/:id/bouts/:boutId", async (request) => {
-    const competitionId = requirePathParam(request, "id");
-    const params = ensureObject(request.params ?? {}, "Route parameters");
-    const boutId = requireString(params.boutId, "Bout ID");
-    const body = ensureObject(request.body, "Bout");
-    const fighterAId = requireString(body.fighterAId, "Fighter A ID");
-    const fighterBId = requireString(body.fighterBId, "Fighter B ID");
-    const scoreA = requireInteger(body.scoreA, "Score A");
-    const scoreB = requireInteger(body.scoreB, "Score B");
-    const winnerParticipantId =
-      body.winnerParticipantId === null || body.winnerParticipantId === undefined
-        ? null
-        : requireString(body.winnerParticipantId, "Winner participant ID");
-    const date = requireString(body.date, "Date");
-    const details = body.details === undefined ? {} : ensureJsonValue(body.details);
-
-    return publishBout(database, competitionId, boutId, {
-      fighterAId,
-      fighterBId,
-      scoreA,
-      scoreB,
-      winnerParticipantId,
-      date,
-      details: details as CompetitionMatchInput["details"],
-    });
-  });
-  app.delete("/api/v1/competitions/:id/bouts/:boutId", async (request) => {
-    const competitionId = requirePathParam(request, "id");
-    const params = ensureObject(request.params ?? {}, "Route parameters");
-    const boutId = requireString(params.boutId, "Bout ID");
-    const bout = await declineBout(database, competitionId, boutId);
-    return bout;
-  });
+  }
 
   app.get("/api/v1/users", async (request) => {
     await requireAdminUser(request, database);
@@ -310,6 +295,7 @@ export function createApp(database: Kysely<BackendDatabase> = db) {
   });
 
   registerClubRoutes(app, database);
+  registerBoutRoutes(app, database);
   registerCompetitionAdminRoutes(app, database);
 
   app.post("/api/v1/auth/enrollment-tokens", async (request) => {

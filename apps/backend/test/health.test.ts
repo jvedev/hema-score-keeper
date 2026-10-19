@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTestContext, insertClub } from "./helpers.js";
+import { createTestContext, insertClub, TestClock } from "./helpers.js";
 
 describe("test harness", () => {
   it("serves the health check from an in-memory app", async () => {
@@ -16,5 +16,13 @@ describe("test harness", () => {
 
     const inSecond = await second.database.selectFrom("Club").selectAll().where("id", "=", "club-1").execute();
     expect(inSecond).toEqual([]);
+  });
+
+  it("uses the injected clock", async () => {
+    const clock = new TestClock();
+    const { app } = await createTestContext({ now: () => clock.now() });
+    expect(app.now().toISOString()).toBe("2026-10-15T20:00:00.000Z");
+    clock.advance(1000);
+    expect(app.now().toISOString()).toBe("2026-10-15T20:00:01.000Z");
   });
 });
