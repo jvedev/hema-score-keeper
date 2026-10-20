@@ -58,7 +58,7 @@ export class BoutDetailsPanel extends BaseComponent {
       ["details.when", formatDateTime(bout.startedAt)],
       ["details.where", bout.location ? escapeHtml(bout.location) : null],
       ["details.ruleset", bout.rulesetLabel ? escapeHtml(bout.rulesetLabel) : null],
-      ["details.table", bout.officials.table ? escapeHtml(bout.officials.table.name) : null],
+      ["details.table", bout.officials.table.length > 0 ? bout.officials.table.map((person) => escapeHtml(person.name)).join(", ") : null],
     ];
 
     this.render(

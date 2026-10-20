@@ -69,6 +69,20 @@ describe("fight-view", () => {
     element.remove();
   });
 
+  it("reports the clock when the match is ended", () => {
+    const element = document.createElement("fight-view");
+    document.body.appendChild(element);
+    element.setMatchStarted(true);
+    const ended: unknown[] = [];
+    element.addEventListener("end-match-requested", (event) => ended.push((event as CustomEvent).detail));
+    const button = element.shadowRoot!.querySelector<HTMLButtonElement>("#end-match-button")!;
+    button.disabled = false;
+    button.click();
+    expect(ended).toHaveLength(1);
+    expect(ended[0]).toEqual({ elapsedTimeSeconds: expect.any(Number) });
+    element.remove();
+  });
+
   it("updates both displayed fighter scores", () => {
     const element = document.createElement("fight-view");
     document.body.appendChild(element);

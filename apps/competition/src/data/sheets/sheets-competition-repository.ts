@@ -10,7 +10,7 @@ import { publishBoutRanking } from "@hema/ranking";
 import type { RuleSet } from "@hema/match-engine";
 import type { CompetitionRepository, RepositoryGetOptions } from "../competition-repository";
 import type { Bout, Competition, NewBoutInput, Participant, RankingEntry } from "../../domain/competition";
-import { parseRuleSet } from "../../domain/ruleset-parser";
+import { parseRuleSet } from "@hema/match-engine";
 import { getIdToken } from "../../identity/session";
 
 export class SheetsCompetitionRepository implements CompetitionRepository {

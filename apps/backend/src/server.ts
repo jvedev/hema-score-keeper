@@ -16,6 +16,7 @@ import { requireAdminUser, requirePathParam, resolveAccessUser, type AccessUser 
 import { registerBoutRoutes } from "./bouts/bout-routes.js";
 import { competitionBoutHistory, competitionStandings } from "./bouts/standings.js";
 import { registerClubRoutes } from "./club-routes.js";
+import { registerPeopleRoutes } from "./people-routes.js";
 import { registerCompetitionAdminRoutes } from "./competitions/admin-routes.js";
 import { readSheetValues, writeSheetValues } from "./google-sheets.js";
 import {
@@ -296,6 +297,7 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
 
   registerClubRoutes(app, database);
   registerBoutRoutes(app, database);
+  registerPeopleRoutes(app, database);
   registerCompetitionAdminRoutes(app, database);
 
   app.post("/api/v1/auth/enrollment-tokens", async (request) => {

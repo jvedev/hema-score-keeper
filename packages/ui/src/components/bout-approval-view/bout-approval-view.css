@@ -1,0 +1,114 @@
+:host {
+  display: grid;
+  gap: 14px;
+  font-family: var(--font-body);
+  color: var(--ink);
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.versus {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.versus .name {
+  font-weight: 700;
+}
+
+.versus .name:last-child {
+  text-align: right;
+}
+
+.score {
+  font-family: var(--font-score);
+  font-size: 3rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.winner {
+  margin: 0;
+  color: var(--brass);
+  font-weight: 700;
+  text-align: center;
+}
+
+.approvals {
+  display: grid;
+  gap: 8px;
+}
+
+.approval {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--plate);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.approval:has(input:checked) {
+  border-color: var(--verdigris);
+}
+
+.approval:has(input:disabled) {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.approval input {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--verdigris);
+}
+
+.approval input:focus-visible,
+.save:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+
+.note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.error {
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--rust);
+  border-radius: 10px;
+  color: var(--rust);
+  font-size: 0.85rem;
+}
+
+.save {
+  padding: 14px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--night);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.save:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

@@ -68,6 +68,38 @@ describe("bout-exchanges", () => {
     expect(points).toHaveLength(exchanges.length + 1);
   });
 
+  it("subtracts points a warning deducts", () => {
+    const list = mount({ "show-warnings": "" }, [
+      { atSeconds: 10, kind: "SCORE", side: "A", points: 3, reason: null },
+      { atSeconds: 20, kind: "WARNING", side: "A", points: 1, reason: "late hit" },
+    ]);
+    expect(column(list, ".running")).toEqual(["3–0", "2–0"]);
+    expect(column(list, ".text")[1]).toContain("(−1)");
+  });
+
+  it("keeps a deduction in the score even when warnings are hidden", () => {
+    const list = mount({}, [
+      { atSeconds: 10, kind: "SCORE", side: "A", points: 3, reason: null },
+      { atSeconds: 20, kind: "WARNING", side: "A", points: 1, reason: "late hit" },
+      { atSeconds: 30, kind: "SCORE", side: "B", points: 1, reason: null },
+    ]);
+    expect(column(list, ".running")).toEqual(["3–0", "2–1"]);
+  });
+
+  it("shows a score correction", () => {
+    const list = mount({}, [
+      { atSeconds: 10, kind: "SCORE", side: "B", points: 3, reason: null },
+      { atSeconds: 40, kind: "ADJUSTMENT", side: "B", points: -1, reason: null },
+    ]);
+    expect(column(list, ".text")[1]).toBe("Kuiper score corrected −1");
+    expect(column(list, ".running")[1]).toBe("0–2");
+  });
+
+  it("shows a disqualification", () => {
+    const list = mount({}, [{ atSeconds: 90, kind: "DISQUALIFICATION", side: "A", points: 0, reason: "Unsafe conduct" }]);
+    expect(column(list, ".text")[0]).toBe("Bakker disqualified");
+  });
+
   it("renders in Dutch", () => {
     const list = mount();
     setLocale("nl");

@@ -1,4 +1,4 @@
-import type { MatchParameters, PenaltyRule, RuleSet } from "@hema/match-engine";
+import type { MatchParameters, PenaltyRule, RuleSet } from "./rule-set";
 
 export interface RuleSetFallbackIdentity {
   id: string;

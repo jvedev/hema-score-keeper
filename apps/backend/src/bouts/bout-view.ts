@@ -18,7 +18,7 @@ export interface BoutView {
   fighterB: PersonRef;
   referee: PersonRef;
   jury: Array<PersonRef & { seat: number }>;
-  table: PersonRef | null;
+  table: Array<PersonRef & { seat: number }>;
   scoreA: number;
   scoreB: number;
   winnerSide: "A" | "B" | null;
@@ -35,10 +35,19 @@ export interface BoutView {
 
 export async function toBoutView(executor: DbExecutor, row: BoutRow): Promise<BoutView> {
   const jury = await executor.selectFrom("BoutJury").select(["seat", "userId"]).where("boutId", "=", row.id).orderBy("seat").execute();
-  const userIds = [row.fighterAUserId, row.fighterBUserId, row.refereeUserId, ...jury.map((seat) => seat.userId)];
-  if (row.tableUserId) {
-    userIds.push(row.tableUserId);
-  }
+  const table = await executor
+    .selectFrom("BoutTableOfficial")
+    .select(["seat", "userId"])
+    .where("boutId", "=", row.id)
+    .orderBy("seat")
+    .execute();
+  const userIds = [
+    row.fighterAUserId,
+    row.fighterBUserId,
+    row.refereeUserId,
+    ...jury.map((seat) => seat.userId),
+    ...table.map((seat) => seat.userId),
+  ];
   const names = new Map(
     (await executor.selectFrom("User").select(["id", "name"]).where("id", "in", userIds).execute()).map((user) => [user.id, user.name]),
   );
@@ -54,7 +63,7 @@ export async function toBoutView(executor: DbExecutor, row: BoutRow): Promise<Bo
     fighterB: person(row.fighterBUserId),
     referee: person(row.refereeUserId),
     jury: jury.map((seat) => ({ seat: seat.seat, ...person(seat.userId) })),
-    table: row.tableUserId ? person(row.tableUserId) : null,
+    table: table.map((seat) => ({ seat: seat.seat, ...person(seat.userId) })),
     scoreA: row.scoreA,
     scoreB: row.scoreB,
     winnerSide: row.winnerSide,

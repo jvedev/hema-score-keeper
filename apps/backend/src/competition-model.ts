@@ -50,6 +50,7 @@ export interface CompetitionSummary {
   visibility: string;
   clubId: string | null;
   scope: CompetitionScope;
+  acceptsOtherBouts: boolean;
 }
 
 export interface CompetitionDetail extends CompetitionSummary {
@@ -102,6 +103,7 @@ function toSummary(row: CompetitionRow): CompetitionSummary {
     visibility: row.visibility,
     clubId: row.clubId,
     scope: scopeFromRow(row),
+    acceptsOtherBouts: row.acceptsOtherBouts === 1,
   };
 }
 

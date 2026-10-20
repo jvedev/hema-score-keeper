@@ -176,3 +176,32 @@ body[data-mode="fight"] #rotate-overlay {
     display: none;
   }
 }
+
+/* Competition bouts */
+[hidden] {
+  display: none !important;
+}
+
+.competition-card {
+  width: min(100%, 440px);
+  text-align: left;
+}
+
+.competition-login {
+  display: grid;
+  gap: 12px;
+}
+
+.competition-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  color: #8a97a1;
+  font-size: 0.9rem;
+}
+
+.competition-error {
+  color: #e3714f;
+}

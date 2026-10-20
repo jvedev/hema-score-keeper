@@ -194,6 +194,7 @@ interface CompetitionTable {
   clubId: string | null;
   scopeKind: Generated<string>;
   scopeValuesJson: Generated<string>;
+  acceptsOtherBouts: Generated<SqliteBoolean>;
 }
 
 interface CompetitionAdminTable {
@@ -265,6 +266,12 @@ interface BoutJuryTable {
   userId: string;
 }
 
+interface BoutTableOfficialTable {
+  boutId: string;
+  seat: number;
+  userId: string;
+}
+
 interface BoutCompetitionTable {
   boutId: string;
   competitionId: string;
@@ -318,6 +325,7 @@ export interface BackendDatabase {
   SchemaMigration: SchemaMigrationTable;
   Bout: BoutTable;
   BoutJury: BoutJuryTable;
+  BoutTableOfficial: BoutTableOfficialTable;
   BoutCompetition: BoutCompetitionTable;
   BoutRevision: BoutRevisionTable;
 }

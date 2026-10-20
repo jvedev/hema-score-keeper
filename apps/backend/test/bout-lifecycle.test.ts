@@ -1,6 +1,7 @@
 import { OBJECTION_WINDOW_MS } from "@hema/competition-domain";
 import { beforeEach, describe, expect, it } from "vitest";
 import { boutAction, countedBout, createBoutWorld, getBout, recordBout, type BoutWorld } from "./bout-fixtures.js";
+import { bearer } from "./helpers.js";
 
 let world: BoutWorld;
 
@@ -35,6 +36,46 @@ describe("referee approval", () => {
   it("only accepts the referee", async () => {
     const id = await recordBout(world);
     expect((await boutAction(world, "f1", id, "referee-approval", { fightersApprovedOnSpot: { A: true, B: true } })).statusCode).toBe(403);
+  });
+});
+
+describe("recorder rights", () => {
+  async function recordAs(who: string): Promise<string> {
+    const response = await world.ctx.app.inject({
+      method: "POST",
+      url: "/api/v1/bouts",
+      headers: bearer(world.users[who]!),
+      payload: {
+        fighterAUserId: "f1",
+        fighterBUserId: "f2",
+        refereeUserId: "ref",
+        startedAt: world.clock.now().toISOString(),
+        scoreA: 5,
+        scoreB: 3,
+        winnerSide: "A",
+        startedInCompetitionId: "X",
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    return (response.json() as { id: string }).id;
+  }
+
+  it("recorder can approve", async () => {
+    const id = await recordAs("outsider");
+    expect((await boutAction(world, "jury1", id, "referee-approval", { fightersApprovedOnSpot: { A: true, B: true } })).statusCode).toBe(403);
+    const response = await boutAction(world, "outsider", id, "referee-approval", { fightersApprovedOnSpot: { A: true, B: true } });
+    expect(view(response).status).toBe("FINAL");
+  });
+
+  it("still lets the referee approve a bout someone else recorded", async () => {
+    const id = await recordAs("outsider");
+    expect(view(await boutAction(world, "ref", id, "referee-approval", { fightersApprovedOnSpot: { A: false, B: false } })).status).toBe("COUNTED");
+  });
+
+  it("lets the recorder void and read the bout", async () => {
+    const id = await recordAs("outsider");
+    expect((await getBout(world, "outsider", id)).statusCode).toBe(200);
+    expect(view(await boutAction(world, "outsider", id, "void", { reason: "Wrong fighters" })).status).toBe("VOIDED");
   });
 });
 

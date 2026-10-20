@@ -1,6 +1,6 @@
 import { ensureObject, HttpError, requireString } from "../http.js";
 
-export type ExchangeKind = "SCORE" | "DOUBLE" | "WARNING" | "TIME";
+export type ExchangeKind = "SCORE" | "DOUBLE" | "WARNING" | "TIME" | "ADJUSTMENT" | "DISQUALIFICATION";
 
 export interface ExchangeInput {
   atSeconds: number;
@@ -25,14 +25,16 @@ export interface BoutInput extends BoutResultInput {
   fighterBUserId: string;
   refereeUserId: string;
   juryUserIds: string[];
-  tableUserId: string | null;
+  tableUserIds: string[];
   ring: string | null;
   startedAt: string;
-  startedInCompetitionId: string | null;
+  startedInCompetitionId: string;
+  alsoCountIn: string[];
 }
 
-const EXCHANGE_KINDS: readonly ExchangeKind[] = ["SCORE", "DOUBLE", "WARNING", "TIME"];
+const EXCHANGE_KINDS: readonly ExchangeKind[] = ["SCORE", "DOUBLE", "WARNING", "TIME", "ADJUSTMENT", "DISQUALIFICATION"];
 const MAX_JURY = 4;
+const MAX_TABLE = 2;
 /** A bout is recorded right after it's fought; anything older would rewrite the rating history. */
 export const MAX_RECORDING_DELAY_MS = 24 * 60 * 60 * 1000;
 /** Allowed difference between the scorer's clock and the server's. */
@@ -43,8 +45,8 @@ export function parseBoutInput(body: unknown, now: Date): BoutInput {
   const fighterAUserId = requireString(input.fighterAUserId, "Fighter A");
   const fighterBUserId = requireString(input.fighterBUserId, "Fighter B");
   const refereeUserId = requireString(input.refereeUserId, "Referee");
-  const juryUserIds = parseJury(input.juryUserIds);
-  const tableUserId = optionalString(input.tableUserId, "Table official");
+  const juryUserIds = parsePeople(input.juryUserIds, "Jury member", MAX_JURY);
+  const tableUserIds = parsePeople(input.tableUserIds, "Table official", MAX_TABLE);
 
   if (fighterAUserId === fighterBUserId) {
     throw new HttpError(400, "A bout needs two different fighters.");
@@ -56,7 +58,7 @@ export function parseBoutInput(body: unknown, now: Date): BoutInput {
   if (juryUserIds.some((userId) => fighters.has(userId) || userId === refereeUserId)) {
     throw new HttpError(400, "Jury members can't be a fighter or the referee.");
   }
-  if (tableUserId !== null && (fighters.has(tableUserId) || tableUserId === refereeUserId || juryUserIds.includes(tableUserId))) {
+  if (tableUserIds.some((userId) => fighters.has(userId) || userId === refereeUserId || juryUserIds.includes(userId))) {
     throw new HttpError(400, "The table official can't be a fighter, the referee or on the jury.");
   }
 
@@ -77,24 +79,35 @@ export function parseBoutInput(body: unknown, now: Date): BoutInput {
     fighterBUserId,
     refereeUserId,
     juryUserIds,
-    tableUserId,
+    tableUserIds,
     ring: optionalString(input.ring, "Ring"),
     startedAt: new Date(startedAt).toISOString(),
-    startedInCompetitionId: optionalString(input.startedInCompetitionId, "Start competition"),
+    startedInCompetitionId: requireString(input.startedInCompetitionId, "Competition the bout is fought for"),
+    alsoCountIn: parseCompetitionIds(input.alsoCountIn),
     ...parseBoutResult(input),
   };
 }
 
 export function parseBoutResult(body: unknown): BoutResultInput {
   const input = ensureObject(body, "Result");
-  const scoreA = requireCount(input.scoreA, "Score A");
-  const scoreB = requireCount(input.scoreB, "Score B");
+  // A deduction can take a fighter below zero, so final scores may be negative.
+  const scoreA = requireWhole(input.scoreA, "Score A");
+  const scoreB = requireWhole(input.scoreB, "Score B");
   const winnerSide = input.winnerSide === null || input.winnerSide === undefined ? null : requireSide(input.winnerSide, "Winner");
-  if (winnerSide === null && scoreA !== scoreB) {
-    throw new HttpError(400, "A draw needs equal scores.");
-  }
-  if ((winnerSide === "A" && scoreA < scoreB) || (winnerSide === "B" && scoreB < scoreA)) {
-    throw new HttpError(400, "The winner can't have the lower score.");
+  const exchanges = parseExchanges(input.exchanges);
+  const disqualified = exchanges.find((exchange) => exchange.kind === "DISQUALIFICATION");
+  if (disqualified) {
+    // A disqualified fighter loses whatever the score.
+    if (winnerSide === null || winnerSide === disqualified.side) {
+      throw new HttpError(400, "The opponent of a disqualified fighter is the winner.");
+    }
+  } else {
+    if (winnerSide === null && scoreA !== scoreB) {
+      throw new HttpError(400, "A draw needs equal scores.");
+    }
+    if ((winnerSide === "A" && scoreA < scoreB) || (winnerSide === "B" && scoreB < scoreA)) {
+      throw new HttpError(400, "The winner can't have the lower score.");
+    }
   }
   return {
     scoreA,
@@ -102,25 +115,39 @@ export function parseBoutResult(body: unknown): BoutResultInput {
     winnerSide,
     warningsA: input.warningsA === undefined ? 0 : requireCount(input.warningsA, "Warnings A"),
     warningsB: input.warningsB === undefined ? 0 : requireCount(input.warningsB, "Warnings B"),
-    exchanges: parseExchanges(input.exchanges),
+    exchanges,
   };
 }
 
-function parseJury(value: unknown): string[] {
+function parseCompetitionIds(value: unknown): string[] {
   if (value === undefined || value === null) {
     return [];
   }
   if (!Array.isArray(value)) {
-    throw new HttpError(400, "Jury must be a list of users.");
+    throw new HttpError(400, "Also count in must be a list of competitions.");
   }
-  const jury = value.map((userId, index) => requireString(userId, `Jury member ${index + 1}`));
-  if (jury.length > MAX_JURY) {
-    throw new HttpError(400, `A bout has at most ${MAX_JURY} jury members.`);
+  const ids = value.map((id, index) => requireString(id, `Competition ${index + 1}`));
+  if (new Set(ids).size !== ids.length) {
+    throw new HttpError(400, "Each competition can only be listed once.");
   }
-  if (new Set(jury).size !== jury.length) {
-    throw new HttpError(400, "Each jury member can only sit once.");
+  return ids;
+}
+
+function parsePeople(value: unknown, label: string, max: number): string[] {
+  if (value === undefined || value === null) {
+    return [];
   }
-  return jury;
+  if (!Array.isArray(value)) {
+    throw new HttpError(400, `${label}s must be a list of users.`);
+  }
+  const people = value.map((userId, index) => requireString(userId, `${label} ${index + 1}`));
+  if (people.length > max) {
+    throw new HttpError(400, `A bout has at most ${max} ${label.toLowerCase()}s.`);
+  }
+  if (new Set(people).size !== people.length) {
+    throw new HttpError(400, `Each ${label.toLowerCase()} can only be listed once.`);
+  }
+  return people;
 }
 
 function parseExchanges(value: unknown): ExchangeInput[] {
@@ -141,7 +168,7 @@ function parseExchanges(value: unknown): ExchangeInput[] {
       atSeconds: requireCount(exchange.atSeconds, `${label} time`),
       kind: kind as ExchangeKind,
       side: exchange.side === null || exchange.side === undefined ? null : requireSide(exchange.side, `${label} side`),
-      points: exchange.points === undefined ? 0 : requireCount(exchange.points, `${label} points`),
+      points: exchange.points === undefined ? 0 : kind === "ADJUSTMENT" ? requireWhole(exchange.points, `${label} points`) : requireCount(exchange.points, `${label} points`),
       reason: optionalString(exchange.reason, `${label} reason`),
     };
   });
@@ -150,6 +177,13 @@ function parseExchanges(value: unknown): ExchangeInput[] {
 function requireCount(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
     throw new HttpError(400, `${label} must be a whole number of 0 or more.`);
+  }
+  return value;
+}
+
+function requireWhole(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new HttpError(400, `${label} must be a whole number.`);
   }
   return value;
 }

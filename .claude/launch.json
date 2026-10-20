@@ -25,6 +25,24 @@
         "--no-open"
       ],
       "port": 6006
+    },
+    {
+      "name": "score-keeper-live",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--workspace",
+        "@hema/score-keeper",
+        "--",
+        "--port",
+        "5180",
+        "--strictPort"
+      ],
+      "port": 5180,
+      "env": {
+        "VITE_USE_MOCK_API": "false"
+      }
     }
   ]
 }

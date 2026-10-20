@@ -82,7 +82,7 @@ describe("applySchemaMigrations", () => {
     expect(() => applySchemaMigrations(database)).not.toThrow();
     expect(adminRows()).toHaveLength(admins);
     expect(database.prepare("SELECT COUNT(*) AS count FROM SchemaMigration").get()).toEqual({ count: applied });
-    expect(applied).toBe(10);
+    expect(applied).toBe(12);
   });
 });
 
@@ -99,6 +99,26 @@ describe("re-seeding after migrations", () => {
     for (const value of statuses) {
       expect(["DRAFT", "REGISTRATION_OPEN", "RUNNING", "CLOSED", "ARCHIVED"]).toContain(value);
     }
+  });
+});
+
+describe("table officials", () => {
+  it("moves an existing table official into the new table", () => {
+    applySchemaMigrations(database);
+    database.prepare("DELETE FROM SchemaMigration WHERE name = '2026-10-20-bout-table-officials'").run();
+    database.exec("DROP TABLE IF EXISTS BoutTableOfficial");
+    for (const id of ["f1", "f2", "ref", "tab"]) {
+      insertUser(id, "USER", null);
+    }
+    database
+      .prepare(
+        "INSERT INTO Bout (id, fighterAUserId, fighterBUserId, refereeUserId, tableUserId, startedAt, scoreA, scoreB, createdByUserId, status) VALUES ('b1', 'f1', 'f2', 'ref', 'tab', '2026-10-15T20:00:00.000Z', 1, 0, 'ref', 'SCORED')",
+      )
+      .run();
+
+    applySchemaMigrations(database);
+
+    expect(database.prepare("SELECT boutId, seat, userId FROM BoutTableOfficial").all()).toEqual([{ boutId: "b1", seat: 1, userId: "tab" }]);
   });
 });
 

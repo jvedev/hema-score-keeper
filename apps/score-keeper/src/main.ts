@@ -14,7 +14,10 @@ import { createEventRepository } from "./data/create-event-repository";
 import { createRuleSetRepository } from "./data/create-rule-set-repository";
 import { shouldUseMockApi } from "./data/use-mock-api";
 import { fetchSheetValues } from "./data/google-sheets-client";
-import { MatchStore, createMatchState, reduceMatchEvent } from "@hema/match-engine";
+import { MatchStore, createMatchState, reduceMatchEvent, type RuleSet } from "@hema/match-engine";
+import { LOCALE_CHANGE_EVENT, t, type MessageKey } from "@hema/ui";
+import { CompetitionClient } from "./competition/competition-client";
+import { CompetitionMode } from "./competition/competition-flow";
 import "./styles.css";
 
 type OrientationLockType =
@@ -51,7 +54,7 @@ interface GoogleSheetsSelection {
   destSheetId?: string | undefined;
 }
 
-type AppRoute = "launcher" | "event" | "standalone" | "google-sheets" | "fight";
+type AppRoute = "launcher" | "event" | "standalone" | "google-sheets" | "fight" | "competition";
 
 function requireElement<ElementType extends Element>(
   selector: string,
@@ -94,6 +97,10 @@ const warningView =
 const forfeitDialog =
   requireElement<HTMLElementTagNameMap["action-dialog"]>("#forfeit-dialog");
 
+const competitionScreen = requireElement<HTMLElement>("#competition-screen");
+const competitionButton = requireElement<HTMLButtonElement>("#competition-button");
+const competitionBackButton = requireElement<HTMLButtonElement>("#competition-back-button");
+
 const eventRepository = createEventRepository();
 const ruleSetRepository = createRuleSetRepository();
 const backendClient = shouldUseMockApi() ? undefined : createApiClient();
@@ -113,6 +120,29 @@ let eventsLoadPromise: Promise<void> | undefined;
 let eventsLoaded = false;
 const completedMatchIds = new Set<string>();
 let googleSheetsSelection: GoogleSheetsSelection = {};
+/** Which mode the fight screen belongs to: event fights save to the event, competition bouts to /bouts. */
+let fightMode: "event" | "competition" = "event";
+
+const competitionMode = new CompetitionMode(
+  new CompetitionClient(import.meta.env.VITE_API_BASE_URL ?? "/api/v1"),
+  {
+    loginForm: requireElement<HTMLFormElement>("#competition-login"),
+    loginError: requireElement<HTMLElement>("#competition-login-error"),
+    workspace: requireElement<HTMLElement>("#competition-workspace"),
+    userLabel: requireElement<HTMLElement>("#competition-user"),
+    logoutButton: requireElement<HTMLButtonElement>("#competition-logout-button"),
+    setup: requireElement<HTMLElementTagNameMap["competition-bout-setup"]>("#competition-setup"),
+    approval: requireElement<HTMLElementTagNameMap["bout-approval-view"]>("#competition-approval"),
+  },
+  {
+    showCompetitionScreen,
+    startFight: beginCompetitionFight,
+    leaveFight: exitFightMode,
+  },
+);
+
+applyTexts();
+window.addEventListener(LOCALE_CHANGE_EVENT, applyTexts);
 
 fightView.setMatchActive(false);
 
@@ -125,6 +155,14 @@ googleSheetsButton.addEventListener("click", () => {
 });
 eventButton.addEventListener("click", () => {
   void openEventMode();
+});
+competitionButton.addEventListener("click", () => {
+  syncModeUrl("/competition", false);
+  void competitionMode.open();
+});
+competitionBackButton.addEventListener("click", () => {
+  syncLauncherUrl(true);
+  showLauncherScreen();
 });
 standaloneBackButton.addEventListener("click", () => {
   syncLauncherUrl(true);
@@ -180,7 +218,14 @@ fightView.addEventListener("match-reset-requested", () => {
   matchStore.reset();
   fightView.setMatchStarted(false);
 });
-fightView.addEventListener("end-match-requested", () => {
+fightView.addEventListener("end-match-requested", (event) => {
+  if (fightMode === "competition") {
+    if (!matchStore) throw new Error("Match store is not initialized.");
+    // The clock when the operator ended the bout, not the time of the last scoring action.
+    const endedAt = Math.max(event.detail?.elapsedTimeSeconds ?? 0, matchStore.state.elapsedTimeSeconds);
+    void competitionMode.matchEnded(matchStore.events, endedAt);
+    return;
+  }
   void completeMatch().catch((error) => {
     console.error("Unable to complete match.", error);
   });
@@ -214,6 +259,11 @@ async function initializeApp(): Promise<void> {
 
   if (route === "google-sheets") {
     enterGoogleSheetsMode(true);
+    return;
+  }
+
+  if (route === "competition") {
+    await competitionMode.open();
     return;
   }
 
@@ -258,6 +308,12 @@ async function handleRoute(): Promise<void> {
   if (route === "google-sheets") {
     await exitFightMode();
     enterGoogleSheetsMode(true);
+    return;
+  }
+
+  if (route === "competition") {
+    await exitFightMode();
+    await competitionMode.open();
     return;
   }
 
@@ -391,6 +447,7 @@ async function beginFightMode(
     throw new Error(`Match "${match.id}" references an unknown fighter.`);
   }
 
+  fightMode = "event";
   selectedMatchId = match.id;
   syncFightUrl(match.id, replaceUrl);
   showFightScreen();
@@ -457,6 +514,55 @@ async function beginFightMode(
   });
 
   await enterFightMode();
+}
+
+async function beginCompetitionFight(fight: {
+  ruleSet: RuleSet;
+  fighterAName: string;
+  fighterBName: string;
+  label: string;
+}): Promise<void> {
+  fightMode = "competition";
+  showFightScreen();
+  const parameters = fight.ruleSet.matchParameters;
+  matchStore = new MatchStore(parameters, createMatchState({ fighterAScore: 0, fighterBScore: 0, elapsedTimeSeconds: 0, warnings: { A: 0, B: 0 } }));
+  matchStore.subscribe((state) => {
+    fightView.setScores(state);
+    fightView.setMatchActive(!state.disqualifiedFighter);
+    scoreView.setScores(state.fighterAScore, state.fighterBScore);
+  });
+
+  const left = createFighterStyle(defaultArenaLeftColor);
+  const right = createFighterStyle(defaultArenaRightColor);
+  fightView.configureArena({
+    name: fight.label,
+    fighterAName: fight.fighterAName,
+    fighterBName: fight.fighterBName,
+    leftFighterStyle: left,
+    rightFighterStyle: right,
+  });
+  fightView.setMatchDuration(parameters.maxDurationSeconds);
+  fightView.setScores({ fighterAScore: 0, fighterBScore: 0 });
+  fightView.setMatchCompleted(false);
+  scoreView.configure({
+    scores: parameters.scores,
+    fighterA: { name: fight.fighterAName, score: 0, ...left },
+    fighterB: { name: fight.fighterBName, score: 0, ...right },
+  });
+  warningView.configure({
+    fighterA: { name: fight.fighterAName, ...left },
+    fighterB: { name: fight.fighterBName, ...right },
+    penalties: parameters.penalties,
+  });
+
+  await enterFightMode();
+}
+
+/** Fills elements marked data-i18n with the current language's text. */
+function applyTexts(): void {
+  document.querySelectorAll<HTMLElement>("[data-i18n]").forEach((element) => {
+    element.textContent = t(element.dataset.i18n as MessageKey);
+  });
 }
 
 async function enterFightMode(): Promise<void> {
@@ -1151,6 +1257,9 @@ function resolveRoute(): AppRoute {
   if (pathname === "/google-sheets") {
     return "google-sheets";
   }
+  if (pathname === "/competition") {
+    return "competition";
+  }
 
   const params = new URLSearchParams(window.location.search);
   if (params.has("matchId")) {
@@ -1168,6 +1277,7 @@ function showLauncherScreen(): void {
   googleSheetsScreen.hidden = true;
   startScreenView.hidden = true;
   fightView.hidden = true;
+  competitionScreen.hidden = true;
   document.body.dataset.mode = "launcher";
 }
 
@@ -1177,6 +1287,7 @@ function showEventScreen(): void {
   googleSheetsScreen.hidden = true;
   startScreenView.hidden = false;
   fightView.hidden = true;
+  competitionScreen.hidden = true;
   document.body.dataset.mode = "event";
 }
 
@@ -1186,6 +1297,7 @@ function showStandaloneScreen(): void {
   googleSheetsScreen.hidden = true;
   startScreenView.hidden = true;
   fightView.hidden = true;
+  competitionScreen.hidden = true;
   document.body.dataset.mode = "standalone";
 }
 
@@ -1195,7 +1307,18 @@ function showGoogleSheetsScreen(): void {
   googleSheetsScreen.hidden = false;
   startScreenView.hidden = true;
   fightView.hidden = true;
+  competitionScreen.hidden = true;
   document.body.dataset.mode = "google-sheets";
+}
+
+function showCompetitionScreen(): void {
+  launcherScreen.hidden = true;
+  standaloneScreen.hidden = true;
+  googleSheetsScreen.hidden = true;
+  startScreenView.hidden = true;
+  fightView.hidden = true;
+  competitionScreen.hidden = false;
+  document.body.dataset.mode = "competition";
 }
 
 function showFightScreen(): void {
@@ -1204,6 +1327,7 @@ function showFightScreen(): void {
   googleSheetsScreen.hidden = true;
   startScreenView.hidden = true;
   fightView.hidden = false;
+  competitionScreen.hidden = true;
   document.body.dataset.mode = "fight";
 }
 

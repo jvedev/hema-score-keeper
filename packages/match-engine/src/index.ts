@@ -3,3 +3,5 @@ export * from "./arena.js";
 export * from "./match-state.js";
 export * from "./match-reducer.js";
 export * from "./match-store.js";
+export * from "./ruleset-parser.js";
+export * from "./bout-exchanges.js";

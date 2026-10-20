@@ -10,7 +10,7 @@ const jury = [
 
 function grid(juryCount: number): HTMLElement {
   const element = document.createElement("officials-grid");
-  const officials: OfficialsView = { referee: { userId: "ref", name: "Joris Meijer" }, jury: jury.slice(0, juryCount), table: null };
+  const officials: OfficialsView = { referee: { userId: "ref", name: "Joris Meijer" }, jury: jury.slice(0, juryCount), table: [] };
   element.officials = officials;
   element.style.cssText = "display:block;width:260px;margin-bottom:16px";
   return element;

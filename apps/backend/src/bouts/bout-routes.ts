@@ -29,17 +29,14 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
     const user = await requireUser(request, database);
     const input = parseBoutInput(request.body, app.now());
     await requireUsersExist(database, input);
-    if (user.id !== input.refereeUserId && user.id !== input.tableUserId) {
-      throw new HttpError(403, "Only the referee or the table official can record a bout.");
-    }
 
-    const competitionIds = await sharedRunningCompetitions(database, input.fighterAUserId, input.fighterBUserId);
-    if (competitionIds.length === 0) {
-      throw new HttpError(409, "These fighters share no running competition.");
+    const choice = await competitionChoice(database, input.fighterAUserId, input.fighterBUserId, input.startedInCompetitionId);
+    const allowed = new Set(choice.others.map((competition) => competition.id));
+    const refused = input.alsoCountIn.find((competitionId) => !allowed.has(competitionId));
+    if (refused !== undefined) {
+      throw new HttpError(400, `The bout can't also count in "${refused}": both fighters must be in it, it must be running and accept other bouts.`);
     }
-    if (input.startedInCompetitionId !== null && !competitionIds.includes(input.startedInCompetitionId)) {
-      throw new HttpError(400, "The bout doesn't count in the competition it says it started in.");
-    }
+    const competitionIds = [input.startedInCompetitionId, ...input.alsoCountIn].sort();
 
     const id = generateId();
     await database.transaction().execute(async (transaction) => {
@@ -50,7 +47,7 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
           fighterAUserId: input.fighterAUserId,
           fighterBUserId: input.fighterBUserId,
           refereeUserId: input.refereeUserId,
-          tableUserId: input.tableUserId,
+          tableUserId: null,
           ring: input.ring,
           startedAt: input.startedAt,
           scoreA: input.scoreA,
@@ -71,6 +68,12 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
           .values(input.juryUserIds.map((userId, index) => ({ boutId: id, seat: index + 1, userId })))
           .execute();
       }
+      if (input.tableUserIds.length > 0) {
+        await transaction
+          .insertInto("BoutTableOfficial")
+          .values(input.tableUserIds.map((userId, index) => ({ boutId: id, seat: index + 1, userId })))
+          .execute();
+      }
       await transaction
         .insertInto("BoutCompetition")
         .values(competitionIds.map((competitionId) => ({ boutId: id, competitionId })))
@@ -78,6 +81,17 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
     });
 
     return toBoutView(database, await loadBout(database, id, app.now()));
+  });
+
+  app.get("/api/v1/bouts/competition-options", async (request) => {
+    await requireUser(request, database);
+    const query = ensureObject(request.query ?? {}, "Query");
+    const fighterA = requireString(query.fighterA, "Fighter A");
+    const fighterB = requireString(query.fighterB, "Fighter B");
+    if (fighterA === fighterB) {
+      throw new HttpError(400, "A bout needs two different fighters.");
+    }
+    return competitionChoice(database, fighterA, fighterB, requireString(query.startedIn, "Competition the bout is fought for"));
   });
 
   app.get("/api/v1/bouts/:id", async (request) => {
@@ -111,7 +125,7 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
       B: requireBoolean(onSpot.B, "Fighter B approved"),
     };
     return withBout(requirePathParam(request, "id"), async (row, transaction) => {
-      requireReferee(user, row);
+      requireRefereeOrRecorder(user, row);
       const now = app.now();
       return applyTransition(transaction, row, (bout) => approveByReferee(bout, now, fightersApprovedOnSpot), now);
     });
@@ -230,7 +244,7 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
     const user = await requireUser(request, database);
     const reason = requireString(ensureObject(request.body, "Void").reason, "Reason");
     return withBout(requirePathParam(request, "id"), async (row, transaction) => {
-      requireReferee(user, row);
+      requireRefereeOrRecorder(user, row);
       const now = app.now();
       // Settle first: voiding has no window rule of its own, and a final bout never changes.
       return applyTransition(transaction, row, (bout) => voidBout(settleBout(bout, now), reason), now);
@@ -263,9 +277,10 @@ export async function applyTransition(
   return toBoutView(database, { ...row, ...columns, objectionReason });
 }
 
-function requireReferee(user: AccessUser, row: BoutRow): void {
-  if (user.id !== row.refereeUserId) {
-    throw new HttpError(403, "Only the referee of this bout can do that.");
+/** High trust: whoever recorded the bout on the score-keeper may act for the referee. */
+function requireRefereeOrRecorder(user: AccessUser, row: BoutRow): void {
+  if (user.id !== row.refereeUserId && user.id !== row.createdByUserId) {
+    throw new HttpError(403, "Only the referee or whoever recorded this bout can do that.");
   }
 }
 
@@ -284,7 +299,7 @@ export async function requireCanSeeBout(executor: DbExecutor, user: AccessUser, 
   if (user.role === "SYSTEM_ADMIN") {
     return;
   }
-  const involved = [row.fighterAUserId, row.fighterBUserId, row.refereeUserId, row.tableUserId];
+  const involved = [row.fighterAUserId, row.fighterBUserId, row.refereeUserId, row.createdByUserId];
   if (involved.includes(user.id)) {
     return;
   }
@@ -294,7 +309,13 @@ export async function requireCanSeeBout(executor: DbExecutor, user: AccessUser, 
     .where("boutId", "=", row.id)
     .where("userId", "=", user.id)
     .executeTakeFirst();
-  if (jury) {
+  const table = await executor
+    .selectFrom("BoutTableOfficial")
+    .select("userId")
+    .where("boutId", "=", row.id)
+    .where("userId", "=", user.id)
+    .executeTakeFirst();
+  if (jury || table) {
     return;
   }
   if (await isAdminOfBout(executor, user, row.id)) {
@@ -330,9 +351,7 @@ export async function requireUser(request: Parameters<typeof resolveAccessUser>[
 
 async function requireUsersExist(executor: DbExecutor, input: BoutInput): Promise<void> {
   const wanted = [input.fighterAUserId, input.fighterBUserId, input.refereeUserId, ...input.juryUserIds];
-  if (input.tableUserId !== null) {
-    wanted.push(input.tableUserId);
-  }
+  wanted.push(...input.tableUserIds);
   const found = new Set((await executor.selectFrom("User").select("id").where("id", "in", wanted).execute()).map((row) => row.id));
   const missing = wanted.find((userId) => !found.has(userId));
   if (missing !== undefined) {
@@ -340,15 +359,30 @@ async function requireUsersExist(executor: DbExecutor, input: BoutInput): Promis
   }
 }
 
-async function sharedRunningCompetitions(executor: DbExecutor, userAId: string, userBId: string): Promise<string[]> {
+export interface CompetitionChoice {
+  startedIn: { id: string; name: string; rulesetJson: unknown };
+  /** Other running competitions both fighters are in that accept bouts fought elsewhere. */
+  others: Array<{ id: string; name: string }>;
+}
+
+/** Where a bout between these fighters, fought for `startedInId`, may count. 400 if it can't be fought for it. */
+async function competitionChoice(executor: DbExecutor, userAId: string, userBId: string, startedInId: string): Promise<CompetitionChoice> {
   const rows = await executor
     .selectFrom("CompetitionParticipant")
     .innerJoin("Competition", "Competition.id", "CompetitionParticipant.competitionId")
-    .select(["Competition.id as competitionId", "Competition.status as status", "CompetitionParticipant.userId as userId"])
+    .select([
+      "Competition.id as competitionId",
+      "Competition.name as name",
+      "Competition.status as status",
+      "Competition.rulesetJson as rulesetJson",
+      "Competition.acceptsOtherBouts as acceptsOtherBouts",
+      "CompetitionParticipant.userId as userId",
+    ])
     .where("CompetitionParticipant.userId", "in", [userAId, userBId])
     .execute();
 
   const enrolments = new Map<string, { competitionId: string; status: CompetitionStatus; enrolledUserIds: Set<string> }>();
+  const details = new Map<string, { name: string; rulesetJson: string; acceptsOtherBouts: boolean }>();
   for (const row of rows) {
     const enrolment = enrolments.get(row.competitionId) ?? {
       competitionId: row.competitionId,
@@ -359,6 +393,19 @@ async function sharedRunningCompetitions(executor: DbExecutor, userAId: string, 
       enrolment.enrolledUserIds.add(row.userId);
     }
     enrolments.set(row.competitionId, enrolment);
+    details.set(row.competitionId, { name: row.name, rulesetJson: row.rulesetJson, acceptsOtherBouts: row.acceptsOtherBouts === 1 });
   }
-  return competitionsForBout(userAId, userBId, [...enrolments.values()]).sort();
+
+  const shared = competitionsForBout(userAId, userBId, [...enrolments.values()]);
+  const startedIn = details.get(startedInId);
+  if (!shared.includes(startedInId) || !startedIn) {
+    throw new HttpError(400, "Both fighters must be in the competition the bout is fought for, and it must be running.");
+  }
+  return {
+    startedIn: { id: startedInId, name: startedIn.name, rulesetJson: JSON.parse(startedIn.rulesetJson) as unknown },
+    others: shared
+      .filter((id) => id !== startedInId && details.get(id)!.acceptsOtherBouts)
+      .map((id) => ({ id, name: details.get(id)!.name }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  };
 }

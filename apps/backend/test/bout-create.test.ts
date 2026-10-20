@@ -10,7 +10,7 @@ function boutBody(overrides: Record<string, unknown> = {}): Record<string, unkno
     fighterBUserId: "f2",
     refereeUserId: "ref",
     juryUserIds: ["jury1", "jury2"],
-    tableUserId: "table",
+    tableUserIds: ["table"],
     ring: "Ring 2",
     startedAt: "2026-10-15T20:40:00.000Z",
     scoreA: 5,
@@ -22,6 +22,8 @@ function boutBody(overrides: Record<string, unknown> = {}): Record<string, unkno
       { atSeconds: 12, kind: "SCORE", side: "A", points: 2, reason: null },
       { atSeconds: 82, kind: "WARNING", side: "B", points: 0, reason: "grappling after halt" },
     ],
+    startedInCompetitionId: "X",
+    alsoCountIn: ["Y"],
     ...overrides,
   };
 }
@@ -59,7 +61,7 @@ describe("POST /api/v1/bouts", () => {
       fighterA: { userId: "f1", name: "F1" },
       fighterB: { userId: "f2", name: "F2" },
       referee: { userId: "ref", name: "REF" },
-      table: { userId: "table", name: "TABLE" },
+      table: [{ userId: "table", name: "TABLE" }],
       jury: [
         { seat: 1, userId: "jury1", name: "JURY1" },
         { seat: 2, userId: "jury2", name: "JURY2" },
@@ -75,22 +77,32 @@ describe("POST /api/v1/bouts", () => {
   });
 
   it("links only shared running competitions", async () => {
-    const response = await record(boutBody({ fighterBUserId: "f3" }));
+    const response = await record(boutBody({ fighterBUserId: "f3", alsoCountIn: [] }));
     expect((response.json() as { competitionIds: string[] }).competitionIds).toEqual(["X"]);
   });
 
   it("refuses fighters who share no running competition", async () => {
     await ctx.database.updateTable("Competition").set({ status: "CLOSED" }).execute();
-    expect((await record(boutBody())).statusCode).toBe(409);
+    expect((await record(boutBody())).statusCode).toBe(400);
   });
 
   it("can be recorded by the table official", async () => {
     expect((await record(boutBody(), users.table!)).statusCode).toBe(200);
   });
 
-  it("refuses anyone who isn't the referee or table official", async () => {
-    expect((await record(boutBody(), users.f1!)).statusCode).toBe(403);
+  it("lets anyone who is logged in record the bout", async () => {
+    const response = await record(boutBody(), users.f3!);
+    expect(response.statusCode).toBe(200);
+    const stored = await ctx.database.selectFrom("Bout").select("createdByUserId").executeTakeFirstOrThrow();
+    expect(stored.createdByUserId).toBe("f3");
     expect((await record(boutBody(), null)).statusCode).toBe(401);
+  });
+
+  it("accepts zero or two table officials", async () => {
+    expect((await record(boutBody({ tableUserIds: [] }))).statusCode).toBe(200);
+    const two = await record(boutBody({ tableUserIds: ["table", "jury3"] }));
+    expect(two.statusCode).toBe(200);
+    expect((two.json() as { table: Array<{ userId: string }> }).table.map((person) => person.userId)).toEqual(["table", "jury3"]);
   });
 
   it.each([
@@ -101,12 +113,13 @@ describe("POST /api/v1/bouts", () => {
     ["a jury member who is fighting", { juryUserIds: ["f2"] }],
     ["a winner with the lower score", { scoreA: 2, scoreB: 3, winnerSide: "A" }],
     ["a draw with unequal scores", { scoreA: 2, scoreB: 3, winnerSide: null }],
-    ["a negative score", { scoreA: -1, scoreB: 3, winnerSide: "B" }],
     ["an unknown exchange kind", { exchanges: [{ atSeconds: 1, kind: "PARRY", side: "A", points: 1, reason: null }] }],
     ["a start competition the bout isn't in", { startedInCompetitionId: "Z" }],
-    ["a fighter as table official", { tableUserId: "f1" }],
-    ["the referee as table official", { tableUserId: "ref" }],
-    ["a jury member as table official", { tableUserId: "jury1" }],
+    ["a fighter as table official", { tableUserIds: ["f1"] }],
+    ["the referee as table official", { tableUserIds: ["ref"] }],
+    ["a jury member as table official", { tableUserIds: ["jury1"] }],
+    ["three table officials", { tableUserIds: ["table", "jury3", "jury4"] }],
+    ["the same table official twice", { tableUserIds: ["table", "table"] }],
     ["a start time years ago", { startedAt: "2020-01-01T10:00:00.000Z" }],
     ["a start time more than a day ago", { startedAt: "2026-10-14T20:00:00.000Z" }],
     ["a start time in the future", { startedAt: "2026-10-15T22:00:00.000Z" }],

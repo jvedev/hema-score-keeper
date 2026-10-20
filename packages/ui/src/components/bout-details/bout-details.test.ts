@@ -18,7 +18,7 @@ const bout: BoutDetailView = {
   officials: {
     referee: { userId: "ref", name: "Joris Meijer" },
     jury: [{ userId: "j1", name: "Sanne Visser" }],
-    table: { userId: "t", name: "Daan Mulder" },
+    table: [{ userId: "t", name: "Daan Mulder" }],
   },
   exchanges: [
     { atSeconds: 12, kind: "SCORE", side: "B", points: 1, reason: null },
@@ -83,6 +83,13 @@ describe("bout-details", () => {
     const details = mount();
     expect(details.shadowRoot!.querySelector(".meta")!.textContent).toContain("Daan Mulder");
     expect(details.shadowRoot!.querySelector("officials-grid")!.shadowRoot!.textContent).not.toContain("Daan Mulder");
+  });
+
+  it("lists two table officials and leaves the line out without any", () => {
+    const two = mount({ ...bout, officials: { ...bout.officials, table: [{ userId: "t1", name: "Daan Mulder" }, { userId: "t2", name: "Ravi Jansen" }] } });
+    expect(two.shadowRoot!.querySelector(".meta")!.textContent).toContain("Daan Mulder, Ravi Jansen");
+    const none = mount({ ...bout, officials: { ...bout.officials, table: [] } });
+    expect(none.shadowRoot!.querySelector(".meta")!.textContent).not.toContain("Table");
   });
 
   it("renders in Dutch", () => {

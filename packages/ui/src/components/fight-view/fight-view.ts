@@ -79,7 +79,12 @@ export class FightView extends BaseComponent {
     });
     this.registerEvent(this.#timeoutButton, "click", () => this.#toggleTimer());
     this.registerEvent(this.#endMatchButton, "click", () => {
-      this.dispatchEvent(new CustomEvent("end-match-requested", { bubbles: true }));
+      this.dispatchEvent(
+        new CustomEvent("end-match-requested", {
+          bubbles: true,
+          detail: { elapsedTimeSeconds: this.#timer.elapsedSeconds },
+        }),
+      );
     });
     this.registerEvent(this.queryRoot("#reset-button"), "confirmed", () => {
       this.#resetFight();
@@ -262,7 +267,7 @@ declare global {
     "hit-requested": CustomEvent<{ elapsedTimeSeconds: number }>;
     "warning-requested": CustomEvent<{ elapsedTimeSeconds: number }>;
     "match-reset-requested": CustomEvent<void>;
-    "end-match-requested": CustomEvent<void>;
+    "end-match-requested": CustomEvent<{ elapsedTimeSeconds: number }>;
     "forfeit-requested": CustomEvent<void>;
   }
 

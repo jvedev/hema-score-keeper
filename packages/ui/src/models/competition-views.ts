@@ -28,15 +28,17 @@ export interface OfficialsView {
   referee: PersonView;
   /** At most four, in seat order. */
   jury: PersonView[];
-  table: PersonView | null;
+  /** Zero, one or two table officials. */
+  table: PersonView[];
 }
 
-export type ExchangeKind = "SCORE" | "DOUBLE" | "WARNING" | "TIME";
+export type ExchangeKind = "SCORE" | "DOUBLE" | "WARNING" | "TIME" | "ADJUSTMENT" | "DISQUALIFICATION";
 
 export interface ExchangeView {
   atSeconds: number;
   kind: ExchangeKind;
   side: "A" | "B" | null;
+  /** Points scored; points deducted for WARNING; signed change for ADJUSTMENT. */
   points: number;
   reason: string | null;
 }
@@ -89,4 +91,27 @@ export interface BoutDetailView {
   windowEndsAt: string | null;
   objection: { by: "A" | "B"; reason: string | null } | null;
   voidReason: string | null;
+}
+
+export interface SetupCompetitionView {
+  id: string;
+  name: string;
+}
+
+export interface SetupPersonView {
+  userId: string;
+  name: string;
+  clubName: string | null;
+}
+
+/** What the score-keeper operator chose before a competition bout starts. */
+export interface BoutSetupResult {
+  competitionId: string;
+  fighterAUserId: string;
+  fighterBUserId: string;
+  refereeUserId: string;
+  juryUserIds: string[];
+  tableUserIds: string[];
+  ring: string | null;
+  alsoCountIn: string[];
 }

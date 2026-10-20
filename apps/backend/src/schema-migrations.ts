@@ -153,6 +153,30 @@ const MIGRATIONS: readonly SchemaMigration[] = [
       `);
     },
   },
+  {
+    // A bout has zero, one or two table officials; Bout.tableUserId is no longer used.
+    name: "2026-10-20-bout-table-officials",
+    apply(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS BoutTableOfficial (
+          boutId TEXT NOT NULL REFERENCES Bout(id) ON DELETE CASCADE,
+          seat INTEGER NOT NULL CHECK (seat BETWEEN 1 AND 2),
+          userId TEXT NOT NULL REFERENCES User(id) ON DELETE CASCADE,
+          PRIMARY KEY (boutId, seat),
+          UNIQUE (boutId, userId)
+        );
+        INSERT OR IGNORE INTO BoutTableOfficial (boutId, seat, userId)
+        SELECT id, 1, tableUserId FROM Bout WHERE tableUserId IS NOT NULL;
+      `);
+    },
+  },
+  {
+    // Whether bouts fought for another competition may also count here (the operator still chooses per bout).
+    name: "2026-10-20-competition-accepts-other-bouts",
+    apply(database) {
+      addColumn(database, "Competition", "acceptsOtherBouts", "INTEGER NOT NULL DEFAULT 1");
+    },
+  },
 ];
 
 export function applySchemaMigrations(database: NativeDatabase): void {

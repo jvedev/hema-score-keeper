@@ -13,7 +13,7 @@ const jury: PersonView[] = [
 
 const mounted: HTMLElement[] = [];
 
-function mount(juryCount: number, table: PersonView | null = null): HTMLElement {
+function mount(juryCount: number, table: PersonView[] = []): HTMLElement {
   const grid = document.createElement("officials-grid");
   const officials: OfficialsView = { referee, jury: jury.slice(0, juryCount), table };
   grid.officials = officials;
@@ -55,13 +55,13 @@ describe("officials-grid", () => {
   });
 
   it("leaves the table official out of the grid", () => {
-    const grid = mount(1, { userId: "t", name: "Table Person" });
+    const grid = mount(1, [{ userId: "t", name: "Table Person" }]);
     expect(grid.shadowRoot!.textContent).not.toContain("Table Person");
   });
 
   it("escapes names", () => {
     const grid = document.createElement("officials-grid");
-    grid.officials = { referee: { userId: "x", name: "<b>bold</b>" }, jury: [], table: null };
+    grid.officials = { referee: { userId: "x", name: "<b>bold</b>" }, jury: [], table: [] };
     document.body.appendChild(grid);
     mounted.push(grid);
     expect(grid.shadowRoot!.querySelector("b")).toBeNull();

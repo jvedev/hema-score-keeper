@@ -41,3 +41,8 @@
 button {
   font: inherit;
 }
+
+/* A component's own :host display must never beat the hidden attribute. */
+:host([hidden]) {
+  display: none !important;
+}

@@ -19,7 +19,7 @@ const bout: BoutDetailView = {
       { userId: "j2", name: "Lotte Smit" },
       { userId: "j3", name: "Ravi Jansen" },
     ],
-    table: { userId: "t", name: "Daan Mulder" },
+    table: [{ userId: "t", name: "Daan Mulder" }],
   },
   exchanges: [
     { atSeconds: 12, kind: "SCORE", side: "B", points: 1, reason: null },

@@ -33,3 +33,5 @@ export * from "./components/officials-grid/officials-grid.js";
 export * from "./components/bout-exchanges/bout-exchanges.js";
 export * from "./components/fighter-history/fighter-history.js";
 export * from "./components/bout-details/bout-details.js";
+export * from "./components/competition-bout-setup/competition-bout-setup.js";
+export * from "./components/bout-approval-view/bout-approval-view.js";

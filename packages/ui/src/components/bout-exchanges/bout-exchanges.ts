@@ -1,5 +1,5 @@
 import css from "./bout-exchanges.css?raw";
-import { t } from "../../i18n/i18n.js";
+import { formatSigned, t } from "../../i18n/i18n.js";
 import type { ExchangeView } from "../../models/competition-views.js";
 import { escapeHtml } from "../../utils/escape-html.js";
 import { BaseComponent } from "../base-component/base-component.js";
@@ -53,12 +53,11 @@ export class BoutExchanges extends BaseComponent {
     const rows: string[] = [];
 
     for (const exchange of this.#exchanges) {
-      if (exchange.kind === "SCORE") {
-        if (exchange.side === "A") {
-          scoreA += exchange.points;
-        } else if (exchange.side === "B") {
-          scoreB += exchange.points;
-        }
+      const change = scoreChange(exchange);
+      if (exchange.side === "A") {
+        scoreA += change;
+      } else if (exchange.side === "B") {
+        scoreB += change;
       }
       lead.push(scoreB - scoreA);
       if (exchange.kind === "WARNING" && !showWarnings) {
@@ -89,8 +88,13 @@ export class BoutExchanges extends BaseComponent {
         const text = exchange.reason
           ? t("exchange.warning", { name, reason: escapeHtml(exchange.reason) })
           : t("exchange.warningNoReason", { name });
-        return `${text}<span class="tag">${t("exchange.warningTag")}</span>`;
+        const deduction = exchange.points > 0 ? ` (${formatSigned(-exchange.points)})` : "";
+        return `${text}${deduction}<span class="tag">${t("exchange.warningTag")}</span>`;
       }
+      case "ADJUSTMENT":
+        return t("exchange.adjustment", { name, points: formatSigned(exchange.points) });
+      case "DISQUALIFICATION":
+        return t("exchange.disqualified", { name });
       case "TIME":
         return t("exchange.time");
     }
@@ -110,6 +114,19 @@ export class BoutExchanges extends BaseComponent {
       <text x="2" y="${height - 2}">${t("exchange.ahead", { name: escapeHtml(this.#names.A) })}</text>
       <polyline points="${points}"></polyline>
     </svg>`;
+  }
+}
+
+/** How an exchange moves its fighter's score: scores add, warnings deduct, corrections are signed. */
+function scoreChange(exchange: ExchangeView): number {
+  switch (exchange.kind) {
+    case "SCORE":
+    case "ADJUSTMENT":
+      return exchange.points;
+    case "WARNING":
+      return -exchange.points;
+    default:
+      return 0;
   }
 }
 

@@ -11,7 +11,7 @@ import { requireAdminUser, requirePathParam, type AccessUser } from "../access-u
 import { hashEmail } from "../auth.js";
 import { listCompetitions, requireCompetition } from "../competition-model.js";
 import type { BackendDatabase } from "../db.js";
-import { ensureObject, HttpError, requireString } from "../http.js";
+import { ensureObject, HttpError, requireBoolean, requireString } from "../http.js";
 import { defaultRulesetDefinition, generateId, requireUserRow } from "../read-model.js";
 import { listManagedCompetitionIds, requireCompetitionAdmin } from "./access.js";
 import { registerCoAdminRoutes } from "./co-admin-routes.js";
@@ -102,6 +102,9 @@ export function registerCompetitionAdminRoutes(app: FastifyInstance, database: K
         throw new HttpError(409, "The ruleset is fixed once the competition is running.");
       }
       changes.rulesetJson = JSON.stringify(body.rulesetJson);
+    }
+    if (body.acceptsOtherBouts !== undefined) {
+      changes.acceptsOtherBouts = requireBoolean(body.acceptsOtherBouts, "Accepts other bouts") ? 1 : 0;
     }
     if (body.scope !== undefined) {
       const scope = parseScope(body.scope);
