@@ -115,3 +115,27 @@ export interface BoutSetupResult {
   ring: string | null;
   alsoCountIn: string[];
 }
+
+export type LifecycleStatusView = "DRAFT" | "REGISTRATION_OPEN" | "RUNNING" | "CLOSED" | "ARCHIVED";
+
+export interface CompetitionListItemView {
+  id: string;
+  name: string;
+  status: LifecycleStatusView;
+  scopeLabel: string;
+  meta: string;
+  openBouts: number;
+}
+
+export interface NeedsYouItemView {
+  kind: "objection" | "awaiting-referee";
+  boutId: string;
+  competitionName: string;
+  fighterA: string;
+  fighterB: string;
+  scoreA: number;
+  scoreB: number;
+  detail: string;
+  /** When it started waiting (objection made, bout recorded). */
+  since: string;
+}

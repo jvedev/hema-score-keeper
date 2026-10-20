@@ -28,6 +28,9 @@ export interface HistoryBout {
   winnerSide: "A" | "B" | null;
   status: BoutStatus;
   ratingChange: RatingChange | null;
+  approvals: { referee: boolean; A: boolean; B: boolean };
+  ring: string | null;
+  startedInCompetitionId: string | null;
 }
 
 interface CompetitionBouts {
@@ -65,6 +68,9 @@ export async function competitionBoutHistory(executor: DbExecutor, competitionId
       winnerSide: bout.winnerSide,
       status: bout.status,
       ratingChange: changes.get(bout.id) ?? null,
+      approvals: bout.approvals,
+      ring: bout.ring,
+      startedInCompetitionId: bout.startedInCompetitionId,
     }))
     .sort((a, b) => Date.parse(b.foughtAt) - Date.parse(a.foughtAt) || (a.id < b.id ? 1 : -1));
 }
@@ -114,6 +120,10 @@ async function loadCompetitionBouts(executor: DbExecutor, competitionId: string,
       warningsB: 0,
       status: "FINAL",
       counts: true,
+      // Legacy bouts were published by both sides before approvals existed.
+      approvals: { referee: true, A: true, B: true },
+      ring: null,
+      startedInCompetitionId: row.competitionId,
     };
   });
 
@@ -139,6 +149,13 @@ async function loadCompetitionBouts(executor: DbExecutor, competitionId: string,
       warningsB: row.warningsB,
       status,
       counts: boutCounts({ status }),
+      approvals: {
+        referee: row.windowStartedAt !== null,
+        A: row.fighterApprovedA === 1,
+        B: row.fighterApprovedB === 1,
+      },
+      ring: row.ring,
+      startedInCompetitionId: row.startedInCompetitionId,
     });
   }
 

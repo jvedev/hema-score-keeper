@@ -15,6 +15,7 @@ import { ensureObject, HttpError, requireBoolean, requireString } from "../http.
 import { defaultRulesetDefinition, generateId, requireUserRow } from "../read-model.js";
 import { listManagedCompetitionIds, requireCompetitionAdmin } from "./access.js";
 import { registerCoAdminRoutes } from "./co-admin-routes.js";
+import { needsYou } from "./needs-you.js";
 import { hasScope, parseScope } from "./scope.js";
 
 const COMPETITION_ACTIONS: readonly CompetitionAction[] = ["OPEN_REGISTRATION", "START", "CLOSE", "REOPEN", "ARCHIVE"];
@@ -24,6 +25,8 @@ const RULESET_EDITABLE_STATUSES = new Set(["DRAFT", "REGISTRATION_OPEN"]);
 
 export function registerCompetitionAdminRoutes(app: FastifyInstance, database: Kysely<BackendDatabase>): void {
   registerCoAdminRoutes(app, database);
+
+  app.get("/api/v1/admin/needs-you", async (request) => needsYou(database, await requireAdminUser(request, database)));
 
   app.get("/api/v1/competitions/admin", async (request) => {
     const user = await requireAdminUser(request, database);

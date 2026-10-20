@@ -43,3 +43,11 @@ export function formatSigned(value: number): string {
   }
   return value < 0 ? `−${Math.abs(value)}` : "0";
 }
+
+/** "4 days", "3 hours", "1 minute" (or Dutch): how long ago `iso` was, in the largest whole unit. */
+export function formatAge(iso: string, now: Date = new Date()): string {
+  const minutes = Math.max(1, Math.floor((now.getTime() - Date.parse(iso)) / 60_000));
+  const [value, unit] =
+    minutes >= 1440 ? [Math.floor(minutes / 1440), "day"] : minutes >= 60 ? [Math.floor(minutes / 60), "hour"] : [minutes, "minute"];
+  return new Intl.NumberFormat(currentLocale() === "nl" ? "nl-NL" : "en-GB", { style: "unit", unit, unitDisplay: "long" }).format(value);
+}

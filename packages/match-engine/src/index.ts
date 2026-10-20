@@ -5,3 +5,4 @@ export * from "./match-reducer.js";
 export * from "./match-store.js";
 export * from "./ruleset-parser.js";
 export * from "./bout-exchanges.js";
+export * from "./correction.js";

@@ -105,6 +105,16 @@ describe("competition standings", () => {
     ]);
   });
 
+  it("tells the history who approved, the ring and where the bout started", async () => {
+    await countedBout(world, { ring: "Ring 2" });
+    const history = await world.ctx.app.inject({ method: "GET", url: "/api/v1/competitions/X/bout-history" });
+    expect((history.json() as Array<Record<string, unknown>>)[0]).toMatchObject({
+      approvals: { referee: true, A: false, B: false },
+      ring: "Ring 2",
+      startedInCompetitionId: "X",
+    });
+  });
+
   it("keeps the old ranking endpoint in line with standings", async () => {
     await countedBout(world);
     const ranking = await world.ctx.app.inject({ method: "GET", url: "/api/v1/competitions/X/ranking" });

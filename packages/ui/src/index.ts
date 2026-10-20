@@ -1,6 +1,7 @@
 import "./styles/tokens.css";
 export * from "./i18n/i18n.js";
 export * from "./models/competition-views.js";
+export * from "./utils/escape-html.js";
 export * from "./events/match-event.js";
 export * from "./components/base-component/base-component.js";
 export * from "./components/hema-timer/hema-timer.js";
@@ -35,3 +36,6 @@ export * from "./components/fighter-history/fighter-history.js";
 export * from "./components/bout-details/bout-details.js";
 export * from "./components/competition-bout-setup/competition-bout-setup.js";
 export * from "./components/bout-approval-view/bout-approval-view.js";
+export * from "./components/competition-list/competition-list.js";
+export * from "./components/needs-you-list/needs-you-list.js";
+export * from "./components/objection-review/objection-review.js";

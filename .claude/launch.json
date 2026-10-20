@@ -43,6 +43,21 @@
       "env": {
         "VITE_USE_MOCK_API": "false"
       }
+    },
+    {
+      "name": "competition-admin-live",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--workspace",
+        "@hema/competition-admin",
+        "--",
+        "--port",
+        "5181",
+        "--strictPort"
+      ],
+      "port": 5181
     }
   ]
 }

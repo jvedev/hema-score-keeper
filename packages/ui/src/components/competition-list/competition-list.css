@@ -1,0 +1,142 @@
+:host {
+  display: grid;
+  gap: 6px;
+  font-family: var(--font-body);
+  color: var(--ink);
+}
+
+.group {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--muted);
+  border-radius: 50%;
+}
+
+.draft .dot {
+  border-style: dashed;
+}
+
+.registration_open .dot {
+  border-color: var(--brass);
+}
+
+.running .dot {
+  border-color: var(--brass);
+  background: var(--brass);
+}
+
+.closed .dot {
+  background: var(--muted);
+}
+
+.cards {
+  display: grid;
+  gap: 6px;
+}
+
+.card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--raised);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.draft .card {
+  border-style: dashed;
+  background: transparent;
+}
+
+.archived .card {
+  opacity: 0.6;
+  background: transparent;
+}
+
+.card[aria-current="true"] {
+  border-color: var(--brass);
+}
+
+.card:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
+}
+
+.name {
+  display: block;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.meta {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.scope {
+  margin-right: 4px;
+  padding: 1px 5px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  color: var(--ink);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.open {
+  color: var(--brass);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.show-archived,
+.create {
+  padding: 9px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.create {
+  margin-top: 10px;
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
