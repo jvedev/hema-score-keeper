@@ -1,5 +1,9 @@
 # Apps Script backend setup (for whoever manages the competition app deployment)
 
+> **Obsolete (phase 7, October 2026).** The competition app no longer uses Apps Script,
+> Google Sheets or Google sign-in: it talks to the backend API. For deploying it, see
+> [competition-deploy.md](competition-deploy.md). This page is kept for history only.
+
 The competition app has no server of its own — it's a static PWA on GitHub
 Pages. Instead of a Node backend, a **Google Apps Script Web App** plays that
 role: it lives inside Google's infrastructure, reads/writes the competition

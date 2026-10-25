@@ -103,3 +103,22 @@ export function parseScopeValues(text: string): string[] {
     .map((value) => value.trim())
     .filter((value) => value !== "");
 }
+
+export type PlaceLimitInput = { ok: true; value: number | null } | { ok: false };
+
+/** An empty box means no limit; otherwise a whole number of one or more. */
+export function parsePlaceLimit(text: string): PlaceLimitInput {
+  const trimmed = text.trim();
+  if (trimmed === "") {
+    return { ok: true, value: null };
+  }
+  if (!/^\d+$/.test(trimmed) || Number(trimmed) < 1) {
+    return { ok: false };
+  }
+  return { ok: true, value: Number(trimmed) };
+}
+
+/** The link fighters open (or scan) to join: the participant app's invite page. */
+export function inviteLink(participantAppUrl: string, code: string): string {
+  return `${participantAppUrl.replace(/\/+$/, "")}/join/${encodeURIComponent(code)}`;
+}

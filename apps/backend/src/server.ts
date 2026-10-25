@@ -14,10 +14,13 @@ import {
 } from "./auth.js";
 import { requireAdminUser, requirePathParam, resolveAccessUser, type AccessUser } from "./access-user.js";
 import { registerBoutRoutes } from "./bouts/bout-routes.js";
-import { competitionBoutHistory, competitionStandings } from "./bouts/standings.js";
+import { competitionBoutHistory, competitionStandings, standingsForViewer } from "./bouts/standings.js";
 import { registerClubRoutes } from "./club-routes.js";
 import { registerPeopleRoutes } from "./people-routes.js";
+import { competitionAccessFilter, competitionAdminRole, requireCompetitionAccess } from "./competitions/access.js";
 import { registerCompetitionAdminRoutes } from "./competitions/admin-routes.js";
+import { registerParticipantRoutes } from "./competitions/participant-routes.js";
+import { withInviteCodeForAdmins } from "./competitions/signup-routes.js";
 import { readSheetValues, writeSheetValues } from "./google-sheets.js";
 import {
   ensureJsonValue,
@@ -81,6 +84,7 @@ import {
   listParticipants,
   requireBout,
   requireCompetition,
+  withoutWarnings,
 } from "./competition-model.js";
 
 const tournamentColors = ["#5B8CFF", "#E06C75", "#98C379", "#E5C07B", "#C678DD", "#56B6C2"];
@@ -94,22 +98,6 @@ function requireAccountRole(value: unknown, label: string): "USER" | "COMPETITIO
     throw new HttpError(400, `${label} must be USER, COMPETITION_ADMIN, or SYSTEM_ADMIN.`);
   }
   return value as "USER" | "COMPETITION_ADMIN" | "SYSTEM_ADMIN";
-}
-
-function canAccessCompetition(user: AccessUser | null, competition: { visibility: string; clubId: string | null }): boolean {
-  if (competition.visibility === "PUBLIC") {
-    return true;
-  }
-
-  if (!user) {
-    return false;
-  }
-
-  if (user.role === "SYSTEM_ADMIN" || user.role === "COMPETITION_ADMIN") {
-    return true;
-  }
-
-  return user.clubId !== null && user.clubId === competition.clubId;
 }
 
 
@@ -186,35 +174,38 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
     return { ok: true };
   });
 
+  /** Owner, co-admin or system admin of the competition. */
+  const managesCompetition = async (user: AccessUser | null, competitionId: string): Promise<boolean> =>
+    user !== null && (await competitionAdminRole(database, user, competitionId)) !== null;
+
   app.get("/api/v1/competitions", async (request) => {
     const user = await resolveAccessUser(request, database);
     const competitions = await listCompetitions(database);
-    return competitions.filter((competition) => canAccessCompetition(user, competition));
+    return competitions.filter(await competitionAccessFilter(database, user));
   });
   app.get("/api/v1/competitions/:id", async (request) => {
     const user = await resolveAccessUser(request, database);
     const competition = await requireCompetition(database, requirePathParam(request, "id"));
-    if (!canAccessCompetition(user, competition)) {
-      throw new HttpError(404, `Competition "${competition.id}" not found.`);
-    }
-    return competition;
+    await requireCompetitionAccess(database, user, competition);
+    return withInviteCodeForAdmins(database, user, competition);
   });
   app.get("/api/v1/competitions/:id/participants", async (request) => {
     const user = await resolveAccessUser(request, database);
     const competitionId = requirePathParam(request, "id");
     const competition = await requireCompetition(database, competitionId);
-    if (!canAccessCompetition(user, competition)) {
-      throw new HttpError(404, `Competition "${competition.id}" not found.`);
+    await requireCompetitionAccess(database, user, competition);
+    const participants = await listParticipants(database, competitionId);
+    // Linked emails are for the competition's admins (and system admins) only.
+    if (user !== null && (await competitionAdminRole(database, user, competitionId)) !== null) {
+      return participants;
     }
-    return listParticipants(database, competitionId);
+    return participants.map(({ linkedUserEmail: _email, linkedUserEmailHash: _hash, ...participant }) => participant);
   });
   app.get("/api/v1/competitions/:id/ranking", async (request) => {
     const user = await resolveAccessUser(request, database);
     const competitionId = requirePathParam(request, "id");
     const competition = await requireCompetition(database, competitionId);
-    if (!canAccessCompetition(user, competition)) {
-      throw new HttpError(404, `Competition "${competition.id}" not found.`);
-    }
+    await requireCompetitionAccess(database, user, competition);
     const standings = await competitionStandings(database, competitionId, app.now());
     return standings.map((row) => ({ participantId: row.participantId, position: row.position, name: row.name, rating: row.rating }));
   });
@@ -222,34 +213,38 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   app.get("/api/v1/competitions/:id/standings", async (request) => {
     const user = await resolveAccessUser(request, database);
     const competition = await requireCompetition(database, requirePathParam(request, "id"));
-    if (!canAccessCompetition(user, competition)) {
-      throw new HttpError(404, `Competition "${competition.id}" not found.`);
-    }
-    return competitionStandings(database, competition.id, app.now());
+    await requireCompetitionAccess(database, user, competition);
+    const standings = await competitionStandings(database, competition.id, app.now());
+    return standingsForViewer(standings, user, user !== null && (await competitionAdminRole(database, user, competition.id)) !== null);
   });
 
   app.get("/api/v1/competitions/:id/bout-history", async (request) => {
     const user = await resolveAccessUser(request, database);
     const competition = await requireCompetition(database, requirePathParam(request, "id"));
-    if (!canAccessCompetition(user, competition)) {
-      throw new HttpError(404, `Competition "${competition.id}" not found.`);
-    }
+    await requireCompetitionAccess(database, user, competition);
     return competitionBoutHistory(database, competition.id, app.now());
   });
+  // Legacy bouts (before phase 3). Warning events are for the competition's admins only.
   app.get("/api/v1/competitions/:id/bouts", async (request) => {
     const user = await resolveAccessUser(request, database);
     const competitionId = requirePathParam(request, "id");
     const competition = await requireCompetition(database, competitionId);
-    if (!canAccessCompetition(user, competition)) {
-      throw new HttpError(404, `Competition "${competition.id}" not found.`);
-    }
-    return listBouts(database, competitionId);
+    await requireCompetitionAccess(database, user, competition);
+    const bouts = await listBouts(database, competitionId);
+    return (await managesCompetition(user, competitionId)) ? bouts : bouts.map(withoutWarnings);
   });
   app.get("/api/v1/competitions/:id/bouts/:boutId", async (request) => {
+    const user = await resolveAccessUser(request, database);
     const competitionId = requirePathParam(request, "id");
+    const competition = await requireCompetition(database, competitionId);
+    await requireCompetitionAccess(database, user, competition);
     const params = ensureObject(request.params ?? {}, "Route parameters");
     const boutId = requireString(params.boutId, "Bout ID");
-    return requireBout(database, competitionId, boutId);
+    const bout = await requireBout(database, competitionId, boutId);
+    if (!bout.published) {
+      throw new HttpError(404, `Match "${boutId}" not found.`);
+    }
+    return (await managesCompetition(user, competitionId)) ? bout : withoutWarnings(bout);
   });
   // Bouts are recorded through /api/v1/bouts (score-keeper, referee approval) since phase 3.
   for (const [method, url] of [
@@ -299,6 +294,7 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   registerBoutRoutes(app, database);
   registerPeopleRoutes(app, database);
   registerCompetitionAdminRoutes(app, database);
+  registerParticipantRoutes(app, database);
 
   app.post("/api/v1/auth/enrollment-tokens", async (request) => {
     const admin = await requireAdminUser(request, database);

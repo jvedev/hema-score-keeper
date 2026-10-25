@@ -1,0 +1,113 @@
+:host {
+  display: grid;
+  gap: 6px;
+  font-family: var(--font-body);
+  color: var(--ink);
+}
+
+.cards {
+  display: grid;
+  gap: 6px;
+}
+
+.card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--raised);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.card.left,
+.card.pending {
+  background: transparent;
+}
+
+.card.left {
+  opacity: 0.7;
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
+}
+
+.text {
+  min-width: 0;
+}
+
+.name {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.meta {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.chip {
+  margin-left: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.chip.pending {
+  border-style: dashed;
+  border-color: var(--brass);
+  color: var(--brass);
+}
+
+.standing {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  white-space: nowrap;
+}
+
+.rank {
+  color: var(--brass);
+  font-family: var(--font-score);
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+
+.rating {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
+.change {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.change.up {
+  color: var(--verdigris);
+}
+
+.change.down {
+  color: var(--rust);
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+}

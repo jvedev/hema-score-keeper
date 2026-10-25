@@ -1,6 +1,5 @@
+import type { ScopeKind } from "@hema/competition-domain";
 import { ensureObject, HttpError, requireString } from "../http.js";
-
-export type ScopeKind = "CLUB" | "CLUBS" | "AREA" | "COUNTRY" | "OPEN";
 
 export interface CompetitionScope {
   kind: ScopeKind;

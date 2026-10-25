@@ -74,6 +74,11 @@ describe("bout-details", () => {
     expect(counted.shadowRoot!.querySelector(".notice")!.textContent).toContain("Fighters can object until");
   });
 
+  it("shows an objection without its reason as under review", () => {
+    const objected = mount({ ...bout, status: "OBJECTED", objection: { by: "B", reason: null } });
+    expect(objected.shadowRoot!.querySelector(".notice")!.textContent).toBe("Tomas Kuiper objected — under review");
+  });
+
   it("shows why a bout was voided", () => {
     const voided = mount({ ...bout, status: "VOIDED", voidReason: "Sanne injured" });
     expect(voided.shadowRoot!.querySelector(".notice")!.textContent).toBe("Voided: Sanne injured");

@@ -26,9 +26,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      VITE_USE_MOCK_API: "false"
-      VITE_APPS_SCRIPT_URL: ${{ vars.COMPETITION_APPS_SCRIPT_URL || secrets.COMPETITION_APPS_SCRIPT_URL }}
-      VITE_GOOGLE_CLIENT_ID: ${{ vars.COMPETITION_GOOGLE_CLIENT_ID || secrets.COMPETITION_GOOGLE_CLIENT_ID }}
+      # The participant app talks to the backend API; GitHub Pages has none of its own.
+      VITE_API_BASE_URL: ${{ vars.COMPETITION_API_BASE_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,12 +43,8 @@ jobs:
 
       - name: Validate competition env
         run: |
-          if [ -z "$VITE_APPS_SCRIPT_URL" ]; then
-            echo "COMPETITION_APPS_SCRIPT_URL is not set in repository variables or secrets."
-            exit 1
-          fi
-          if [ -z "$VITE_GOOGLE_CLIENT_ID" ]; then
-            echo "COMPETITION_GOOGLE_CLIENT_ID is not set in repository variables or secrets."
+          if [ -z "$VITE_API_BASE_URL" ]; then
+            echo "COMPETITION_API_BASE_URL (the backend API, e.g. https://api.example.org/api/v1) is not set in repository variables."
             exit 1
           fi
 
@@ -61,6 +56,9 @@ jobs:
           rm -rf ./pages
           mkdir -p ./pages/competition
           cp -R ./apps/competition/dist/. ./pages/competition/
+          # GitHub Pages only uses the 404.html at the site root: deep links such as competition/join/<code>
+          # boot the participant app from it; other paths on the site go to the app's home.
+          node ./apps/competition/scripts/root-404.mjs ./pages/competition/404.html ./pages/404.html /hema-score-keeper/competition/
 
       - name: Delete stale Pages artifacts from reruns
         env:

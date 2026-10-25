@@ -21,10 +21,36 @@ export interface CompetitionSummary {
   clubId: string | null;
   scope: { kind: ScopeKind; values: string[] };
   acceptsOtherBouts: boolean;
+  signupsNeedApproval: boolean;
+  /** Null means no limit. Counts active and pending fighters. */
+  placeLimit: number | null;
 }
 
 export interface CompetitionDetail extends CompetitionSummary {
   rulesetJson: unknown;
+}
+
+/** What an admin of the competition gets: the current invite code too (null until one is made). */
+export interface AdminCompetitionDetail extends CompetitionDetail {
+  inviteCode: string | null;
+}
+
+export interface SignupItem {
+  participantId: string;
+  competitionId: string;
+  competitionName: string;
+  fighterName: string;
+  clubName: string | null;
+  requestedAt: string;
+}
+
+export interface SignupDecisionResult {
+  participantId: string;
+  status: "ACTIVE" | "LEFT" | null;
+}
+
+export interface NewInvite {
+  inviteCode: string;
 }
 
 export interface NeedsYouResponse {
@@ -51,6 +77,8 @@ export interface NeedsYouResponse {
     refereeName: string;
     recordedAt: string;
   }>;
+  /** Sign-ups waiting for an accept or decline, oldest first. */
+  signups: SignupItem[];
 }
 
 export interface StandingRow {

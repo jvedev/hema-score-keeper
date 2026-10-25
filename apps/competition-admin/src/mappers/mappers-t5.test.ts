@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BoutResponse, CompetitionSummary, NeedsYouResponse } from "../api-types";
 import { buildCorrection, toBoutDetailView } from "./bout";
 import { toCompetitionListItems } from "./competitions";
-import { needsYouCount, startRoute, toNeedsYouItems } from "./needs-you";
+import { needsYouCount, startRoute, toNeedsYouItems, toSignupItems } from "./needs-you";
 
 /** Stand-in for t(): "key{a=1,b=2}" so tests see which text and values were asked for. */
 const translate = (key: string, params: Record<string, string | number> = {}) =>
@@ -15,7 +15,13 @@ const needs: NeedsYouResponse = {
   awaitingReferee: [
     { boutId: "b2", competitionId: "X", competitionName: "Ladder", fighterA: "Joris", fighterB: "Sanne", scoreA: 2, scoreB: 2, refereeName: "Lotte", recordedAt: "2026-10-18T12:00:00.000Z" },
   ],
+  signups: [],
 };
+
+const signups: NeedsYouResponse["signups"] = [
+  { participantId: "p1", competitionId: "X", competitionName: "Ladder", fighterName: "Eva", clubName: "Hema Utrecht", requestedAt: "2026-10-20T12:00:00.000Z" },
+  { participantId: "p2", competitionId: "Y", competitionName: "Cup", fighterName: "Kees", clubName: null, requestedAt: "2026-10-21T12:00:00.000Z" },
+];
 
 describe("needs you", () => {
   it("counts what needs the admin", () => {
@@ -23,8 +29,20 @@ describe("needs you", () => {
   });
 
   it("opens on competitions when nothing needs you", () => {
-    expect(startRoute({ objections: [], awaitingReferee: [] })).toEqual({ name: "competitions" });
+    expect(startRoute({ objections: [], awaitingReferee: [], signups: [] })).toEqual({ name: "competitions" });
+    expect(startRoute({ objections: [], awaitingReferee: [], signups })).toEqual({ name: "needs-you" });
     expect(startRoute(needs)).toEqual({ name: "needs-you" });
+  });
+
+  it("counts sign-ups too", () => {
+    expect(needsYouCount({ ...needs, signups })).toBe(4);
+  });
+
+  it("describes each sign-up, with the club when there is one, in the order given", () => {
+    expect(toSignupItems({ ...needs, signups }, translate)).toEqual([
+      { participantId: "p1", competitionId: "X", fighterName: "Eva", detail: "admin.signupWithClub{club=Hema Utrecht,competition=Ladder}", since: "2026-10-20T12:00:00.000Z" },
+      { participantId: "p2", competitionId: "Y", fighterName: "Kees", detail: "admin.signupFor{competition=Cup}", since: "2026-10-21T12:00:00.000Z" },
+    ]);
   });
 
   it("describes each item", () => {
@@ -50,7 +68,7 @@ describe("competitions", () => {
     visibility: "PUBLIC",
     clubId: null,
     scope: { kind: "COUNTRY", values: ["NL"] },
-    acceptsOtherBouts: true,
+    acceptsOtherBouts: true, signupsNeedApproval: false, placeLimit: null,
   };
 
   it("maps summaries with scope, date and open bouts", () => {

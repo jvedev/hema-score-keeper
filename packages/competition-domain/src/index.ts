@@ -41,3 +41,9 @@ export {
   type ParticipantRow,
   type StatsBout,
 } from "./participant-rows.js";
+export {
+  scopeAllows,
+  type CompetitionScopeInput,
+  type ScopeClub,
+  type ScopeKind,
+} from "./competition-scope.js";

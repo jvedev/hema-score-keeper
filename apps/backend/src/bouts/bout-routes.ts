@@ -22,7 +22,7 @@ import { ensureObject, HttpError, requireBoolean, requireString } from "../http.
 import { generateId } from "../read-model.js";
 import { parseBoutInput, parseBoutResult, type BoutInput, type ExchangeInput } from "./bout-input.js";
 import { boutCompetitionIds, lifecycleColumns, loadBout, loadUnsettledBout, toLifecycle, type BoutRow } from "./bout-store.js";
-import { toBoutView } from "./bout-view.js";
+import { toBoutView, toOutsiderView } from "./bout-view.js";
 
 export function registerBoutRoutes(app: FastifyInstance, database: Kysely<BackendDatabase>): void {
   app.post("/api/v1/bouts", async (request) => {
@@ -98,7 +98,8 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
     const user = await requireUser(request, database);
     const row = await loadBout(database, requirePathParam(request, "id"), app.now());
     await requireCanSeeBout(database, user, row);
-    return toBoutView(database, row);
+    const view = await toBoutView(database, row);
+    return (await maySeePrivateBoutDetails(database, user, row)) ? view : toOutsiderView(view);
   });
 
   /**
@@ -227,14 +228,15 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
       .where("BoutRevision.boutId", "=", row.id)
       .orderBy("BoutRevision.revision")
       .execute();
+    const mayKnowWarnings = await maySeePrivateBoutDetails(database, user, row);
     return revisions.map((revision) => ({
       revision: revision.revision,
       scoreA: revision.scoreA,
       scoreB: revision.scoreB,
       winnerSide: revision.winnerSide,
-      warningsA: revision.warningsA,
-      warningsB: revision.warningsB,
-      exchanges: JSON.parse(revision.exchangesJson) as ExchangeInput[],
+      warningsA: mayKnowWarnings ? revision.warningsA : null,
+      warningsB: mayKnowWarnings ? revision.warningsB : null,
+      exchanges: (JSON.parse(revision.exchangesJson) as ExchangeInput[]).filter((exchange) => mayKnowWarnings || exchange.kind !== "WARNING"),
       replacedAt: revision.replacedAt,
       replacedBy: { userId: revision.replacedByUserId, name: revision.replacedByName },
     }));
@@ -296,12 +298,19 @@ function requireFighterSide(user: AccessUser, row: BoutRow): FighterSide {
 
 /** Fighters, officials, admins of a competition the bout counts in, and system admins. */
 export async function requireCanSeeBout(executor: DbExecutor, user: AccessUser, row: BoutRow): Promise<void> {
+  if (!(await isInvolvedInBout(executor, user, row))) {
+    throw new HttpError(403, "You're not involved in this bout.");
+  }
+}
+
+/** Whoever may open the bout at all: its people (table officials and the recorder included) and admins. */
+export async function isInvolvedInBout(executor: DbExecutor, user: AccessUser, row: BoutRow): Promise<boolean> {
   if (user.role === "SYSTEM_ADMIN") {
-    return;
+    return true;
   }
   const involved = [row.fighterAUserId, row.fighterBUserId, row.refereeUserId, row.createdByUserId];
   if (involved.includes(user.id)) {
-    return;
+    return true;
   }
   const jury = await executor
     .selectFrom("BoutJury")
@@ -316,12 +325,26 @@ export async function requireCanSeeBout(executor: DbExecutor, user: AccessUser, 
     .where("userId", "=", user.id)
     .executeTakeFirst();
   if (jury || table) {
-    return;
+    return true;
   }
-  if (await isAdminOfBout(executor, user, row.id)) {
-    return;
+  return isAdminOfBout(executor, user, row.id);
+}
+
+/**
+ * Who gets the private parts of a bout (warnings, objection reason): its fighters, referee, jury and recorder, and admins of a
+ * competition it counts in. Table officials may open the bout but don't get these.
+ */
+export async function maySeePrivateBoutDetails(executor: DbExecutor, user: AccessUser, row: BoutRow): Promise<boolean> {
+  if (user.role === "SYSTEM_ADMIN" || [row.fighterAUserId, row.fighterBUserId, row.refereeUserId, row.createdByUserId].includes(user.id)) {
+    return true;
   }
-  throw new HttpError(403, "You're not involved in this bout.");
+  const jury = await executor
+    .selectFrom("BoutJury")
+    .select("userId")
+    .where("boutId", "=", row.id)
+    .where("userId", "=", user.id)
+    .executeTakeFirst();
+  return jury !== undefined || isAdminOfBout(executor, user, row.id);
 }
 
 export async function isAdminOfBout(executor: DbExecutor, user: AccessUser, boutId: string): Promise<boolean> {
@@ -379,6 +402,8 @@ async function competitionChoice(executor: DbExecutor, userAId: string, userBId:
       "CompetitionParticipant.userId as userId",
     ])
     .where("CompetitionParticipant.userId", "in", [userAId, userBId])
+    // Fighters waiting for approval or who left can't fight, and don't make a bout count there.
+    .where("CompetitionParticipant.status", "=", "ACTIVE")
     .execute();
 
   const enrolments = new Map<string, { competitionId: string; status: CompetitionStatus; enrolledUserIds: Set<string> }>();

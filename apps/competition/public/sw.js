@@ -1,4 +1,4 @@
-const CACHE = "hema-competition-v1";
+const CACHE = "hema-competition-v2";
 const SCOPE = "/hema-score-keeper/competition/";
 const CORE_ASSETS = [SCOPE, `${SCOPE}manifest.json`, `${SCOPE}icon.svg`];
 
@@ -26,6 +26,8 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  // API answers change all the time; never serve them from the cache.
+  if (new URL(event.request.url).pathname.includes("/api/")) return;
 
   if (event.request.mode === "navigate") {
     event.respondWith(

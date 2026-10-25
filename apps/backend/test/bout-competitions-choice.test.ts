@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import type { ParticipantStatus } from "../src/db.js";
 import { bearer, insertCompetition } from "./helpers.js";
 import { createBoutWorld, type BoutWorld } from "./bout-fixtures.js";
 
@@ -84,6 +85,29 @@ describe("GET /api/v1/bouts/competition-options", () => {
   it("needs a login", async () => {
     const response = await world.ctx.app.inject({ method: "GET", url: "/api/v1/bouts/competition-options?fighterA=f1&fighterB=f2&startedIn=X" });
     expect(response.statusCode).toBe(401);
+  });
+});
+
+describe("participant status", () => {
+  async function setStatus(competitionId: string, userId: string, status: ParticipantStatus): Promise<void> {
+    await world.ctx.database
+      .updateTable("CompetitionParticipant")
+      .set({ status })
+      .where("competitionId", "=", competitionId)
+      .where("userId", "=", userId)
+      .execute();
+  }
+
+  it("only active fighters can fight", async () => {
+    await setStatus("X", "f2", "PENDING");
+    expect((await options("fighterA=f1&fighterB=f2&startedIn=X")).statusCode).toBe(400);
+    expect((await record({})).statusCode).toBe(400);
+
+    await setStatus("X", "f2", "ACTIVE");
+    await setStatus("Y", "f2", "LEFT");
+    expect((await options("fighterA=f1&fighterB=f2&startedIn=X")).json()).toMatchObject({ others: [] });
+    expect((await record({ alsoCountIn: ["Y"] })).statusCode).toBe(400);
+    expect(competitionIds(await record({}))).toEqual(["X"]);
   });
 });
 

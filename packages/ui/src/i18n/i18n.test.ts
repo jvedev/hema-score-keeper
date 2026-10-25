@@ -26,6 +26,12 @@ describe("t", () => {
     setLocale("nl");
     expect(t("common.noResults", { query: "ochs" })).toBe("Niets gevonden voor “ochs”.");
   });
+
+  it("returns the key itself for an unknown key", () => {
+    expect(t("lifecycle.SOMETHING_NEW" as Parameters<typeof t>[0])).toBe("lifecycle.SOMETHING_NEW");
+    setLocale("nl");
+    expect(t("no.such.key" as Parameters<typeof t>[0], { name: "x" })).toBe("no.such.key");
+  });
 });
 
 describe("setLocale", () => {

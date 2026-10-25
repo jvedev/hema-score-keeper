@@ -81,3 +81,20 @@ export async function toBoutView(executor: DbExecutor, row: BoutRow): Promise<Bo
     competitionIds: await boutCompetitionIds(executor, row.id),
   };
 }
+
+/** What someone who isn't involved in the bout may see: no warnings (also not as exchanges) and no objection reason. */
+export interface OutsiderBoutView extends Omit<BoutView, "warningsA" | "warningsB" | "objection"> {
+  warningsA: null;
+  warningsB: null;
+  objection: { by: "A" | "B"; at: string; reason: null } | null;
+}
+
+export function toOutsiderView(view: BoutView): OutsiderBoutView {
+  return {
+    ...view,
+    warningsA: null,
+    warningsB: null,
+    exchanges: view.exchanges.filter((exchange) => exchange.kind !== "WARNING"),
+    objection: view.objection === null ? null : { by: view.objection.by, at: view.objection.at, reason: null },
+  };
+}

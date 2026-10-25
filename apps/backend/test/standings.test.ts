@@ -1,5 +1,6 @@
 import { replayRatings } from "@hema/competition-domain";
 import { beforeEach, describe, expect, it } from "vitest";
+import { bearer } from "./helpers.js";
 import { boutAction, countedBout, createBoutWorld, recordBout, type BoutWorld } from "./bout-fixtures.js";
 
 let world: BoutWorld;
@@ -121,5 +122,74 @@ describe("competition standings", () => {
     const byParticipant = Object.fromEntries((ranking.json() as Array<{ participantId: string; rating: number }>).map((row) => [row.participantId, row.rating]));
     expect(byParticipant[pid("X", "f1")]).toBe(1016);
     expect(byParticipant[pid("X", "f2")]).toBe(984);
+  });
+
+  it("keeps a fighter who left in the standings, marked left", async () => {
+    await countedBout(world, { alsoCountIn: [] });
+    const response = await world.ctx.app.inject({ method: "DELETE", url: "/api/v1/competitions/X/signup", headers: bearer(world.users.f2!) });
+    expect(response.json()).toEqual({ status: "LEFT" });
+
+    const rows = await standings("X");
+    expect(rows.f2).toMatchObject({ rating: 984, bouts: 1, left: true });
+    expect(rows.f1).toMatchObject({ rating: 1016, left: false });
+  });
+
+  describe("a fighter who left and asked to come back", () => {
+    async function leaveAndAskBack(): Promise<Record<string, Standing>> {
+      await world.ctx.database
+        .insertInto("CompetitionBout")
+        .values({
+          id: "legacy-1",
+          competitionId: "X",
+          fighterAId: pid("X", "f1"),
+          fighterBId: pid("X", "f2"),
+          scoreA: 5,
+          scoreB: 2,
+          winnerParticipantId: pid("X", "f1"),
+          date: "2026-10-01",
+          published: 1,
+          details: "{}",
+        })
+        .execute();
+      await countedBout(world, { alsoCountIn: [] });
+      await world.ctx.app.inject({ method: "DELETE", url: "/api/v1/competitions/X/signup", headers: bearer(world.users.f2!) });
+      const before = await standings("X");
+      await world.ctx.database.updateTable("Competition").set({ signupsNeedApproval: 1 }).where("id", "=", "X").execute();
+      const again = await world.ctx.app.inject({ method: "POST", url: "/api/v1/competitions/X/signup", headers: bearer(world.users.f2!), payload: {} });
+      expect(again.json()).toEqual({ status: "PENDING" });
+      return before;
+    }
+
+    async function expectHistoryKept(before: Record<string, Standing>): Promise<void> {
+      const after = await standings("X");
+      expect(after.f2).toMatchObject({ participantId: pid("X", "f2"), rating: before.f2!.rating, bouts: 2, left: true });
+      expect(after.f1!.rating).toBe(before.f1!.rating);
+      const legacy = await world.ctx.database.selectFrom("CompetitionBout").select("id").where("id", "=", "legacy-1").executeTakeFirst();
+      expect(legacy).toBeDefined();
+    }
+
+    it("declining keeps their history", async () => {
+      const before = await leaveAndAskBack();
+      const response = await world.ctx.app.inject({
+        method: "POST",
+        url: `/api/v1/competitions/X/participants/${encodeURIComponent(pid("X", "f2"))}/decision`,
+        headers: bearer(world.users.ownerX!),
+        payload: { accept: false },
+      });
+      expect(response.json()).toEqual({ participantId: pid("X", "f2"), status: "LEFT" });
+      await expectHistoryKept(before);
+    });
+
+    it("withdrawing keeps their history", async () => {
+      const before = await leaveAndAskBack();
+      const response = await world.ctx.app.inject({ method: "DELETE", url: "/api/v1/competitions/X/signup", headers: bearer(world.users.f2!) });
+      expect(response.json()).toEqual({ status: "LEFT" });
+      await expectHistoryKept(before);
+    });
+  });
+
+  it("leaves pending sign-ups out of the standings", async () => {
+    await world.ctx.database.updateTable("CompetitionParticipant").set({ status: "PENDING" }).where("id", "=", pid("X", "f3")).execute();
+    expect((await standings("X")).f3).toBeUndefined();
   });
 });

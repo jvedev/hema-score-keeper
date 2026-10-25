@@ -1,0 +1,73 @@
+:host {
+  display: block;
+  font-family: var(--font-body);
+  color: var(--ink);
+}
+
+.share {
+  display: grid;
+  gap: 10px;
+}
+
+h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+}
+
+.link {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  background: var(--plate);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  user-select: text;
+}
+
+.copy {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid var(--verdigris);
+  border-radius: 9px;
+  background: var(--verdigris);
+  color: var(--night);
+  font: inherit;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.copy:focus-visible,
+.link:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
+}
+
+.note {
+  min-height: 0;
+  margin: 0;
+  color: var(--rust);
+  font-size: 0.8rem;
+}
+
+.note:empty {
+  display: none;
+}
+
+.qr {
+  width: min(220px, 100%);
+  height: auto;
+  border-radius: 8px;
+}

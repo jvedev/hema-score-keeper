@@ -17,6 +17,7 @@ import { listManagedCompetitionIds, requireCompetitionAdmin } from "./access.js"
 import { registerCoAdminRoutes } from "./co-admin-routes.js";
 import { needsYou } from "./needs-you.js";
 import { hasScope, parseScope } from "./scope.js";
+import { registerSignupRoutes, withInviteCodeForAdmins } from "./signup-routes.js";
 
 const COMPETITION_ACTIONS: readonly CompetitionAction[] = ["OPEN_REGISTRATION", "START", "CLOSE", "REOPEN", "ARCHIVE"];
 const LIFECYCLE_STATUSES: readonly CompetitionStatus[] = ["DRAFT", "REGISTRATION_OPEN", "RUNNING", "CLOSED", "ARCHIVED"];
@@ -25,6 +26,7 @@ const RULESET_EDITABLE_STATUSES = new Set(["DRAFT", "REGISTRATION_OPEN"]);
 
 export function registerCompetitionAdminRoutes(app: FastifyInstance, database: Kysely<BackendDatabase>): void {
   registerCoAdminRoutes(app, database);
+  registerSignupRoutes(app, database);
 
   app.get("/api/v1/admin/needs-you", async (request) => needsYou(database, await requireAdminUser(request, database)));
 
@@ -66,7 +68,7 @@ export function registerCompetitionAdminRoutes(app: FastifyInstance, database: K
       }).execute();
       await transaction.insertInto("CompetitionAdmin").values({ competitionId: id, userId: user.id, role: "OWNER" }).execute();
     });
-    return requireCompetition(database, id);
+    return withInviteCodeForAdmins(database, user, await requireCompetition(database, id));
   });
 
   app.patch("/api/v1/competitions/:id", async (request) => {
@@ -109,6 +111,12 @@ export function registerCompetitionAdminRoutes(app: FastifyInstance, database: K
     if (body.acceptsOtherBouts !== undefined) {
       changes.acceptsOtherBouts = requireBoolean(body.acceptsOtherBouts, "Accepts other bouts") ? 1 : 0;
     }
+    if (body.signupsNeedApproval !== undefined) {
+      changes.signupsNeedApproval = requireBoolean(body.signupsNeedApproval, "Sign-ups need approval") ? 1 : 0;
+    }
+    if (body.placeLimit !== undefined) {
+      changes.placeLimit = body.placeLimit === null ? null : requirePlaceLimit(body.placeLimit);
+    }
     if (body.scope !== undefined) {
       const scope = parseScope(body.scope);
       changes.scopeKind = scope.kind;
@@ -118,7 +126,7 @@ export function registerCompetitionAdminRoutes(app: FastifyInstance, database: K
     if (Object.keys(changes).length > 0) {
       await database.updateTable("Competition").set(changes).where("id", "=", competitionId).execute();
     }
-    return requireCompetition(database, competitionId);
+    return withInviteCodeForAdmins(database, user, await requireCompetition(database, competitionId));
   });
 
   app.post("/api/v1/competitions/:id/transitions", async (request) => {
@@ -154,7 +162,7 @@ export function registerCompetitionAdminRoutes(app: FastifyInstance, database: K
     }
 
     await database.updateTable("Competition").set({ status: next }).where("id", "=", competitionId).execute();
-    return requireCompetition(database, competitionId);
+    return withInviteCodeForAdmins(database, user, await requireCompetition(database, competitionId));
   });
 
   app.post("/api/v1/competitions/:id/participants", async (request) => {
@@ -184,20 +192,54 @@ export function registerCompetitionAdminRoutes(app: FastifyInstance, database: K
       }
     }
 
-    await database.insertInto("CompetitionParticipant").values({
-      id,
-      competitionId,
-      name: requireString(body.name, "Participant name"),
-      displayName: body.displayName === undefined ? requireString(body.name, "Participant name") : requireString(body.displayName, "Display name"),
-      linkedUserEmail: body.linkedUserEmail === undefined ? null : requireString(body.linkedUserEmail, "Linked user email"),
-      linkedUserEmailHash: body.linkedUserEmail === undefined ? null : hashEmail(requireString(body.linkedUserEmail, "Linked user email")),
-      clubId,
-      userId,
-      kind,
-    }).execute();
+    return database.transaction().execute(async (transaction) => {
+      if (userId !== null) {
+        // Someone who left or is waiting for approval comes back on their own row, which keeps their history.
+        const rows = await transaction
+          .selectFrom("CompetitionParticipant")
+          .select(["id", "status"])
+          .where("competitionId", "=", competitionId)
+          .where("userId", "=", userId)
+          .execute();
+        if (rows.some((row) => row.status === "ACTIVE")) {
+          throw new HttpError(409, "This person is already in the competition.");
+        }
+        const existing = rows.find((row) => row.status === "PENDING") ?? rows[0];
+        if (existing !== undefined) {
+          await transaction
+            .updateTable("CompetitionParticipant")
+            .set({ status: "ACTIVE", joinedAt: app.now().toISOString() })
+            .where("id", "=", existing.id)
+            .execute();
+          return transaction.selectFrom("CompetitionParticipant").selectAll().where("id", "=", existing.id).executeTakeFirstOrThrow();
+        }
+      }
 
-    return database.selectFrom("CompetitionParticipant").selectAll().where("id", "=", id).executeTakeFirstOrThrow();
+      await transaction.insertInto("CompetitionParticipant").values({
+        id,
+        competitionId,
+        name: requireString(body.name, "Participant name"),
+        displayName: body.displayName === undefined ? requireString(body.name, "Participant name") : requireString(body.displayName, "Display name"),
+        linkedUserEmail: body.linkedUserEmail === undefined ? null : requireString(body.linkedUserEmail, "Linked user email"),
+        linkedUserEmailHash: body.linkedUserEmail === undefined ? null : hashEmail(requireString(body.linkedUserEmail, "Linked user email")),
+        clubId,
+        userId,
+        kind,
+        // An admin can add anyone by hand, regardless of scope, approval or place limit.
+        status: "ACTIVE",
+        joinedAt: app.now().toISOString(),
+      }).execute();
+
+      return transaction.selectFrom("CompetitionParticipant").selectAll().where("id", "=", id).executeTakeFirstOrThrow();
+    });
   });
+}
+
+function requirePlaceLimit(value: unknown): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new HttpError(400, "Place limit must be a whole number of at least 1, or empty for no limit.");
+  }
+  return value;
 }
 
 function requireVisibility(value: unknown): "PUBLIC" | "CLUB_ONLY" {

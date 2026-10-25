@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adminCapabilities, allowedActions, formToParameters, parametersToForm, parseScopeValues, rulesetEditable } from "./settings";
+import { adminCapabilities, allowedActions, formToParameters, inviteLink, parametersToForm, parsePlaceLimit, parseScopeValues, rulesetEditable } from "./settings";
 
 describe("lifecycle actions", () => {
   it.each([
@@ -77,5 +77,31 @@ describe("co-admin can't manage admins", () => {
 describe("scope values", () => {
   it("splits a comma list", () => {
     expect(parseScopeValues(" NL, BE ,, ")).toEqual(["NL", "BE"]);
+  });
+});
+
+describe("place limit", () => {
+  it("treats an empty box as no limit", () => {
+    expect(parsePlaceLimit("")).toEqual({ ok: true, value: null });
+    expect(parsePlaceLimit("  ")).toEqual({ ok: true, value: null });
+  });
+
+  it("accepts a whole number of one or more", () => {
+    expect(parsePlaceLimit(" 24 ")).toEqual({ ok: true, value: 24 });
+    expect(parsePlaceLimit("1")).toEqual({ ok: true, value: 1 });
+  });
+
+  it.each(["0", "-3", "2.5", "many", "1e3", "12abc"])("refuses %j", (text) => {
+    expect(parsePlaceLimit(text)).toEqual({ ok: false });
+  });
+});
+
+describe("invite link", () => {
+  it("points at the participant app invite page", () => {
+    expect(inviteLink("https://example.org/hema-score-keeper/competition", "abc123")).toBe("https://example.org/hema-score-keeper/competition/join/abc123");
+  });
+
+  it("copes with a trailing slash and escapes the code", () => {
+    expect(inviteLink("http://localhost:5173/hema-score-keeper/competition/", "a b/c")).toBe("http://localhost:5173/hema-score-keeper/competition/join/a%20b%2Fc");
   });
 });

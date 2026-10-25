@@ -177,6 +177,27 @@ const MIGRATIONS: readonly SchemaMigration[] = [
       addColumn(database, "Competition", "acceptsOtherBouts", "INTEGER NOT NULL DEFAULT 1");
     },
   },
+  {
+    // Fighters sign themselves up (phase 7): a participant is ACTIVE, PENDING (waiting for approval) or LEFT.
+    // Existing participants become ACTIVE. One invite code per competition, readable so admins can show the link again.
+    name: "2026-10-23-participant-status-and-signups",
+    apply(database) {
+      addColumn(
+        database,
+        "CompetitionParticipant",
+        "status",
+        "TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'PENDING', 'LEFT'))",
+      );
+      addColumn(database, "CompetitionParticipant", "joinedAt", "TEXT");
+      addColumn(database, "Competition", "signupsNeedApproval", "INTEGER NOT NULL DEFAULT 0");
+      addColumn(database, "Competition", "placeLimit", "INTEGER");
+      addColumn(database, "Competition", "inviteCode", "TEXT");
+      database.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_competition_inviteCode
+          ON Competition(inviteCode) WHERE inviteCode IS NOT NULL;
+      `);
+    },
+  },
 ];
 
 export function applySchemaMigrations(database: NativeDatabase): void {

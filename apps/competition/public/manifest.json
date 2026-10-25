@@ -1,16 +1,23 @@
 {
   "name": "HEMA Competition",
   "short_name": "Competition",
-  "description": "Record HEMA competition bouts and track participant ranking",
+  "description": "Join HEMA competitions, check your bouts and follow the standings",
   "start_url": "/hema-score-keeper/competition/",
   "scope": "/hema-score-keeper/competition/",
   "id": "/hema-score-keeper/competition/",
   "display": "standalone",
-  "display_override": ["standalone"],
+  "display_override": [
+    "standalone"
+  ],
   "orientation": "portrait",
-  "background_color": "#0d1117",
-  "theme_color": "#0d1117",
+  "background_color": "#10161b",
+  "theme_color": "#10161b",
   "icons": [
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
   ]
 }

@@ -20,7 +20,11 @@ export function setLocale(locale: Locale): void {
 }
 
 export function t(key: MessageKey, params: Record<string, string | number> = {}): string {
-  const template = catalogs[currentLocale()][key] ?? en[key];
+  // An unknown key (e.g. a status the server added later) shows as itself instead of breaking the view.
+  const template: string | undefined = catalogs[currentLocale()][key] ?? en[key];
+  if (template === undefined) {
+    return key;
+  }
   return template.replace(/\{(\w+)\}/g, (match, name: string) => (name in params ? String(params[name]) : match));
 }
 

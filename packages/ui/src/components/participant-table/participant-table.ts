@@ -126,12 +126,13 @@ export class ParticipantTable extends BaseComponent {
       row.lastChange === null
         ? ""
         : `<span class="change ${row.lastChange > 0 ? "up" : row.lastChange < 0 ? "down" : ""}">${formatSigned(row.lastChange)}</span>`;
-    const record = t("table.record", { bouts: row.bouts, wins: row.wins, draws: row.draws, losses: row.losses });
+    const counts = { bouts: row.bouts, wins: row.wins, draws: row.draws, losses: row.losses };
+    const record = row.bouts === 1 ? t("table.recordOne", counts) : t("table.record", counts);
     const warnings = showWarnings && row.warnings > 0 ? ` · ${t("table.warningCount", { count: row.warnings })}` : "";
     return `<tr data-participant-id="${escapeHtml(row.participantId)}">
       <td class="position" data-col="position">${row.position}</td>
       <td data-col="fighter">
-        <button type="button" class="select"><span class="name">${escapeHtml(row.name)}</span></button>${row.provisional ? `<span class="provisional">${t("table.provisional")}</span>` : ""}
+        <button type="button" class="select"><span class="name">${escapeHtml(row.name)}</span></button>${row.provisional ? `<span class="provisional">${t("table.provisional")}</span>` : ""}${row.left === true ? `<span class="left-chip">${t("table.left")}</span>` : ""}
         ${row.clubName ? `<span class="club">${escapeHtml(row.clubName)}</span>` : ""}
         <span class="record">${record}${warnings}</span>
       </td>

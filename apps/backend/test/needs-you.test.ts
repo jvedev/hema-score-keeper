@@ -7,6 +7,7 @@ let world: BoutWorld;
 interface NeedsYou {
   objections: Array<{ boutId: string; competitionName: string; fighterA: string; fighterB: string; objectedBy: string; reason: string | null }>;
   awaitingReferee: Array<{ boutId: string; competitionName: string; refereeName: string; scoreA: number; scoreB: number }>;
+  signups: Array<{ participantId: string; competitionId: string; competitionName: string; fighterName: string; clubName: string | null; requestedAt: string }>;
 }
 
 async function needsYou(as: string) {
@@ -32,7 +33,7 @@ describe("GET /api/v1/admin/needs-you", () => {
   it("shows nothing to admins of other competitions", async () => {
     const id = await countedBout(world, { alsoCountIn: [] });
     await boutAction(world, "f2", id, "objection", { reason: "Double" });
-    expect(await needsYou("ownerW").then((response) => response.json())).toEqual({ objections: [], awaitingReferee: [] });
+    expect(await needsYou("ownerW").then((response) => response.json())).toEqual({ objections: [], awaitingReferee: [], signups: [] });
   });
 
   it("lists bouts still waiting for the referee", async () => {
@@ -50,6 +51,32 @@ describe("GET /api/v1/admin/needs-you", () => {
   it("shows everything to a system admin", async () => {
     await recordBout(world);
     expect((await needsYou("sys").then((response) => response.json()) as NeedsYou).awaitingReferee).toHaveLength(1);
+  });
+
+  it("lists sign-ups waiting for approval, oldest first", async () => {
+    await world.ctx.database.updateTable("Competition").set({ status: "REGISTRATION_OPEN", signupsNeedApproval: 1 }).where("id", "=", "W").execute();
+    for (const as of ["outsider", "f3"]) {
+      const response = await world.ctx.app.inject({ method: "POST", url: "/api/v1/competitions/W/signup", headers: bearer(world.users[as]!) });
+      expect(response.json()).toEqual({ status: "PENDING" });
+      world.clock.advance(60_000);
+    }
+
+    const signups = (await needsYou("ownerW").then((response) => response.json()) as NeedsYou).signups;
+    expect(signups).toEqual([
+      { participantId: expect.any(String), competitionId: "W", competitionName: "W", fighterName: "OUTSIDER", clubName: null, requestedAt: "2026-10-15T20:00:00.000Z" },
+      expect.objectContaining({ fighterName: "F3", requestedAt: "2026-10-15T20:01:00.000Z" }),
+    ]);
+    expect((await needsYou("ownerX").then((response) => response.json()) as NeedsYou).signups).toEqual([]);
+  });
+
+  it("leaves out sign-ups of closed or archived competitions, which can't be decided", async () => {
+    await world.ctx.database.updateTable("Competition").set({ status: "REGISTRATION_OPEN", signupsNeedApproval: 1 }).where("id", "=", "W").execute();
+    const response = await world.ctx.app.inject({ method: "POST", url: "/api/v1/competitions/W/signup", headers: bearer(world.users.outsider!) });
+    expect(response.json()).toEqual({ status: "PENDING" });
+    for (const status of ["CLOSED", "ARCHIVED"]) {
+      await world.ctx.database.updateTable("Competition").set({ status }).where("id", "=", "W").execute();
+      expect((await needsYou("ownerW").then((response) => response.json()) as NeedsYou).signups).toEqual([]);
+    }
   });
 
   it("refuses plain users", async () => {

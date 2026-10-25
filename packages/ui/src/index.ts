@@ -39,3 +39,7 @@ export * from "./components/bout-approval-view/bout-approval-view.js";
 export * from "./components/competition-list/competition-list.js";
 export * from "./components/needs-you-list/needs-you-list.js";
 export * from "./components/objection-review/objection-review.js";
+export * from "./components/todo-list/todo-list.js";
+export * from "./components/my-competition-list/my-competition-list.js";
+export * from "./components/join-card/join-card.js";
+export * from "./components/invite-share/invite-share.js";

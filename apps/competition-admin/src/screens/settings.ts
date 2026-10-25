@@ -1,8 +1,9 @@
 import { escapeHtml, t, type MessageKey } from "@hema/ui";
 import { ApiError, SessionExpiredError } from "../admin-client";
-import type { CompetitionAdminEntry, CompetitionDetail, PersonSearchResult, ScopeKind } from "../api-types";
+import type { AdminCompetitionDetail, CompetitionAdminEntry, CompetitionDetail, PersonSearchResult, ScopeKind } from "../api-types";
 import type { AppContext } from "../app-context";
-import { adminCapabilities, allowedActions, formToParameters, parametersToForm, parseScopeValues, rulesetEditable, type ParametersForm } from "../mappers/settings";
+import { participantAppUrl } from "../config";
+import { adminCapabilities, allowedActions, formToParameters, inviteLink, parametersToForm, parsePlaceLimit, parseScopeValues, rulesetEditable, type ParametersForm } from "../mappers/settings";
 import { competitionHeader, wireLinks } from "./competition";
 
 const SCOPES: readonly ScopeKind[] = ["OPEN", "CLUB", "CLUBS", "AREA", "COUNTRY"];
@@ -21,6 +22,8 @@ export async function renderSettingsScreen(container: HTMLElement, context: AppC
   container.innerHTML = `${competitionHeader(competition, "settings")}
     ${lifecycleSection(competition)}
     ${detailsSection(competition)}
+    ${signupsSection(competition)}
+    ${inviteSection(competition)}
     ${rulesetSection(competition)}
     ${participantsSection(participants.map((participant) => participant.name))}
     ${adminsSection(admins, capabilities, session.user.id)}`;
@@ -64,6 +67,34 @@ export async function renderSettingsScreen(container: HTMLElement, context: AppC
         acceptsOtherBouts: data.get("acceptsOtherBouts") === "on",
       }),
     );
+  });
+
+  // Sign-ups: approval switch and place limit
+  const signups = container.querySelector<HTMLFormElement>("form.signups")!;
+  signups.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const data = new FormData(signups);
+    const limit = parsePlaceLimit(String(data.get("placeLimit") ?? ""));
+    if (!limit.ok) {
+      const error = signups.querySelector<HTMLElement>(".error")!;
+      error.hidden = false;
+      error.textContent = t("settings.placeLimitInvalid");
+      return;
+    }
+    void act(signups, () => context.client.patchCompetition(competitionId, { signupsNeedApproval: data.get("signupsNeedApproval") === "on", placeLimit: limit.value }));
+  });
+
+  // Invite link: shown as link and QR; a new link stops the old one, so it asks first
+  const invite = container.querySelector<HTMLElement>("section.invite")!;
+  const share = invite.querySelector("invite-share");
+  if (share && competition.inviteCode) {
+    share.link = inviteLink(participantAppUrl(), competition.inviteCode);
+  }
+  invite.querySelector<HTMLButtonElement>("button[data-renew]")!.addEventListener("click", () => {
+    if (competition.inviteCode && !window.confirm(t("settings.inviteRenewConfirm"))) {
+      return;
+    }
+    void act(invite, () => context.client.newInvite(competitionId), t("settings.inviteMade"));
   });
 
   // Ruleset
@@ -134,6 +165,26 @@ function detailsSection(competition: CompetitionDetail): string {
     <p class="error" hidden></p>
     <div class="row"><button type="submit" class="primary">${t("settings.save")}</button></div>
   </form>`;
+}
+
+function signupsSection(competition: AdminCompetitionDetail): string {
+  return `<form class="panel signups">
+    <h2>${t("settings.signups")}</h2>
+    <label class="check"><input type="checkbox" name="signupsNeedApproval" ${competition.signupsNeedApproval ? "checked" : ""} />${t("settings.signupsNeedApproval")}</label>
+    <label class="field">${t("settings.placeLimit")}<input name="placeLimit" type="number" inputmode="numeric" min="1" step="1" value="${competition.placeLimit === null ? "" : Number(competition.placeLimit)}" /></label>
+    <p class="error" hidden></p>
+    <div class="row"><button type="submit" class="primary">${t("settings.save")}</button></div>
+  </form>`;
+}
+
+function inviteSection(competition: AdminCompetitionDetail): string {
+  const has = Boolean(competition.inviteCode);
+  return `<section class="panel invite">
+    <h2>${t("settings.inviteHeading")}</h2>
+    ${has ? `<invite-share></invite-share><p class="muted">${t("settings.inviteNote")}</p>` : `<p class="muted">${t("settings.inviteNone")}</p>`}
+    <p class="error" hidden></p>
+    <div class="row"><button type="button" data-renew>${t(has ? "settings.inviteRenew" : "settings.inviteMake")}</button></div>
+  </section>`;
 }
 
 function rulesetSection(competition: CompetitionDetail): string {

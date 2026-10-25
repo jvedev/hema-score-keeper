@@ -1,5 +1,14 @@
 import type { FastifyInstance } from "fastify";
-import { sql, type Kysely } from "kysely";
+import {
+  sql,
+  type Kysely,
+  type KyselyPlugin,
+  type PluginTransformQueryArgs,
+  type PluginTransformResultArgs,
+  type QueryResult,
+  type RootOperationNode,
+  type UnknownRow,
+} from "kysely";
 import type { AccountRole } from "../src/api-types.js";
 import { signAccessToken } from "../src/auth.js";
 import { createDatabase, type BackendDatabase } from "../src/db.js";
@@ -32,8 +41,26 @@ export class TestClock {
   }
 }
 
-export async function createTestContext(options: { now?: () => Date } = {}): Promise<TestContext> {
-  const database = createDatabase("file::memory:");
+/**
+ * Lets other work run after every query, as a slower real database would. better-sqlite3 answers at once,
+ * so without this, requests sent together never interleave and races can't show up in tests.
+ */
+export class YieldAfterEachQuery implements KyselyPlugin {
+  transformQuery(args: PluginTransformQueryArgs): RootOperationNode {
+    return args.node;
+  }
+
+  async transformResult(args: PluginTransformResultArgs): Promise<QueryResult<UnknownRow>> {
+    await new Promise((resolve) => setImmediate(resolve));
+    return args.result;
+  }
+}
+
+export async function createTestContext(options: { now?: () => Date; plugins?: KyselyPlugin[] } = {}): Promise<TestContext> {
+  let database = createDatabase("file::memory:");
+  for (const plugin of options.plugins ?? []) {
+    database = database.withPlugin(plugin);
+  }
   // Created outside the competition bootstrap in real databases; user lookups join it.
   await sql`
     CREATE TABLE IF NOT EXISTS Skill (

@@ -11,10 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@hema/competition-api": "*",
-    "@hema/match-engine": "*",
-    "@hema/ranking": "*",
-    "@hema/sheets-client": "*",
+    "@hema/api-session": "*",
     "@hema/ui": "*"
   },
   "devDependencies": {

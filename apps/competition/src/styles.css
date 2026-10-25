@@ -1,81 +1,446 @@
+/* Participant app frame; same tokens and look as the competition admin app (phase 6). Phone first, dark. */
+:root {
+  color-scheme: dark;
+  --night: var(--hema-night, #0a0f13);
+  --page: var(--hema-page, #10161b);
+  --plate: var(--hema-plate, #172028);
+  --raised: var(--hema-raised, #1e2932);
+  --ink: var(--hema-ink, #e4e9ec);
+  --muted: var(--hema-muted, #8a97a1);
+  --rule: var(--hema-rule, #2a3640);
+  --brass: var(--hema-brass, #d4af5e);
+  --verdigris: var(--hema-verdigris, #55ae98);
+  --rust: var(--hema-rust, #e3714f);
+  --font-score: var(--hema-font-score, "Big Shoulders Display", system-ui, sans-serif);
+  --font-body: var(--hema-font-body, "Atkinson Hyperlegible", system-ui, sans-serif);
+}
+
 * {
   box-sizing: border-box;
-  -webkit-tap-highlight-color: transparent;
+}
+
+[hidden] {
+  display: none !important;
 }
 
 html,
 body {
-  background: var(--hema-bg);
-  color: var(--hema-text);
-  font-family: var(--hema-font-ui);
-  height: 100%;
   margin: 0;
-  overscroll-behavior: none;
-}
-
-button {
-  cursor: pointer;
-}
-
-competition-selector-view[hidden],
-ranking-view[hidden],
-participants-view[hidden],
-bouts-view[hidden],
-bout-details-view[hidden],
-new-bout-view[hidden],
-fight-view[hidden],
-match-publish-view[hidden] {
-  display: none;
-}
-
-.mode-screen[hidden] {
-  display: none;
-}
-
-.mode-screen {
-  align-items: center;
-  display: flex;
   min-height: 100%;
-  padding: 24px 20px 28px;
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-body);
 }
 
-.mode-card {
-  background: #111723;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 24px;
+a {
+  color: inherit;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+
+/* ---------- frame: bottom tabs on phones, sidebar from 900px ---------- */
+.app {
   display: grid;
-  gap: 14px;
-  margin: 0 auto;
-  max-width: 480px;
-  padding: 24px;
+  min-height: 100vh;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr auto;
+}
+
+.sidebar {
+  display: none;
+}
+
+.content {
+  min-width: 0;
+  padding: 20px 16px 24px;
+}
+
+/* Not ".tabs": @hema/ui's event view puts a global .tabs rule (fixed 38px height) on the page. */
+.tab-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  border-top: 1px solid var(--rule);
+  background: var(--night);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.tab-bar a {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 9px 6px 11px;
+  border-top: 3px solid transparent;
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-decoration: none;
+}
+
+.tab-bar a[aria-current="page"] {
+  border-top-color: var(--brass);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.tab-bar svg,
+.nav svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (min-width: 900px) {
+  .app {
+    grid-template-columns: 220px 1fr;
+    grid-template-rows: 1fr;
+  }
+
+  .tab-bar {
+    display: none;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    height: 100vh;
+    padding: 20px 14px;
+    border-right: 1px solid var(--rule);
+    background: var(--night);
+  }
+
+  .content {
+    padding: 28px 32px;
+  }
+}
+
+.brand {
+  margin: 0 0 18px;
+  font-family: var(--font-score);
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+
+.nav a {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 10px;
+  border-radius: 8px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.nav svg {
+  width: 18px;
+  height: 18px;
+}
+
+.nav a[aria-current="page"] {
+  background: var(--plate);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.user {
+  margin: auto 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* ---------- controls ---------- */
+select,
+input,
+textarea {
   width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--plate);
+  color: var(--ink);
 }
 
-.mode-eyebrow,
-.mode-card h1,
-.mode-copy {
+button,
+a.button {
+  display: inline-block;
+  padding: 10px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+button.primary {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--night);
+  font-weight: 700;
+}
+
+button.link {
+  padding: 4px 0;
+  border: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-decoration: underline;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.toast {
+  position: fixed;
+  right: 16px;
+  bottom: 84px;
+  left: 16px;
+  z-index: 10;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 12px 14px;
+  border: 1px solid var(--verdigris);
+  border-radius: 10px;
+  background: var(--raised);
+}
+
+/* ---------- screens ---------- */
+.screen {
+  display: grid;
+  gap: 18px;
+  max-width: 760px;
+}
+
+.eyebrow {
   margin: 0;
-}
-
-.mode-eyebrow {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 12px;
-  letter-spacing: 0.14em;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
-.mode-card h1 {
-  font-size: 26px;
-  letter-spacing: 0.04em;
+h1 {
+  margin: 4px 0 0;
+  font-family: var(--font-score);
+  font-size: clamp(2rem, 6vw, 2.6rem);
+  font-weight: 800;
+  line-height: 1;
 }
 
-.mode-copy {
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 14px;
-  line-height: 1.5;
+h2 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
 }
 
-.sign-in-error {
-  color: var(--hema-danger);
-  min-height: 1em;
+.loading,
+.muted {
+  margin: 0;
+  color: var(--muted);
+}
+
+.error {
+  margin: 0;
+  color: var(--rust);
+}
+
+.chip {
+  margin: 0;
+  color: var(--brass);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--plate);
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ---------- sign in, sign up, invite landing ---------- */
+.login {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 16px;
+}
+
+.login-card {
+  display: grid;
+  gap: 14px;
+  width: min(100%, 400px);
+  padding: 24px;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  background: var(--plate);
+}
+
+.auth-form {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-form h2 {
+  margin: 0;
+}
+
+.auth-form button.link {
+  justify-self: start;
+}
+
+.invite-card {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+/* ---------- competitions, competition page ---------- */
+.screen.wide {
+  max-width: 1280px;
+}
+
+.join-block {
+  display: grid;
+  gap: 6px;
+}
+
+.joinable {
+  display: grid;
+  gap: 12px;
+}
+
+.back-link {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* Standings → fighter → bout: side by side on wide screens, one step at a time below */
+.drill {
+  display: grid;
+  gap: 18px;
+}
+
+.drill > [data-step] {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-width: 0;
+}
+
+.drill h2 {
+  margin: 0;
+}
+
+.drill .my-bouts {
+  justify-self: start;
+}
+
+@media (min-width: 1100px) {
+  .drill {
+    grid-template-columns: 1.15fr 1fr 1fr;
+    align-items: start;
+  }
+
+  .drill .back-link {
+    display: none;
+  }
+}
+
+@media (max-width: 1099px) {
+  .drill > [data-step]:not([data-current]) {
+    display: none;
+  }
+}
+
+.bout-actions h2 {
+  margin: 0;
+}
+
+/* ---------- profile ---------- */
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 16px;
+  margin: 0;
+}
+
+.facts dt {
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- dialogs (confirm, objection reason) ---------- */
+.dialog {
+  width: min(100% - 32px, 440px);
+  padding: 20px;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  background: var(--plate);
+  color: var(--ink);
+}
+
+.dialog::backdrop {
+  background: rgb(0 0 0 / 60%);
+}
+
+.dialog-form {
+  display: grid;
+  gap: 12px;
+}
+
+.dialog-form h2,
+.dialog-form .message {
+  margin: 0;
+}
+
+.dialog-form .row {
+  justify-content: flex-end;
 }

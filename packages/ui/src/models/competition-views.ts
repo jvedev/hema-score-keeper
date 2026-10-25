@@ -17,6 +17,8 @@ export interface StandingRowView {
   losses: number;
   warnings: number;
   provisional: boolean;
+  /** True when the fighter left the competition; the row stays because their bouts still count. */
+  left?: boolean;
 }
 
 export interface PersonView {
@@ -138,4 +140,44 @@ export interface NeedsYouItemView {
   detail: string;
   /** When it started waiting (objection made, bout recorded). */
   since: string;
+}
+
+/** One thing the fighter has to do. "approve": check a counted bout (approve or object); "objection": own open objection (withdraw); "referee": approve a bout they refereed. */
+export interface TodoItemView {
+  kind: "approve" | "objection" | "referee";
+  boutId: string;
+  competitionName: string | null;
+  /** The opponent, or both fighters for a bout the viewer refereed. */
+  opponentName: string;
+  /** Score from the viewer's side (side A when refereeing). */
+  ownScore: number;
+  opponentScore: number;
+  /** When it started waiting (bout recorded, objection made). */
+  since: string;
+}
+
+export type ParticipantStatusView = "ACTIVE" | "PENDING" | "LEFT";
+
+export interface MyCompetitionView {
+  id: string;
+  name: string;
+  status: LifecycleStatusView;
+  myStatus: ParticipantStatusView;
+  rank: number | null;
+  rating: number | null;
+  lastChange: number | null;
+}
+
+export interface JoinCardView {
+  id: string;
+  name: string;
+  status: LifecycleStatusView;
+  scopeLabel: string;
+  /** Free places, or null without a limit. */
+  placesLeft: number | null;
+  signupsNeedApproval: boolean;
+  /** The viewer's own standing in it: null when never joined. */
+  myStatus: ParticipantStatusView | null;
+  /** False when joining isn't possible right now (shown with a note instead of the button). */
+  joinable: boolean;
 }

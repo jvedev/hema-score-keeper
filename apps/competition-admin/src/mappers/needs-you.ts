@@ -4,7 +4,7 @@ import type { Route } from "../router";
 import type { Translate } from "./translate";
 
 export function needsYouCount(needs: NeedsYouResponse): number {
-  return needs.objections.length + needs.awaitingReferee.length;
+  return needs.objections.length + needs.awaitingReferee.length + needs.signups.length;
 }
 
 /** The app opens on "Needs you" only when something needs the admin. */
@@ -42,4 +42,25 @@ export function toNeedsYouItems(needs: NeedsYouResponse, translate: Translate): 
       }),
     ),
   ];
+}
+
+export interface SignupRowView {
+  participantId: string;
+  competitionId: string;
+  fighterName: string;
+  detail: string;
+  since: string;
+}
+
+/** Sign-ups to accept or decline, in the order the server gives them (oldest first). */
+export function toSignupItems(needs: NeedsYouResponse, translate: Translate): SignupRowView[] {
+  return needs.signups.map((signup) => ({
+    participantId: signup.participantId,
+    competitionId: signup.competitionId,
+    fighterName: signup.fighterName,
+    detail: signup.clubName
+      ? translate("admin.signupWithClub", { club: signup.clubName, competition: signup.competitionName })
+      : translate("admin.signupFor", { competition: signup.competitionName }),
+    since: signup.requestedAt,
+  }));
 }

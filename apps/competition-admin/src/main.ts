@@ -3,6 +3,7 @@ import { setLocale, t } from "@hema/ui";
 import "./styles.css";
 import { AdminClient, SessionExpiredError, type Session } from "./admin-client";
 import type { AppContext } from "./app-context";
+import { apiBaseUrl } from "./config";
 import { needsYouCount, startRoute } from "./mappers/needs-you";
 import { navigate as navigateTo, parseRoute, type Route } from "./router";
 import { renderCompetitionScreen } from "./screens/competition";
@@ -18,7 +19,7 @@ if (!root) {
   throw new Error("App root not found.");
 }
 const appRoot = root;
-const client = new AdminClient(import.meta.env.VITE_COMPETITION_API_URL ?? "/api/v1");
+const client = new AdminClient(apiBaseUrl());
 
 let shell: Shell | null = null;
 let renderToken = 0;

@@ -8,13 +8,15 @@ import {
   type RatingChange,
   type StatsBout,
 } from "@hema/competition-domain";
-import type { DbExecutor } from "../db.js";
+import type { DbExecutor, ParticipantStatus } from "../db.js";
 import { toLifecycle } from "./bout-store.js";
 
 export interface StandingRow extends ParticipantRow {
   name: string;
   clubId: string | null;
   userId: string | null;
+  /** The fighter left the competition (or is waiting to be let back in); their bouts still shaped the ratings. */
+  left: boolean;
 }
 
 export interface HistoryBout {
@@ -34,22 +36,38 @@ export interface HistoryBout {
 }
 
 interface CompetitionBouts {
-  participants: Array<{ id: string; name: string; clubId: string | null; userId: string | null }>;
+  participants: Array<{ id: string; name: string; clubId: string | null; userId: string | null; status: ParticipantStatus }>;
   bouts: Array<StatsBout & Omit<HistoryBout, "ratingChange" | "fighterAParticipantId" | "fighterBParticipantId">>;
 }
 
 export async function competitionStandings(executor: DbExecutor, competitionId: string, now: Date): Promise<StandingRow[]> {
   const { participants, bouts } = await loadCompetitionBouts(executor, competitionId, now);
+  // A pending sign-up isn't in yet, unless they fought here before (they left and asked to come back).
+  const fought = new Set(bouts.flatMap((bout) => [bout.fighterAId, bout.fighterBId]));
+  const shown = participants.filter((participant) => participant.status !== "PENDING" || fought.has(participant.id));
   const rows = buildParticipantRows(
-    participants.map((participant) => participant.id),
+    shown.map((participant) => participant.id),
     bouts,
     replayRatings(bouts),
   );
-  const byId = new Map(participants.map((participant) => [participant.id, participant]));
+  const byId = new Map(shown.map((participant) => [participant.id, participant]));
   return rows.map((row) => {
     const participant = byId.get(row.participantId)!;
-    return { ...row, name: participant.name, clubId: participant.clubId, userId: participant.userId };
+    return {
+      ...row,
+      name: participant.name,
+      clubId: participant.clubId,
+      userId: participant.userId,
+      left: participant.status !== "ACTIVE",
+    };
   });
+}
+
+/** A standings row as someone else sees it: warnings are private to the fighter (and the competition's admins). */
+export type ViewerStandingRow = Omit<StandingRow, "warnings"> & { warnings: number | null };
+
+export function standingsForViewer(rows: StandingRow[], viewer: { id: string } | null, isAdmin: boolean): ViewerStandingRow[] {
+  return rows.map((row) => (isAdmin || (viewer !== null && row.userId === viewer.id) ? row : { ...row, warnings: null }));
 }
 
 /** Newest first. */
@@ -82,7 +100,7 @@ export async function competitionBoutHistory(executor: DbExecutor, competitionId
 async function loadCompetitionBouts(executor: DbExecutor, competitionId: string, now: Date): Promise<CompetitionBouts> {
   const participants = await executor
     .selectFrom("CompetitionParticipant")
-    .select(["id", "name", "clubId", "userId"])
+    .select(["id", "name", "clubId", "userId", "status"])
     .where("competitionId", "=", competitionId)
     .orderBy("name")
     .execute();
@@ -131,7 +149,7 @@ async function loadCompetitionBouts(executor: DbExecutor, competitionId: string,
     const fighterAId = participantByUser.get(row.fighterAUserId);
     const fighterBId = participantByUser.get(row.fighterBUserId);
     if (fighterAId === undefined || fighterBId === undefined) {
-      // A fighter left the competition after the bout; it no longer has anyone to count for here.
+      // A fighter's participant row was removed after the bout (leaving keeps it); there is no one to count for here.
       continue;
     }
     const status = settleBout(toLifecycle(row), now).status;

@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@hema/api-session": "*",
     "@hema/ui": "*",
     "@hema/match-engine": "*",
     "@hema/competition-domain": "*"

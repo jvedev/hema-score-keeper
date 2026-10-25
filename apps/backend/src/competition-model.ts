@@ -1,5 +1,5 @@
 import type { Selectable } from "kysely";
-import type { BackendDatabase, DbExecutor } from "./db.js";
+import type { BackendDatabase, DbExecutor, ParticipantStatus } from "./db.js";
 import { scopeFromRow, type CompetitionScope } from "./competitions/scope.js";
 import { HttpError, parseJsonValue } from "./http.js";
 
@@ -51,6 +51,9 @@ export interface CompetitionSummary {
   clubId: string | null;
   scope: CompetitionScope;
   acceptsOtherBouts: boolean;
+  signupsNeedApproval: boolean;
+  /** Most fighters (ACTIVE + PENDING) the competition takes; null means no limit. */
+  placeLimit: number | null;
 }
 
 export interface CompetitionDetail extends CompetitionSummary {
@@ -67,6 +70,8 @@ export interface CompetitionParticipant {
   clubId: string | null;
   userId: string | null;
   kind: "MEMBER" | "GUEST";
+  status: ParticipantStatus;
+  joinedAt: string | null;
 }
 
 export interface CompetitionMatch {
@@ -104,6 +109,8 @@ function toSummary(row: CompetitionRow): CompetitionSummary {
     clubId: row.clubId,
     scope: scopeFromRow(row),
     acceptsOtherBouts: row.acceptsOtherBouts === 1,
+    signupsNeedApproval: row.signupsNeedApproval === 1,
+    placeLimit: row.placeLimit,
   };
 }
 
@@ -176,6 +183,15 @@ export async function requireMatch(
 
 export const requireBout = requireMatch;
 
+/** A legacy bout without its warning events: warnings are for the competition's admins only. */
+export function withoutWarnings(match: CompetitionMatch): CompetitionMatch {
+  const events = match.details?.events;
+  if (!Array.isArray(events)) {
+    return match;
+  }
+  return { ...match, details: { ...match.details, events: events.filter((event) => event.type !== "warning") } };
+}
+
 function toParticipant(row: CompetitionParticipantRow): CompetitionParticipant {
   return {
     id: row.id,
@@ -187,6 +203,8 @@ function toParticipant(row: CompetitionParticipantRow): CompetitionParticipant {
     clubId: row.clubId,
     userId: row.userId,
     kind: row.kind === "GUEST" ? "GUEST" : "MEMBER",
+    status: row.status,
+    joinedAt: row.joinedAt,
   };
 }
 

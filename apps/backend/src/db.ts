@@ -195,6 +195,10 @@ interface CompetitionTable {
   scopeKind: Generated<string>;
   scopeValuesJson: Generated<string>;
   acceptsOtherBouts: Generated<SqliteBoolean>;
+  signupsNeedApproval: Generated<SqliteBoolean>;
+  placeLimit: Generated<number | null>;
+  /** Only ever shown to the competition's admins. */
+  inviteCode: Generated<string | null>;
 }
 
 interface CompetitionAdminTable {
@@ -218,7 +222,12 @@ interface CompetitionParticipantTable {
   clubId: string | null;
   userId: string | null;
   kind: string;
+  status: Generated<ParticipantStatus>;
+  joinedAt: Generated<string | null>;
 }
+
+/** ACTIVE fighters are in; PENDING ones wait for an admin's approval; LEFT ones keep their row (and bouts) but are out. */
+export type ParticipantStatus = "ACTIVE" | "PENDING" | "LEFT";
 
 interface CompetitionBoutTable {
   id: string;

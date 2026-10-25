@@ -123,4 +123,33 @@ describe("AdminClient", () => {
       "PATCH /api/v1/auth/me",
     ]);
   });
+  it("accepts or declines a sign-up", async () => {
+    await signedIn();
+    responses.push({ status: 200, body: { participantId: "p 1", status: "ACTIVE" } }, { status: 200, body: { participantId: "p2", status: null } });
+    expect(await client.decideSignup("c1", "p 1", true)).toEqual({ participantId: "p 1", status: "ACTIVE" });
+    await client.decideSignup("c1", "p2", false);
+    expect(calls).toMatchObject([
+      { method: "POST", url: "/api/v1/competitions/c1/participants/p%201/decision", body: { accept: true } },
+      { method: "POST", url: "/api/v1/competitions/c1/participants/p2/decision", body: { accept: false } },
+    ]);
+  });
+
+  it("makes a new invite and returns the code", async () => {
+    await signedIn();
+    responses.push({ status: 200, body: { inviteCode: "abc123" } });
+    expect(await client.newInvite("c 1")).toEqual({ inviteCode: "abc123" });
+    expect(calls[0]).toMatchObject({ method: "POST", url: "/api/v1/competitions/c%201/invite", authorization: "Bearer a1" });
+    expect(calls[0]!.body).toBeUndefined();
+  });
+
+  it("patches the approval switch and place limit, including no limit", async () => {
+    await signedIn();
+    await client.patchCompetition("c1", { signupsNeedApproval: true, placeLimit: 24 });
+    await client.patchCompetition("c1", { signupsNeedApproval: false, placeLimit: null });
+    expect(calls).toMatchObject([
+      { method: "PATCH", url: "/api/v1/competitions/c1", body: { signupsNeedApproval: true, placeLimit: 24 } },
+      { method: "PATCH", url: "/api/v1/competitions/c1", body: { signupsNeedApproval: false, placeLimit: null } },
+    ]);
+    expect(calls[1]!.body).toHaveProperty("placeLimit", null);
+  });
 });

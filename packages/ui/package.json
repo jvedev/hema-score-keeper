@@ -54,7 +54,8 @@
     }
   },
   "dependencies": {
-    "@hema/event-admin-api": "*"
+    "@hema/event-admin-api": "*",
+    "qrcode-generator": "^2.0.4"
   },
   "scripts": {
     "build": "vite build",

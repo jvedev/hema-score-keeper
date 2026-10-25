@@ -50,6 +50,15 @@ describe("participant-table", () => {
     expect(visibleRows(table)[3]!.textContent).toContain("provisional");
   });
 
+  it("shows a left chip only for fighters who left, and never leaks warning counts without show-warnings", () => {
+    const table = mount({}, [{ ...rows[0]!, left: true }, rows[1]!]);
+    const [first, second] = visibleRows(table);
+    expect(first!.querySelector(".left-chip")!.textContent).toBe("left");
+    expect(second!.querySelector(".left-chip")).toBeNull();
+    expect([...table.shadowRoot!.querySelectorAll(".record")].map((record) => record.textContent).join(" ")).not.toContain("warn");
+    expect(mount({ "show-warnings": "" }).shadowRoot!.querySelector(".record")!.textContent).toContain("2 warn");
+  });
+
   it("hides warnings", () => {
     expect(mount().shadowRoot!.querySelectorAll('[data-col="warnings"]')).toHaveLength(0);
     const withWarnings = mount({ "show-warnings": "" });
@@ -94,6 +103,16 @@ describe("participant-table", () => {
 
   it("says when there are no participants", () => {
     expect(mount({}, []).shadowRoot!.querySelector(".empty")!.textContent).toBe("No participants yet.");
+  });
+
+  it("says 1 bout, not 1 bouts, in English and Dutch", () => {
+    const one = [{ ...rows[0]!, bouts: 1, wins: 1, draws: 0, losses: 0 }];
+    const record = (table: HTMLElement) => table.shadowRoot!.querySelector(".record")!.textContent;
+    expect(record(mount({}, one))).toBe("1 bout · 1–0–0");
+    expect(record(mount())).toBe("41 bouts · 29–3–9");
+    setLocale("nl");
+    expect(record(mount({}, one))).toBe("1 partij · 1–0–0");
+    expect(record(mount())).toBe("41 partijen · 29–3–9");
   });
 
   it("renders in Dutch", () => {

@@ -82,7 +82,22 @@ describe("applySchemaMigrations", () => {
     expect(() => applySchemaMigrations(database)).not.toThrow();
     expect(adminRows()).toHaveLength(admins);
     expect(database.prepare("SELECT COUNT(*) AS count FROM SchemaMigration").get()).toEqual({ count: applied });
-    expect(applied).toBe(12);
+    expect(applied).toBe(13);
+  });
+});
+
+describe("participant status and sign-up settings", () => {
+  it("existing participants become active and competitions get sign-up settings", () => {
+    const before = (database.prepare("SELECT COUNT(*) AS count FROM CompetitionParticipant").get() as { count: number }).count;
+    expect(before).toBeGreaterThan(0);
+    applySchemaMigrations(database);
+    expect(columns("CompetitionParticipant")).toEqual(expect.arrayContaining(["status", "joinedAt"]));
+    expect(database.prepare("SELECT DISTINCT status FROM CompetitionParticipant").all()).toEqual([{ status: "ACTIVE" }]);
+    expect(database.prepare("SELECT signupsNeedApproval, placeLimit, inviteCode FROM Competition WHERE id = 'competition-1'").get()).toEqual({
+      signupsNeedApproval: 0,
+      placeLimit: null,
+      inviteCode: null,
+    });
   });
 });
 
