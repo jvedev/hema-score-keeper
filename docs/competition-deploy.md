@@ -74,3 +74,76 @@ npm run dev --workspace @hema/competition   # http://localhost:5173/hema-score-k
 
 The dev server proxies `/api` to `http://localhost:3001`, so no settings are needed. To use
 another backend, set `VITE_API_BASE_URL` in `apps/competition/.env.local` (see `.env.example`).
+
+## Tournament schedule sheet
+
+A sheet-mode tournament (`/api/v1/live-tournaments`) is imported from a workbook with a sheet named
+`Schedule`. Row 1 holds headers; bouts start at row 2:
+
+| Column | Header | Meaning |
+| --- | --- | --- |
+| A | Ring | Ring name; rings are created by name, in order of first appearance |
+| B | Order | Whole number; the bout's position in the ring |
+| C | Sheet | Name of the sheet that holds the bout, for example `Pool_1` |
+| D | Cell | The bout's header cell, for example `B25` (the "Match 1" label cell) |
+| E | Label | Optional; defaults to the header cell's value |
+
+`G1` holds "Last sync" and `H1` is written by the sync. Fighter names are read from the
+calculated values of the cells next to the header (layout `v3`: header column +1 and +3). An empty
+cell or `0` imports as an empty name, so elimination bouts appear before the pools finish.
+
+Upload the `.xlsx` as the raw request body (`application/octet-stream`, up to 20 MB) to
+`POST /api/v1/live-tournaments/:id/import/xlsx`. The file is also kept as the local backup base under
+`LIVE_DATA_DIR` (default `apps/backend/data/live`, next to the database; a relative value is used as given,
+from the working directory) as `<id>/backup.xlsx`. Importing again updates ring, order,
+label and fighters of bouts without exchanges, and removes such bouts when they leave the schedule.
+Bouts that have exchanges are never changed; they are listed as `skipped` in the report. Schedule rows
+with a problem (unknown sheet, bad cell, bad order, an empty match header cell, or an exchange block, rows
++1 to +15 of the input columns, that overlaps another scheduled bout's block) are listed in `errors`; the other
+rows still import, and an existing bout on an error row is left as it is.
+
+Starting or finishing a bout does not write to the sheets; only exchanges and undos do. A bout scored by
+hand in the sheet (for example when a phone fails) is therefore not wiped by a start or finish in the app.
+
+> **Stale values in a downloaded backup.** `backup.xlsx` (downloaded with `GET .../backup.xlsx`) holds the
+> exchange results, but its cached formula results (pool rankings, the fighter names in the eliminations)
+> are those of the original upload. The import reads cached values. Before re-uploading a downloaded backup
+> to import the eliminations, **open it in Excel or Google Sheets and save it**, so the formulas are
+> recalculated. Otherwise the import reads stale names.
+
+### Google Sheet target and sync status
+
+A tournament created with a `googleSpreadsheetId` is mirrored into that Google Sheet as well as into the
+local backup file. The backend signs in as a service account with the existing
+`GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` (the key may contain escaped `\n`).
+**Share the spreadsheet with the service account's email address, with edit access.** Without these
+variables the Google target is skipped: jobs stay pending and the status shows `NOT_CONFIGURED`.
+
+Where the variables go: set them in the environment of the backend process, or put them in
+`apps/backend/.env` (copy `apps/backend/.env.example`) and start the backend with `npm run start:env
+--workspace @hema/backend`, which runs `node --env-file=.env dist/server.js` (Node 20.6 or newer). The plain
+`npm start` does **not** read `.env`. Note that `.env` may also set `DATABASE_URL`, which then applies too.
+**`.env` holds the private key and must never be committed**; it is in `.gitignore`. If a key was ever
+committed, rotate it in the Google Cloud console.
+
+- `POST /api/v1/live-tournaments/:id/import/google` imports the `Schedule` sheet and the fighters from the
+  spreadsheet (calculated values), like the `.xlsx` import. Creator or system admin.
+- `GET /api/v1/live-tournaments/:id/sync` lists both targets (`LOCAL`, `GOOGLE`) with `state`, `lastSuccessAt`,
+  `lastError`, `lastErrorAt`, `pending` and `failed`. `lastError` is shown only while it still applies (newer
+  than the last success, or a job is `FAILED`). States: `OK`, `ERROR`, `NOT_CONFIGURED`, `NO_SPREADSHEET`,
+  `NO_BACKUP_FILE` (no `backup.xlsx` yet: import an `.xlsx` first). Creator or system admin.
+- `GET /api/v1/live-tournaments/:id/backup.xlsx` downloads the local backup. Creator or system admin.
+
+Every Google call has a 10 s timeout. A failing or hanging Google never slows scoring: the sync jobs stay
+pending and retry with back-off (5 s, 15 s, 60 s). If the whole target is unusable (Google down, bad
+credentials, backup file locked by Excel), the batch backs off once instead of retrying bout by bout. Error
+messages never contain the key or a token. Each write also stores the time in `Schedule!H1`, in both targets,
+when the workbook has a `Schedule` sheet. Each round writes the local backup before Google, so a slow Google never
+delays the backup. Sync jobs are kept in the database: after a restart the worker carries on with the pending
+jobs (backed-off ones are retried at once) and does not re-queue every bout.
+
+Scoring routes, for the scorer apps: an undo must name the exchange it removes,
+`POST /api/v1/live-bouts/:id/undo` with `{ "expectedExchangeId": "<id>" }` (400 without it). A retry of an undo
+that already happened answers 200 with the current score and removes nothing; any other id than the newest active
+exchange is 409. Bouts carry `score: { left, right, doubles }`, or `null` when nobody has scored yet, on both
+`GET /api/v1/live-rings/:id/bouts` and `GET /api/v1/live-tournaments/:id`.

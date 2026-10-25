@@ -1,5 +1,5 @@
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { APP_ROOT } from "./app-root.js";
 import BetterSqlite3 from "better-sqlite3";
 import { Kysely, SqliteDialect, type Generated, type Transaction } from "kysely";
 import type { EntryKind, ScheduleRole, StageOfficialRole, StageType } from "./api-types.js";
@@ -299,6 +299,75 @@ interface BoutRevisionTable {
   replacedByUserId: string;
 }
 
+export type LiveTarget = "LOCAL" | "GOOGLE";
+
+interface LiveTournamentTable {
+  id: string;
+  name: string;
+  mode: "SHEET";
+  layoutVersion: string;
+  googleSpreadsheetId: string | null;
+  createdByUserId: string;
+  createdAt: string;
+}
+
+interface LiveRingTable {
+  id: string;
+  tournamentId: string;
+  name: string;
+  order: number;
+}
+
+interface LiveBoutTable {
+  id: string;
+  tournamentId: string;
+  ringId: string;
+  order: number;
+  label: string;
+  sheetName: string;
+  headerCell: string;
+  fighterLeft: string;
+  fighterRight: string;
+  status: "PENDING" | "RUNNING" | "DONE";
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+interface LiveExchangeTable {
+  id: string;
+  boutId: string;
+  seq: number;
+  kind: "EXCHANGE" | "DEDUCTION";
+  leftPoints: number;
+  rightPoints: number;
+  isDouble: number;
+  firstScorer: "LEFT" | "RIGHT" | null;
+  clientExchangeId: string;
+  createdByUserId: string;
+  createdAt: string;
+  undoneAt: string | null;
+}
+
+interface LiveSyncJobTable {
+  id: string;
+  tournamentId: string;
+  boutId: string;
+  target: LiveTarget;
+  status: "PENDING" | "DONE" | "FAILED";
+  attempts: number;
+  nextAttemptAt: string;
+  lastError: string | null;
+  updatedAt: string;
+}
+
+interface LiveSyncStateTable {
+  tournamentId: string;
+  target: LiveTarget;
+  lastSuccessAt: string | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
+}
+
 export interface BackendDatabase {
   Club: ClubTable;
   User: UserTable;
@@ -337,6 +406,12 @@ export interface BackendDatabase {
   BoutTableOfficial: BoutTableOfficialTable;
   BoutCompetition: BoutCompetitionTable;
   BoutRevision: BoutRevisionTable;
+  LiveTournament: LiveTournamentTable;
+  LiveRing: LiveRingTable;
+  LiveBout: LiveBoutTable;
+  LiveExchange: LiveExchangeTable;
+  LiveSyncJob: LiveSyncJobTable;
+  LiveSyncState: LiveSyncStateTable;
 }
 
 export type DbExecutor = Kysely<BackendDatabase> | Transaction<BackendDatabase>;
@@ -346,9 +421,7 @@ function resolveDatabasePath(databaseUrl = process.env.DATABASE_URL ?? "file:./d
     return databaseUrl;
   }
 
-  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-  const appRoot = path.resolve(moduleDir, "..");
-  const databaseDir = path.join(appRoot, "data");
+  const databaseDir = path.join(APP_ROOT, "data");
   const filePath = databaseUrl.slice("file:".length);
 
   if (filePath === ":memory:") {

@@ -15,6 +15,9 @@ import {
 import { requireAdminUser, requirePathParam, resolveAccessUser, type AccessUser } from "./access-user.js";
 import { registerBoutRoutes } from "./bouts/bout-routes.js";
 import { competitionBoutHistory, competitionStandings, standingsForViewer } from "./bouts/standings.js";
+import { registerBoutRoutes as registerLiveBoutRoutes } from "./live/bout-routes.js";
+import { registerLiveRoutes } from "./live/live-routes.js";
+import { startSyncWorker } from "./live/sync-worker.js";
 import { registerClubRoutes } from "./club-routes.js";
 import { registerPeopleRoutes } from "./people-routes.js";
 import { competitionAccessFilter, competitionAdminRole, requireCompetitionAccess } from "./competitions/access.js";
@@ -292,6 +295,8 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
 
   registerClubRoutes(app, database);
   registerBoutRoutes(app, database);
+  registerLiveRoutes(app, database);
+  registerLiveBoutRoutes(app, database);
   registerPeopleRoutes(app, database);
   registerCompetitionAdminRoutes(app, database);
   registerParticipantRoutes(app, database);
@@ -1719,6 +1724,11 @@ function resolveEliminationParticipantCount(
 async function start(): Promise<void> {
   const app = createApp();
   const port = Number(process.env.PORT ?? 3001);
+  if (process.env.NODE_ENV !== "test") {
+    // Mirrors live bouts into the backup .xlsx (and the Google Sheet) in the background, off the request path.
+    const stopSync = startSyncWorker(db);
+    app.addHook("onClose", async () => stopSync());
+  }
   await app.listen({ port, host: "0.0.0.0" });
   console.log(`HEMA backend listening on http://localhost:${port}`);
 }

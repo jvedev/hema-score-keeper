@@ -198,6 +198,83 @@ const MIGRATIONS: readonly SchemaMigration[] = [
       `);
     },
   },
+  {
+    // Tournament mode, sheet flavour: rings, bouts and exchanges stored live, plus an outbox that mirrors them to sheets.
+    name: "2026-10-25-live-tournaments",
+    apply(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS LiveTournament (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          mode TEXT NOT NULL CHECK (mode IN ('SHEET')),
+          layoutVersion TEXT NOT NULL,
+          googleSpreadsheetId TEXT,
+          createdByUserId TEXT NOT NULL REFERENCES User(id),
+          createdAt TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS LiveRing (
+          id TEXT PRIMARY KEY,
+          tournamentId TEXT NOT NULL REFERENCES LiveTournament(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          "order" INTEGER NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_liveRing_name ON LiveRing(tournamentId, name);
+        CREATE TABLE IF NOT EXISTS LiveBout (
+          id TEXT PRIMARY KEY,
+          tournamentId TEXT NOT NULL REFERENCES LiveTournament(id) ON DELETE CASCADE,
+          ringId TEXT NOT NULL REFERENCES LiveRing(id) ON DELETE CASCADE,
+          "order" INTEGER NOT NULL,
+          label TEXT NOT NULL,
+          sheetName TEXT NOT NULL,
+          headerCell TEXT NOT NULL,
+          fighterLeft TEXT NOT NULL,
+          fighterRight TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'RUNNING', 'DONE')),
+          startedAt TEXT,
+          finishedAt TEXT
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_liveBout_cell ON LiveBout(tournamentId, sheetName, headerCell);
+        CREATE INDEX IF NOT EXISTS idx_liveBout_ring ON LiveBout(ringId, "order");
+        CREATE TABLE IF NOT EXISTS LiveExchange (
+          id TEXT PRIMARY KEY,
+          boutId TEXT NOT NULL REFERENCES LiveBout(id) ON DELETE CASCADE,
+          seq INTEGER NOT NULL,
+          kind TEXT NOT NULL CHECK (kind IN ('EXCHANGE', 'DEDUCTION')),
+          leftPoints INTEGER NOT NULL,
+          rightPoints INTEGER NOT NULL,
+          isDouble INTEGER NOT NULL DEFAULT 0,
+          firstScorer TEXT CHECK (firstScorer IN ('LEFT', 'RIGHT')),
+          clientExchangeId TEXT NOT NULL,
+          createdByUserId TEXT NOT NULL REFERENCES User(id),
+          createdAt TEXT NOT NULL,
+          undoneAt TEXT
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_liveExchange_client ON LiveExchange(boutId, clientExchangeId);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_liveExchange_seq ON LiveExchange(boutId, seq);
+        CREATE TABLE IF NOT EXISTS LiveSyncJob (
+          id TEXT PRIMARY KEY,
+          tournamentId TEXT NOT NULL REFERENCES LiveTournament(id) ON DELETE CASCADE,
+          boutId TEXT NOT NULL REFERENCES LiveBout(id) ON DELETE CASCADE,
+          target TEXT NOT NULL CHECK (target IN ('LOCAL', 'GOOGLE')),
+          status TEXT NOT NULL CHECK (status IN ('PENDING', 'DONE', 'FAILED')),
+          attempts INTEGER NOT NULL DEFAULT 0,
+          nextAttemptAt TEXT NOT NULL,
+          lastError TEXT,
+          updatedAt TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_liveSyncJob_bout_target ON LiveSyncJob(boutId, target);
+        CREATE INDEX IF NOT EXISTS idx_liveSyncJob_due ON LiveSyncJob(status, nextAttemptAt);
+        CREATE TABLE IF NOT EXISTS LiveSyncState (
+          tournamentId TEXT NOT NULL REFERENCES LiveTournament(id) ON DELETE CASCADE,
+          target TEXT NOT NULL CHECK (target IN ('LOCAL', 'GOOGLE')),
+          lastSuccessAt TEXT,
+          lastError TEXT,
+          lastErrorAt TEXT,
+          PRIMARY KEY (tournamentId, target)
+        );
+      `);
+    },
+  },
 ];
 
 export function applySchemaMigrations(database: NativeDatabase): void {

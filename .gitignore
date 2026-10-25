@@ -18,3 +18,4 @@ test-results/
 # Vitest browser failure screenshots
 .vitest-attachments/
 __screenshots__/
+/apps/backend/data/live/
