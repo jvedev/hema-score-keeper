@@ -198,3 +198,44 @@ export type ObjectionResolution =
       kind: "correct";
       result: { scoreA: number; scoreB: number; winnerSide: "A" | "B" | null; warningsA: number; warningsB: number; exchanges: ApiExchange[] };
     };
+
+export interface LiveTournamentSummary {
+  id: string;
+  name: string;
+  googleSpreadsheetId: string | null;
+  createdAt: string;
+}
+
+export interface LiveTournamentDetail extends LiveTournamentSummary {
+  rings: Array<{ id: string; name: string; order: number }>;
+}
+
+/** What `POST .../import/xlsx` and `.../import/google` answer. `row` is the sheet row. */
+export interface ImportReport {
+  added: number;
+  updated: number;
+  skipped: Array<{ label: string; reason: "HAS_EXCHANGES" }>;
+  errors: Array<{ row: number; message: string }>;
+}
+
+export type SyncState = "OK" | "ERROR" | "NOT_CONFIGURED" | "NO_SPREADSHEET" | "NO_BACKUP_FILE";
+
+export interface SyncTarget {
+  target: "LOCAL" | "GOOGLE";
+  state: SyncState;
+  lastSuccessAt: string | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
+  pending: number;
+  failed: number;
+}
+
+/** One ring with its secret keeper token, as the laptop person sees it. */
+export interface LiveRingLink {
+  id: string;
+  tournamentId: string;
+  name: string;
+  order: number;
+  keeperToken: string;
+  activeKeeper: { userName: string; since: string } | null;
+}

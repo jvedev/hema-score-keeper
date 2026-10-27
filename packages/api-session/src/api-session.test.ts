@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, ApiSession, SessionExpiredError, type AuthResponse } from "./api-session";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError, ApiSession, RefreshUnavailableError, SessionExpiredError, timeoutSignal, type AuthResponse } from "./api-session";
 
 class MemoryStorage {
   readonly items = new Map<string, string>();
@@ -279,5 +279,156 @@ describe("ApiSession", () => {
   it("ignores a damaged stored session", () => {
     storage.setItem("test.session", "{not json");
     expect(create().current()).toBeNull();
+  });
+});
+
+describe("ApiSession timeouts and unreachable refreshes", () => {
+  it("aborts a request that does not answer within timeoutMs", async () => {
+    signedIn();
+    let aborted = false;
+    vi.stubGlobal("fetch", (_url: string, init: RequestInit = {}) =>
+      new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => {
+          aborted = true;
+          reject(init.signal?.reason);
+        });
+      }),
+    );
+    const error = await session.send("GET", "/slow", undefined, true, { timeoutMs: 20 }).catch((caught: unknown) => caught);
+    expect(aborted).toBe(true);
+    expect(error).toBeDefined();
+    expect(error).not.toBeInstanceOf(ApiError);
+    expect(error).not.toBeInstanceOf(SessionExpiredError);
+    expect(session.current()).not.toBeNull();
+  });
+
+  it("sends extra headers", async () => {
+    signedIn();
+    let seen: Headers | null = null;
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit = {}) => {
+      seen = new Headers(init.headers);
+      return new Response("{}", { status: 200 });
+    });
+    await session.send("POST", "/x", {}, true, { headers: { "X-Test": "1" } });
+    expect(seen!.get("X-Test")).toBe("1");
+  });
+
+  it("keeps the session when the refresh gets a server error", async () => {
+    signedIn();
+    responses.push({ status: 401, body: {} }, { status: 503, body: {} });
+    const error = await session.send("GET", "/things").catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RefreshUnavailableError);
+    expect(error).toBeInstanceOf(TypeError);
+    expect(session.current()?.refreshToken).toBe("r1");
+    expect(storage.items.has("test.session")).toBe(true);
+  });
+
+  it("keeps the session when the refresh cannot reach the server", async () => {
+    signedIn();
+    let n = 0;
+    vi.stubGlobal("fetch", async () => {
+      n += 1;
+      if (n === 1) return new Response("{}", { status: 401 });
+      throw new TypeError("Failed to fetch");
+    });
+    await expect(session.send("GET", "/things")).rejects.toBeInstanceOf(TypeError);
+    expect(session.current()?.refreshToken).toBe("r1");
+    expect(storage.items.has("test.session")).toBe(true);
+  });
+
+  it("keeps the session when the refresh times out", async () => {
+    signedIn();
+    let n = 0;
+    vi.stubGlobal("fetch", (_url: string, init: RequestInit = {}) => {
+      n += 1;
+      if (n === 1) return Promise.resolve(new Response("{}", { status: 401 }));
+      return new Promise<Response>((_resolve, reject) => init.signal?.addEventListener("abort", () => reject(init.signal?.reason)));
+    });
+    const error = await session.send("GET", "/things", undefined, true, { timeoutMs: 20 }).catch((caught: unknown) => caught);
+    expect(error).not.toBeInstanceOf(SessionExpiredError);
+    expect(session.current()?.refreshToken).toBe("r1");
+  });
+
+  it("a 400 from the refresh means the session expired", async () => {
+    signedIn();
+    responses.push({ status: 401, body: {} }, { status: 400, body: {} });
+    await expect(session.send("GET", "/things")).rejects.toBeInstanceOf(SessionExpiredError);
+    expect(session.current()).toBeNull();
+  });
+});
+
+describe("raw bodies and downloads", () => {
+  it("sends a Blob as octet-stream, unchanged", async () => {
+    signedIn();
+    let seen: { type: string | null; body: unknown } | undefined;
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit = {}) => {
+      seen = { type: new Headers(init.headers).get("Content-Type"), body: init.body };
+      return new Response("{}", { status: 200 });
+    });
+    const file = new Blob([new Uint8Array([1, 2, 3])]);
+    await session.send("POST", "/upload", file);
+    expect(seen?.type).toBe("application/octet-stream");
+    expect(seen?.body).toBe(file);
+  });
+
+  it("reads a download as a Blob, with the token, and refuses with an ApiError", async () => {
+    signedIn();
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit = {}) =>
+      new Headers(init.headers).get("Authorization") === "Bearer a1"
+        ? new Response(new Uint8Array([7, 8]), { status: 200 })
+        : new Response("{}", { status: 500 }),
+    );
+    const blob = await session.send<Blob>("GET", "/file", undefined, true, { responseType: "blob" });
+    expect(Array.from(new Uint8Array(await blob.arrayBuffer()))).toEqual([7, 8]);
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ error: "No file." }), { status: 404 }));
+    await expect(session.send<Blob>("GET", "/file", undefined, true, { responseType: "blob" })).rejects.toMatchObject({ status: 404, message: "No file." });
+  });
+});
+
+describe("timeoutSignal on tablets without AbortSignal.timeout", () => {
+  const original = AbortSignal.timeout;
+  afterEach(() => {
+    AbortSignal.timeout = original;
+    vi.useRealTimers();
+  });
+
+  function withoutAbortSignalTimeout(): void {
+    (AbortSignal as unknown as { timeout?: unknown }).timeout = undefined;
+  }
+
+  it("aborts a hung request with a TimeoutError when AbortSignal.timeout is missing", async () => {
+    withoutAbortSignalTimeout();
+    signedIn();
+    vi.stubGlobal("fetch", (_url: string, init: RequestInit = {}) =>
+      new Promise<Response>((_resolve, reject) => init.signal?.addEventListener("abort", () => reject(init.signal?.reason))),
+    );
+    const error = await session.send("GET", "/slow", undefined, true, { timeoutMs: 20 }).catch((caught: unknown) => caught);
+    expect((error as Error).name).toBe("TimeoutError");
+    expect(error).not.toBeInstanceOf(ApiError);
+    expect(session.current()).not.toBeNull();
+  });
+
+  it("clears the fallback timer when the request finishes", async () => {
+    withoutAbortSignalTimeout();
+    vi.useFakeTimers();
+    signedIn();
+    await session.send("GET", "/fast", undefined, true, { timeoutMs: 5000 });
+    expect(vi.getTimerCount()).toBe(0);
+    await session.send("GET", "/missing", undefined, true, { timeoutMs: 5000 }).catch(() => undefined);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("timeoutSignal uses the fallback and its clear stops the timer", () => {
+    withoutAbortSignalTimeout();
+    vi.useFakeTimers();
+    const timeout = timeoutSignal(1000);
+    expect(vi.getTimerCount()).toBe(1);
+    timeout.clear();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(timeout.signal.aborted).toBe(false);
+    const fired = timeoutSignal(1000);
+    vi.advanceTimersByTime(1000);
+    expect(fired.signal.aborted).toBe(true);
+    expect((fired.signal.reason as Error).name).toBe("TimeoutError");
   });
 });

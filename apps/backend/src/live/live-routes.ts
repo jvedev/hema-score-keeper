@@ -13,6 +13,7 @@ import { backupPath } from "./data-dir.js";
 import { GoogleCellSource, GoogleError, googleCredentials, sharedGoogleApi } from "./google-sheets.js";
 import { applySchedulePlan, readSchedulePlan, tournamentLayout } from "./import.js";
 import { enqueueSync } from "./live-store.js";
+import { activeKeeperOf, publicRing } from "./ring-keeper.js";
 import { withTournamentLock } from "./tournament-lock.js";
 
 const IMPORT_BODY_LIMIT = 20 * 1024 * 1024;
@@ -44,6 +45,16 @@ function registerLiveRoutesInScope(app: FastifyInstance, database: Kysely<Backen
       })
       .execute();
     return { id };
+  });
+
+  // The laptop person's list: own tournaments (every tournament for a system admin), newest first.
+  app.get("/api/v1/live-tournaments", async (request) => {
+    const user = await requireUser(request, database);
+    let query = database.selectFrom("LiveTournament").select(["id", "name", "googleSpreadsheetId", "createdAt"]);
+    if (user.role !== "SYSTEM_ADMIN") {
+      query = query.where("createdByUserId", "=", user.id);
+    }
+    return { tournaments: await query.orderBy("createdAt", "desc").orderBy("id", "desc").execute() };
   });
 
   app.post("/api/v1/live-tournaments/:id/import/xlsx", { bodyLimit: IMPORT_BODY_LIMIT }, async (request) => {
@@ -96,6 +107,19 @@ function registerLiveRoutesInScope(app: FastifyInstance, database: Kysely<Backen
     const tournamentId = requirePathParam(request, "id");
     await requireTournamentAdmin(database, tournamentId, user);
     return { targets: await syncStatus(database, tournamentId) };
+  });
+
+  // The ring links (with their secret keeper tokens) for the laptop person: tournament creator or system admin only.
+  app.get("/api/v1/live-tournaments/:id/rings", async (request) => {
+    const user = await requireUser(request, database);
+    const tournamentId = requirePathParam(request, "id");
+    await requireTournamentAdmin(database, tournamentId, user);
+    const rings = await database.selectFrom("LiveRing").selectAll().where("tournamentId", "=", tournamentId).orderBy("order").execute();
+    return {
+      rings: await Promise.all(
+        rings.map(async (ring) => ({ ...publicRing(ring), keeperToken: ring.keeperToken, activeKeeper: await activeKeeperOf(database, ring) })),
+      ),
+    };
   });
 
   app.get("/api/v1/live-tournaments/:id/backup.xlsx", async (request, reply) => {

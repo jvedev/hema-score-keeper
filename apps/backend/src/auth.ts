@@ -9,7 +9,12 @@ import {
 import { HttpError } from "./http.js";
 import type { AccountRole } from "./api-types.js";
 
-const AUTH_SECRET = process.env.AUTH_SECRET ?? "development-auth-secret";
+/** An empty or whitespace-only AUTH_SECRET counts as unset. */
+export function resolveAuthSecret(value: string | undefined): string {
+  return value && value.trim() ? value : "development-auth-secret";
+}
+
+const AUTH_SECRET = resolveAuthSecret(process.env.AUTH_SECRET);
 const EMAIL_HASH_SECRET = process.env.AUTH_EMAIL_PEPPER ?? AUTH_SECRET;
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;

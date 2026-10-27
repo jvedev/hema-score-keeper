@@ -13,4 +13,4 @@ export interface AppContext {
 }
 
 /** A screen fills `container` and may return a function that cleans up when the screen is left. */
-export type Screen = (container: HTMLElement, context: AppContext) => Promise<void>;
+export type Screen = (container: HTMLElement, context: AppContext) => Promise<void | (() => void)>;

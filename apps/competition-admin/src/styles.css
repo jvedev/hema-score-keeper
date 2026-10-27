@@ -382,3 +382,78 @@ h2 {
   flex: 1;
   min-width: 160px;
 }
+
+/* ---------- tournaments ---------- */
+.tournament-list {
+  display: grid;
+  gap: 8px;
+}
+
+.tournament-row {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--raised);
+  text-decoration: none;
+}
+
+.tournament-row:hover {
+  border-color: var(--brass);
+}
+
+.sync-cards,
+.ring-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.sync-card,
+.ring-card {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--raised);
+}
+
+.state-badge {
+  justify-self: start;
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sync-card[data-tone="ok"] .state-badge {
+  color: var(--verdigris);
+}
+
+.sync-card[data-tone="warn"] .state-badge {
+  color: var(--brass);
+}
+
+.sync-card[data-tone="error"] .state-badge {
+  color: var(--rust);
+}
+
+.report h3 {
+  margin: 8px 0 2px;
+  font-size: 0.9rem;
+}
+
+.report ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.report-errors {
+  color: var(--rust);
+}

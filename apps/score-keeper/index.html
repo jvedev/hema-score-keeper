@@ -138,8 +138,31 @@
         </div>
       </div>
     </section>
+    <section id="ring-screen" class="mode-screen ring-screen" hidden>
+      <div class="mode-card ring-card">
+        <form id="ring-login" class="competition-login" hidden>
+          <p class="mode-eyebrow" data-i18n="ring.eyebrow">Ring</p>
+          <h1 data-i18n="ring.signInTitle">Sign in to keep this ring</h1>
+          <label class="mode-field">
+            <span data-i18n="scorekeeper.username">Username</span>
+            <input name="username" type="text" autocomplete="username" required />
+          </label>
+          <label class="mode-field">
+            <span data-i18n="scorekeeper.password">Password</span>
+            <input name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <p id="ring-login-error" class="mode-copy competition-error" role="alert" hidden></p>
+          <div class="mode-actions">
+            <button type="submit" class="mode-button mode-button-primary" data-i18n="scorekeeper.signIn">Sign in</button>
+          </div>
+        </form>
+        <div id="ring-body" class="ring-body"></div>
+      </div>
+    </section>
     <start-screen-view id="start-screen-view" hidden></start-screen-view>
-    <fight-view id="fight-view" hidden></fight-view>
+    <fight-view id="fight-view" hidden>
+      <div id="ring-bar" class="ring-bar" slot="ring-bar" hidden></div>
+    </fight-view>
 
     <score-view id="score-view"></score-view>
     <warning-view id="warning-view"></warning-view>

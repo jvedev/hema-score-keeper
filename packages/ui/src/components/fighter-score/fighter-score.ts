@@ -33,7 +33,11 @@ export class FighterScore extends BaseComponent {
 
     registerDoubleTap(
       this.#panel,
-      () => this.#editor.open(this.score, this.#name.textContent ?? ""),
+      () => {
+        // Locked (ring mode, read-only): the score comes from elsewhere and is not edited here.
+        if (this.hasAttribute("locked")) return;
+        this.#editor.open(this.score, this.#name.textContent ?? "");
+      },
       this.signal,
     );
     this.registerEvent<CustomEvent<{ score: number }>>(

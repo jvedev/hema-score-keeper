@@ -6,6 +6,8 @@ export type Route =
   | { name: "fighter"; competitionId: string; participantId: string }
   | { name: "bout"; competitionId: string; boutId: string }
   | { name: "settings"; competitionId: string }
+  | { name: "tournaments" }
+  | { name: "tournament"; tournamentId: string }
   | { name: "objection"; boutId: string };
 
 export function parseRoute(pathname: string): Route {
@@ -16,6 +18,14 @@ export function parseRoute(pathname: string): Route {
   }
   if (first === "objections" && id && parts.length === 2) {
     return { name: "objection", boutId: id };
+  }
+  if (first === "tournaments") {
+    if (parts.length === 1) {
+      return { name: "tournaments" };
+    }
+    if (id && parts.length === 2) {
+      return { name: "tournament", tournamentId: id };
+    }
   }
   if (first === "competitions") {
     if (parts.length === 1) {
@@ -54,6 +64,10 @@ export function href(route: Route): string {
       return `/competitions/${e(route.competitionId)}/bouts/${e(route.boutId)}`;
     case "settings":
       return `/competitions/${e(route.competitionId)}/settings`;
+    case "tournaments":
+      return "/tournaments";
+    case "tournament":
+      return `/tournaments/${e(route.tournamentId)}`;
     case "objection":
       return `/objections/${e(route.boutId)}`;
   }

@@ -8,6 +8,8 @@
     "build": "npm run build --workspace @hema/ranking && npm run build --workspace @hema/competition-domain && node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "start:env": "node --env-file=.env dist/server.js",
+    "create-admin": "node ./scripts/create-admin.mjs",
+    "create-admin:env": "node --env-file=.env ./scripts/create-admin.mjs",
     "db:seed": "node ./scripts/seed-database.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"

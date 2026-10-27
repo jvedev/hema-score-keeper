@@ -14,4 +14,30 @@ describe("hema-timer", () => {
 
     element.remove();
   });
+
+  it("a double tap opens the time edit, unless the timer is locked", () => {
+    const element = document.createElement("hema-timer");
+    document.body.appendChild(element);
+    const face = element.shadowRoot!.querySelector<HTMLElement>(".face")!;
+    const adjust = element.shadowRoot!.querySelector(".adjust")!;
+    element.setAttribute("locked", "");
+    face.click();
+    face.click();
+    expect(adjust.classList.contains("open")).toBe(false);
+    element.removeAttribute("locked");
+    face.click();
+    face.click();
+    expect(adjust.classList.contains("open")).toBe(true);
+    element.remove();
+  });
+
+  it("hides the double-tap hint while locked", () => {
+    const element = document.createElement("hema-timer");
+    document.body.appendChild(element);
+    const hint = element.shadowRoot!.querySelector<HTMLElement>(".hint")!;
+    expect(getComputedStyle(hint).display).not.toBe("none");
+    element.setAttribute("locked", "");
+    expect(getComputedStyle(hint).display).toBe("none");
+    element.remove();
+  });
 });

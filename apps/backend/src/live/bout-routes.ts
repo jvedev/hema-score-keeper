@@ -7,10 +7,13 @@ import type { BackendDatabase, DbExecutor } from "../db.js";
 import { ensureObject, HttpError, requireString } from "../http.js";
 import { scoreOf, type BoutScore } from "./bout-score.js";
 import { activeExchanges, enqueueSync, type LiveExchangeRow } from "./live-store.js";
+import { checkRingToken, requireKeeper } from "./ring-keeper.js";
 
 type LiveBoutRow = Selectable<BackendDatabase["LiveBout"]>;
 
 const MAX_POINTS = 10;
+/** A day; anything longer is a client bug, not a bout. */
+const MAX_CLOCK_SECONDS = 24 * 60 * 60;
 const MAX_SEQ_ATTEMPTS = 5;
 
 interface ExchangeInput {
@@ -64,6 +67,33 @@ export function parseExchangeInput(raw: unknown): ExchangeInput {
   return { clientExchangeId, kind, leftPoints, rightPoints, isDouble, firstScorer };
 }
 
+export interface BoutClock {
+  seconds: number;
+  running: boolean;
+  updatedAt: string | null;
+}
+
+export function clockOf(bout: Pick<LiveBoutRow, "clockSeconds" | "clockRunning" | "clockUpdatedAt">): BoutClock {
+  return { seconds: bout.clockSeconds, running: bout.clockRunning === 1, updatedAt: bout.clockUpdatedAt };
+}
+
+function parseClockInput(raw: unknown): { seconds: number; running: boolean } {
+  const body = ensureObject(raw, "Clock");
+  const seconds = body.seconds;
+  if (typeof seconds !== "number" || !Number.isInteger(seconds) || seconds < 0 || seconds > MAX_CLOCK_SECONDS) {
+    throw new HttpError(400, `seconds must be a whole number from 0 to ${MAX_CLOCK_SECONDS}.`);
+  }
+  if (typeof body.running !== "boolean") throw new HttpError(400, "running must be true or false.");
+  return { seconds, running: body.running };
+}
+
+/** A ring's bouts in order, each with its score (null when unscored) and clock. */
+export async function ringBouts(db: DbExecutor, ringId: string) {
+  const bouts = await db.selectFrom("LiveBout").selectAll().where("ringId", "=", ringId).orderBy("order").execute();
+  const scores = await boutScores(db, bouts.map((bout) => bout.id));
+  return bouts.map((bout) => ({ ...bout, score: scores.get(bout.id) ?? null, clock: clockOf(bout) }));
+}
+
 function isUniqueViolation(error: unknown): boolean {
   return error instanceof Error && /UNIQUE constraint failed/i.test(error.message);
 }
@@ -88,17 +118,18 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
     const ringId = requirePathParam(request, "ringId");
     const ring = await database.selectFrom("LiveRing").select("id").where("id", "=", ringId).executeTakeFirst();
     if (!ring) throw new HttpError(404, "Ring not found.");
-    const bouts = await database.selectFrom("LiveBout").selectAll().where("ringId", "=", ringId).orderBy("order").execute();
-    const scores = await boutScores(database, bouts.map((bout) => bout.id));
-    return { bouts: bouts.map((bout) => ({ ...bout, score: scores.get(bout.id) ?? null })) };
+    return { bouts: await ringBouts(database, ringId) };
   });
 
   app.get("/api/v1/live-bouts/:id", async (request) => {
     await requireUser(request, database);
     const bout = await getBout(database, requirePathParam(request, "id"));
     const exchanges = await activeExchanges(database, bout.id);
-    return { bout, exchanges: exchanges.map(publicExchange), score: scoreOf(exchanges) };
+    return { bout, exchanges: exchanges.map(publicExchange), score: scoreOf(exchanges), clock: clockOf(bout) };
   });
+
+  // Every write below checks the ring keeper (X-Ring-Token + X-Device-Id) inside its own transaction, so a takeover
+  // committed between the check and the write can't let the replaced device write.
 
   // Start and finish change the bout's state only. They queue no sheet write: the sheet's content depends only on
   // the exchanges, and a write here would blank a bout range someone typed by hand.
@@ -107,6 +138,7 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
     const boutId = requirePathParam(request, "id");
     return database.transaction().execute(async (trx) => {
       const bout = await getBout(trx, boutId);
+      await requireKeeper(trx, request, bout.ringId);
       if (bout.status === "DONE") throw new HttpError(409, "This bout is finished.");
       if (bout.status === "PENDING") {
         await trx
@@ -127,7 +159,9 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
       try {
         const result = await database.transaction().execute(async (trx) => {
           const bout = await getBout(trx, boutId);
-          // A resend of an exchange we already stored returns it, whatever the bout's state is now.
+          const keeper = await checkRingToken(trx, request, bout.ringId);
+          // A resend of an exchange we already stored returns it, whatever the bout's state is now, and even from a
+          // device that has since been replaced: the exchange was accepted while that device kept the ring.
           const existing = await trx
             .selectFrom("LiveExchange")
             .selectAll()
@@ -141,9 +175,10 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
               existing.rightPoints === input.rightPoints &&
               existing.isDouble === (input.isDouble ? 1 : 0) &&
               existing.firstScorer === input.firstScorer;
-            if (!same) throw new HttpError(409, "clientExchangeId already used with different values");
-            return { exchange: existing, score: await scoreFor(trx, boutId) };
+            if (same) return { exchange: existing, score: await scoreFor(trx, boutId) };
           }
+          await keeper.requireActiveDevice();
+          if (existing) throw new HttpError(409, "clientExchangeId already used with different values");
           if (bout.status === "DONE") throw new HttpError(409, "This bout is finished.");
           const now = app.now().toISOString();
           if (bout.status === "PENDING") {
@@ -193,6 +228,8 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
     const expectedExchangeId = body.expectedExchangeId;
     return database.transaction().execute(async (trx) => {
       const bout = await getBout(trx, boutId);
+      // Unlike an exchange resend, an undo retry needs the active keeper: the undo may have been done by another device.
+      await requireKeeper(trx, request, bout.ringId);
       // A retry of an undo that already happened answers again, whatever the bout's state is now.
       const expected = await trx
         .selectFrom("LiveExchange")
@@ -234,6 +271,7 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
     const boutId = requirePathParam(request, "id");
     return database.transaction().execute(async (trx) => {
       const bout = await getBout(trx, boutId);
+      await requireKeeper(trx, request, bout.ringId);
       if (bout.status !== "DONE") {
         const now = app.now().toISOString();
         await trx
@@ -243,6 +281,24 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
           .execute();
       }
       return { bout: await getBout(trx, boutId), score: await scoreFor(trx, boutId) };
+    });
+  });
+
+  // The device reports its clock; the server never counts. Allowed in any bout state (a pause sent right after
+  // finish must not be refused), it doesn't start the bout and queues no sheet write.
+  app.post("/api/v1/live-bouts/:id/clock", async (request) => {
+    await requireUser(request, database);
+    const boutId = requirePathParam(request, "id");
+    const input = parseClockInput(request.body);
+    return database.transaction().execute(async (trx) => {
+      const bout = await getBout(trx, boutId);
+      await requireKeeper(trx, request, bout.ringId);
+      await trx
+        .updateTable("LiveBout")
+        .set({ clockSeconds: input.seconds, clockRunning: input.running ? 1 : 0, clockUpdatedAt: app.now().toISOString() })
+        .where("id", "=", boutId)
+        .execute();
+      return { clock: clockOf(await getBout(trx, boutId)) };
     });
   });
 }

@@ -27,4 +27,14 @@ describe("fighter-score", () => {
 
     element.remove();
   });
+
+  it("hides the double-tap hint while locked", () => {
+    const element = document.createElement("fighter-score");
+    document.body.appendChild(element);
+    const hint = element.shadowRoot!.querySelector<HTMLElement>(".hint")!;
+    expect(getComputedStyle(hint).display).not.toBe("none");
+    element.setAttribute("locked", "");
+    expect(getComputedStyle(hint).display).toBe("none");
+    element.remove();
+  });
 });

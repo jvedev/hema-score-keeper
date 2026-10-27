@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type BetterSqlite3 from "better-sqlite3";
 
 type NativeDatabase = InstanceType<typeof BetterSqlite3>;
@@ -273,6 +274,40 @@ const MIGRATIONS: readonly SchemaMigration[] = [
           PRIMARY KEY (tournamentId, target)
         );
       `);
+    },
+  },
+  {
+    // Skill is read by user lookups but was only created by the old officials SQL migration, so a fresh
+    // database lacked it. Mirrors sql/migrations/20260809154100_officials.
+    name: "2026-10-26-skill-table",
+    apply(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS "Skill" (
+            "id" TEXT NOT NULL PRIMARY KEY,
+            "userId" TEXT NOT NULL,
+            "skillName" TEXT NOT NULL,
+            "skillLevel" INTEGER NOT NULL,
+            CONSTRAINT "Skill_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS "Skill_userId_idx" ON "Skill"("userId");
+      `);
+    },
+  },
+  {
+    // Ring mode: each ring link carries a secret keeper token, one device keeps the ring, and the bout clock is stored.
+    name: "2026-10-26-live-ring-keeper",
+    apply(database) {
+      addColumn(database, "LiveRing", "keeperToken", "TEXT");
+      addColumn(database, "LiveRing", "activeDeviceId", "TEXT");
+      addColumn(database, "LiveRing", "activeUserId", "TEXT REFERENCES User(id)");
+      addColumn(database, "LiveRing", "activeSince", "TEXT");
+      const missing = database.prepare("SELECT id FROM LiveRing WHERE keeperToken IS NULL").all() as Array<{ id: string }>;
+      const setToken = database.prepare("UPDATE LiveRing SET keeperToken = ? WHERE id = ?");
+      for (const ring of missing) setToken.run(randomBytes(24).toString("base64url"), ring.id);
+      database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_liveRing_keeperToken ON LiveRing(keeperToken)");
+      addColumn(database, "LiveBout", "clockSeconds", "INTEGER NOT NULL DEFAULT 0");
+      addColumn(database, "LiveBout", "clockRunning", "INTEGER NOT NULL DEFAULT 0");
+      addColumn(database, "LiveBout", "clockUpdatedAt", "TEXT");
     },
   },
 ];

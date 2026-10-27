@@ -1,1 +1,1 @@
-export { ApiError, ApiSession, SessionExpiredError, type ApiSessionOptions, type AuthResponse, type AuthUser, type Session } from "./api-session.js";
+export { ApiError, ApiSession, RefreshUnavailableError, SessionExpiredError, timeoutSignal, type TimeoutSignal, type ApiSessionOptions, type AuthResponse, type AuthUser, type Session } from "./api-session.js";

@@ -3,6 +3,19 @@ export function apiBaseUrl(configured: string | undefined = import.meta.env.VITE
   return configured?.trim() || "/api/v1";
 }
 
+/**
+ * Where the score-keeper app lives: ring links point at its `/ring/<token>` page. The score-keeper builds without a
+ * Vite `base`, so that page is at the root of its site. Set VITE_SCORE_KEEPER_URL when it is not served from this site.
+ */
+export function scoreKeeperAppUrl(
+  configured: string | undefined = import.meta.env.VITE_SCORE_KEEPER_URL,
+  dev: boolean = import.meta.env.DEV,
+  origin: string = window.location.origin,
+): string {
+  const url = configured?.trim() || (dev ? "http://localhost:5180" : origin);
+  return url.replace(/\/+$/, "");
+}
+
 /** Where the participant app lives: invite links point at its /join/:code page. Set VITE_PARTICIPANT_APP_URL to override. */
 export function participantAppUrl(): string {
   const configured = import.meta.env.VITE_PARTICIPANT_APP_URL;

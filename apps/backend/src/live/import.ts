@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { DbExecutor } from "../db.js";
 import { HttpError } from "../http.js";
 import type { CellSource, CellValue } from "./cell-source.js";
+import { newKeeperToken } from "./ring-keeper.js";
 import { isWholeTargetError } from "./sync-errors.js";
 import { boutCells, LAYOUTS, parseA1, type SheetLayout } from "./sheet-layout.js";
 
@@ -79,13 +80,13 @@ export async function applySchedulePlan(db: DbExecutor, tournamentId: string, pl
   );
   const existingByKey = new Map(existingBouts.map((bout) => [`${bout.sheetName}!${bout.headerCell}`, bout]));
 
-  const rings = new Map((await db.selectFrom("LiveRing").selectAll().where("tournamentId", "=", tournamentId).execute()).map((ring) => [ring.name, ring]));
+  const rings = new Map((await db.selectFrom("LiveRing").select(["id", "name", "order"]).where("tournamentId", "=", tournamentId).execute()).map((ring) => [ring.name, ring]));
   const ringNameById = new Map([...rings.values()].map((ring) => [ring.id, ring.name]));
   let nextRingOrder = Math.max(0, ...[...rings.values()].map((ring) => ring.order)) + 1;
   const ringId = async (name: string): Promise<string> => {
     const known = rings.get(name);
     if (known) return known.id;
-    const created = { id: randomUUID(), tournamentId, name, order: nextRingOrder++ };
+    const created = { id: randomUUID(), tournamentId, name, order: nextRingOrder++, keeperToken: newKeeperToken() };
     await db.insertInto("LiveRing").values(created).execute();
     rings.set(name, created);
     return created.id;

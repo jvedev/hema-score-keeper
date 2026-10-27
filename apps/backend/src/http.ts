@@ -3,6 +3,8 @@ export class HttpError extends Error {
     public readonly statusCode: number,
     message: string,
     public readonly details?: unknown,
+    /** Extra top-level fields of the error response, e.g. `{ reason: "TAKEN_OVER" }`. */
+    public readonly body?: Record<string, unknown>,
   ) {
     super(message);
   }

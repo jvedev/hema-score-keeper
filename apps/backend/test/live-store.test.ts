@@ -14,7 +14,7 @@ async function seedTournament(googleSpreadsheetId: string | null = null): Promis
     .insertInto("LiveTournament")
     .values({ id: "t1", name: "Open", mode: "SHEET", layoutVersion: "v3", googleSpreadsheetId, createdByUserId: "u1", createdAt: NOW })
     .execute();
-  await database.insertInto("LiveRing").values({ id: "r1", tournamentId: "t1", name: "Pool_1", order: 1 }).execute();
+  await database.insertInto("LiveRing").values({ id: "r1", tournamentId: "t1", name: "Pool_1", order: 1, keeperToken: "token-r1" }).execute();
   await database
     .insertInto("LiveBout")
     .values({
@@ -68,10 +68,12 @@ describe("migration creates live tables", () => {
     expect(await columnNames("LiveTournament")).toEqual(
       ["id", "name", "mode", "layoutVersion", "googleSpreadsheetId", "createdByUserId", "createdAt"],
     );
-    expect(await columnNames("LiveRing")).toEqual(["id", "tournamentId", "name", "order"]);
+    expect(await columnNames("LiveRing")).toEqual([
+      "id", "tournamentId", "name", "order", "keeperToken", "activeDeviceId", "activeUserId", "activeSince",
+    ]);
     expect(await columnNames("LiveBout")).toEqual([
       "id", "tournamentId", "ringId", "order", "label", "sheetName", "headerCell",
-      "fighterLeft", "fighterRight", "status", "startedAt", "finishedAt",
+      "fighterLeft", "fighterRight", "status", "startedAt", "finishedAt", "clockSeconds", "clockRunning", "clockUpdatedAt",
     ]);
     expect(await columnNames("LiveExchange")).toEqual([
       "id", "boutId", "seq", "kind", "leftPoints", "rightPoints", "isDouble",
@@ -86,7 +88,7 @@ describe("migration creates live tables", () => {
   it("rejects duplicates on the unique indexes", async () => {
     await seedTournament();
     await expect(
-      database.insertInto("LiveRing").values({ id: "r2", tournamentId: "t1", name: "Pool_1", order: 2 }).execute(),
+      database.insertInto("LiveRing").values({ id: "r2", tournamentId: "t1", name: "Pool_1", order: 2, keeperToken: "token-r2" }).execute(),
     ).rejects.toThrow(/UNIQUE/);
     await expect(
       database

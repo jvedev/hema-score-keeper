@@ -82,7 +82,27 @@ describe("applySchemaMigrations", () => {
     expect(() => applySchemaMigrations(database)).not.toThrow();
     expect(adminRows()).toHaveLength(admins);
     expect(database.prepare("SELECT COUNT(*) AS count FROM SchemaMigration").get()).toEqual({ count: applied });
-    expect(applied).toBe(14);
+    expect(applied).toBe(16);
+  });
+});
+
+describe("live ring keeper", () => {
+  it("backfills a keeper token for existing rings and adds the clock columns", () => {
+    applySchemaMigrations(database);
+    insertUser("creator", "USER", null);
+    database.prepare("INSERT INTO LiveTournament (id, name, mode, layoutVersion, createdByUserId, createdAt) VALUES ('t', 't', 'SHEET', 'v3', 'creator', 'now')").run();
+    // Rings from before the migration have no token: rerun the migration over them.
+    database.prepare("DROP INDEX idx_liveRing_keeperToken").run();
+    database.prepare("INSERT INTO LiveRing (id, tournamentId, name, \"order\") VALUES ('r1', 't', 'Ring 1', 1), ('r2', 't', 'Ring 2', 2)").run();
+    database.prepare("DELETE FROM SchemaMigration WHERE name = '2026-10-26-live-ring-keeper'").run();
+    applySchemaMigrations(database);
+    const tokens = (database.prepare("SELECT keeperToken FROM LiveRing ORDER BY id").all() as Array<{ keeperToken: string }>).map((row) => row.keeperToken);
+    expect(tokens).toHaveLength(2);
+    for (const token of tokens) expect(token).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(tokens[0]).not.toBe(tokens[1]);
+    expect(columns("LiveRing")).toEqual(expect.arrayContaining(["activeDeviceId", "activeUserId", "activeSince"]));
+    expect(columns("LiveBout")).toEqual(expect.arrayContaining(["clockSeconds", "clockRunning", "clockUpdatedAt"]));
+    expect(() => database.prepare("UPDATE LiveRing SET keeperToken = ? WHERE id = 'r2'").run(tokens[0])).toThrow(/UNIQUE/);
   });
 });
 

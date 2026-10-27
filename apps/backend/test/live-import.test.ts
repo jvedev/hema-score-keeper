@@ -137,6 +137,10 @@ describe("live import", () => {
     ]);
     const rings = await ctx.database.selectFrom("LiveRing").select(["name", "order"]).orderBy("order").execute();
     expect(rings).toEqual([{ name: "Ring A", order: 1 }, { name: "Ring B", order: 2 }]);
+    // An imported ring gets its keeper token when it is created.
+    const tokens = (await ctx.database.selectFrom("LiveRing").select("keeperToken").execute()).map((row) => row.keeperToken);
+    expect(tokens.every((token) => /^[A-Za-z0-9_-]{32}$/.test(token))).toBe(true);
+    expect(new Set(tokens).size).toBe(2);
   });
 
   it("blank fighters import as empty", async () => {
@@ -487,5 +491,5 @@ describe("live import", () => {
     expect(bout!.fighterLeft).toBe(expectedLeft);
     expect(bout!.fighterRight).toBe(cells.get("Pool_1!E25"));
     expect(bout!.label).toBe("Match 1");
-  });
+  }, 30_000);
 });

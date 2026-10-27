@@ -40,6 +40,8 @@ export class FightView extends BaseComponent {
   #matchActive = false;
   #matchCompleted = false;
   #colorsSwapped = false;
+  #ringMode = false;
+  #readOnly = false;
   #leftFighterStyle: FighterStyleConfig = {
     backgroundColor: "#21c15b",
     textColor: "#071a0d",
@@ -78,6 +80,10 @@ export class FightView extends BaseComponent {
       );
     });
     this.registerEvent(this.#timeoutButton, "click", () => this.#toggleTimer());
+    this.registerEvent(this.#timer, "timer-end", () => {
+      this.#syncControls();
+      this.#dispatchClock();
+    });
     this.registerEvent(this.#endMatchButton, "click", () => {
       this.dispatchEvent(
         new CustomEvent("end-match-requested", {
@@ -152,6 +158,51 @@ export class FightView extends BaseComponent {
     this.#syncControls();
   }
 
+  /** The bout clock: elapsed seconds. */
+  get clockSeconds(): number {
+    return this.#timer.elapsedSeconds;
+  }
+
+  get clockRunning(): boolean {
+    return this.#timer.running;
+  }
+
+  /**
+   * Shows the clock paused with `elapsedSeconds` gone (call after `setMatchDuration`). `started` opens the screen past
+   * its Start button, for a bout that already began.
+   */
+  setClock(elapsedSeconds: number, started: boolean): void {
+    this.#timer.setElapsed(elapsedSeconds);
+    this.#matchStarted = started;
+    this.#syncControls();
+  }
+
+  /**
+   * Ring mode: the score lives on the backend, so reset and forfeit are not offered and the scores cannot be edited
+   * by double-tapping them.
+   */
+  setRingMode(enabled: boolean): void {
+    this.#ringMode = enabled;
+    this.#syncControls();
+  }
+
+  /** Read-only (another device keeps the ring): the clock stops and every control is disabled. */
+  setReadOnly(readOnly: boolean): void {
+    this.#readOnly = readOnly;
+    this.toggleAttribute("read-only", readOnly);
+    if (readOnly) this.#timer.stop();
+    this.#syncControls();
+  }
+
+  #dispatchClock(): void {
+    this.dispatchEvent(
+      new CustomEvent("clock-toggled", {
+        bubbles: true,
+        detail: { elapsedTimeSeconds: this.#timer.elapsedSeconds, running: this.#timer.running },
+      }),
+    );
+  }
+
   #requestView(
     eventName: "hit-requested" | "warning-requested" | "forfeit-requested",
   ): void {
@@ -164,6 +215,7 @@ export class FightView extends BaseComponent {
     }
     this.#timer.toggle();
     this.#syncControls();
+    this.#dispatchClock();
   }
 
   #resetFight(): void {
@@ -220,13 +272,15 @@ export class FightView extends BaseComponent {
 
   #syncControls(): void {
     const started = this.#matchStarted;
-    const active = this.#matchActive;
+    const active = this.#matchActive && !this.#readOnly;
+    const readOnly = this.#readOnly;
     this.queryRoot<HTMLButtonElement>("#hit-button").disabled =
       !started || !active;
     this.queryRoot<HTMLButtonElement>("#warning-button").disabled =
       !started || !active;
     this.queryRoot<HTMLButtonElement>("#timeout-button").disabled =
-      started ? !active : false;
+      readOnly || (started ? !active : false);
+    this.#endMatchButton.disabled = readOnly;
     this.queryRoot<HTMLButtonElement>("#hit-button").toggleAttribute(
       "hidden",
       !started,
@@ -235,12 +289,19 @@ export class FightView extends BaseComponent {
       "hidden",
       !started,
     );
-    this.queryRoot<HTMLElementTagNameMap["confirm-button"]>(
+    const reset = this.queryRoot<HTMLElementTagNameMap["confirm-button"]>(
       "#reset-button",
-    ).toggleAttribute("disabled", !started || !active);
-    this.queryRoot<HTMLElementTagNameMap["confirm-button"]>(
+    );
+    const forfeit = this.queryRoot<HTMLElementTagNameMap["confirm-button"]>(
       "#forfeit-button",
-    ).toggleAttribute("disabled", !started || !active);
+    );
+    reset.toggleAttribute("disabled", !started || !active);
+    forfeit.toggleAttribute("disabled", !started || !active);
+    reset.hidden = this.#ringMode;
+    forfeit.hidden = this.#ringMode;
+    this.#fighterLeft.toggleAttribute("locked", this.#ringMode || readOnly);
+    this.#fighterRight.toggleAttribute("locked", this.#ringMode || readOnly);
+    this.#timer.toggleAttribute("locked", this.#ringMode || readOnly);
     this.#buttonStack.classList.toggle("pre-start", !started);
 
     if (!started) {
@@ -269,6 +330,7 @@ declare global {
     "match-reset-requested": CustomEvent<void>;
     "end-match-requested": CustomEvent<{ elapsedTimeSeconds: number }>;
     "forfeit-requested": CustomEvent<void>;
+    "clock-toggled": CustomEvent<{ elapsedTimeSeconds: number; running: boolean }>;
   }
 
   interface HTMLElementTagNameMap {

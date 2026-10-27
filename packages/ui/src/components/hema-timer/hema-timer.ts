@@ -38,7 +38,11 @@ export class HemaTimer extends BaseComponent {
 
     registerDoubleTap(
       this.queryRoot(".face"),
-      () => this.#openAdjust(),
+      () => {
+        // Locked (ring mode): the bout time comes from the backend and is not edited by hand.
+        if (this.hasAttribute("locked")) return;
+        this.#openAdjust();
+      },
       this.signal,
     );
     this.queryRootAll<HTMLElement>(".column").forEach((column) =>
@@ -99,6 +103,14 @@ export class HemaTimer extends BaseComponent {
   reset(): void {
     this.stop();
     this.#remainingSeconds = this.#totalSeconds;
+    this.#renderTime();
+  }
+
+  /** Shows the clock paused with `elapsedSeconds` of the bout gone (e.g. the time a backend stored). */
+  setElapsed(elapsedSeconds: number): void {
+    this.stop();
+    const elapsed = Number.isFinite(elapsedSeconds) ? Math.max(0, Math.floor(elapsedSeconds)) : 0;
+    this.#remainingSeconds = Math.max(0, this.#totalSeconds - elapsed);
     this.#renderTime();
   }
 

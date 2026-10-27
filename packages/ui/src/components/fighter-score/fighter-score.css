@@ -44,6 +44,10 @@
   line-height: 1;
 }
 
+:host([locked]) .hint {
+  display: none;
+}
+
 .hint {
   color: color-mix(in srgb, currentColor 70%, transparent);
   font-size: 10px;

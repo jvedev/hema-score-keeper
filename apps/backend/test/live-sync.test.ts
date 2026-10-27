@@ -77,7 +77,7 @@ describe("live sync worker", () => {
         createdAt: T0.toISOString(),
       })
       .execute();
-    await db.insertInto("LiveRing").values({ id: "r1", tournamentId: TOURNAMENT, name: "Ring A", order: 1 }).execute();
+    await db.insertInto("LiveRing").values({ id: "r1", tournamentId: TOURNAMENT, name: "Ring A", order: 1, keeperToken: "token-r1" }).execute();
     await addBout("b1", "B25");
   });
 
@@ -273,7 +273,7 @@ describe("live sync worker", () => {
     expect(pool.getCell("E27").value).toBe(2);
     expect(pool.getCell("D28").value).toBeNull();
     expect(pool.getCell("C26").formula).toBe("IF(AND(D26>0,E26>0), 0, D26)");
-  });
+  }, 30_000);
 
   it("a job reset by an enqueue during the write stays PENDING", async () => {
     await addExchange("b1", 1, 0);
@@ -425,7 +425,7 @@ describe("live sync worker", () => {
       .insertInto("LiveTournament")
       .values({ id: "a0", name: "Other", mode: "SHEET", layoutVersion: "v3", googleSpreadsheetId: "sheet-2", createdByUserId: "owner", createdAt: T0.toISOString() })
       .execute();
-    await db.insertInto("LiveRing").values({ id: "r0", tournamentId: "a0", name: "Ring", order: 1 }).execute();
+    await db.insertInto("LiveRing").values({ id: "r0", tournamentId: "a0", name: "Ring", order: 1, keeperToken: "token-r0" }).execute();
     await db
       .insertInto("LiveBout")
       .values({

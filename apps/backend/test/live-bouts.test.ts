@@ -29,6 +29,9 @@ describe("scoreOf", () => {
   });
 });
 
+const RING_TOKEN = "ring-token-R";
+const DEVICE_ID = "device-1";
+
 describe("live bouts", () => {
   let ctx: TestContext;
   let user: TestUser;
@@ -43,7 +46,7 @@ describe("live bouts", () => {
       .values({ id: "T", name: "T", mode: "SHEET", layoutVersion: "v3", googleSpreadsheetId, createdByUserId: user.id, createdAt: "2026-10-25T10:00:00.000Z" })
       .execute();
     ringId = "R";
-    await ctx.database.insertInto("LiveRing").values({ id: ringId, tournamentId: "T", name: "Ring 1", order: 1 }).execute();
+    await ctx.database.insertInto("LiveRing").values({ id: ringId, tournamentId: "T", name: "Ring 1", order: 1, keeperToken: RING_TOKEN }).execute();
     boutId = "B1";
     await ctx.database
       .insertInto("LiveBout")
@@ -52,6 +55,11 @@ describe("live bouts", () => {
         fighterLeft: "Ronald", fighterRight: "Diego", status: "PENDING", startedAt: null, finishedAt: null,
       })
       .execute();
+    // Writes need the ring's keeper: claim the ring with this device, then every write sends the headers.
+    const claimed = await ctx.app.inject({
+      method: "POST", url: `/api/v1/live-rings/by-token/${RING_TOKEN}/claim`, payload: { deviceId: DEVICE_ID }, headers: bearer(user),
+    });
+    expect(claimed.statusCode).toBe(200);
   }
 
   beforeEach(async () => {
@@ -65,7 +73,8 @@ describe("live bouts", () => {
   });
 
   function post(url: string, payload?: unknown, as: TestUser | null = user) {
-    return ctx.app.inject({ method: "POST", url, payload: payload as object | undefined, headers: as ? bearer(as) : {} });
+    const keeper = { "x-ring-token": RING_TOKEN, "x-device-id": DEVICE_ID };
+    return ctx.app.inject({ method: "POST", url, payload: payload as object | undefined, headers: as ? { ...bearer(as), ...keeper } : keeper });
   }
 
   function exchange(id: string, left: number, right: number, extra: Record<string, unknown> = {}, bout = boutId) {

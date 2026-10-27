@@ -24,6 +24,10 @@ export interface ScoreViewConfig {
   scores: number[];
   fighterA: ScoreViewFighter;
   fighterB: ScoreViewFighter;
+  /** Offer "first A / first B" (afterblow) when both fighters scored. Default true; off, only "Double" is offered. */
+  allowAfterblow?: boolean;
+  /** Allow editing a fighter's score by double-tapping it. Default true. */
+  allowScoreCorrection?: boolean;
 }
 
 export class ScoreView extends BaseComponent {
@@ -89,6 +93,9 @@ export class ScoreView extends BaseComponent {
   }
 
   #render(): void {
+    const locked = this.#config.allowScoreCorrection === false;
+    this.queryRoot("#fighter-a").toggleAttribute("locked", locked);
+    this.queryRoot("#fighter-b").toggleAttribute("locked", locked);
     this.#renderFighter("a", this.#config.fighterA);
     this.#renderFighter("b", this.#config.fighterB);
     this.#renderOptions("a");
@@ -161,6 +168,16 @@ export class ScoreView extends BaseComponent {
     if (scoreA === 0 || scoreB === 0) {
       outcomes.append(
         this.#createOutcomeButton("Hit", "hit", () => this.#submit("hit")),
+      );
+      return;
+    }
+
+    if (this.#config.allowAfterblow === false) {
+      outcomes.classList.remove("two-column");
+      outcomes.append(
+        this.#createOutcomeButton("Double", "double", () =>
+          this.#submit("double"),
+        ),
       );
       return;
     }

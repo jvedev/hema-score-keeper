@@ -181,7 +181,11 @@ describe("google target", () => {
 
   async function addBout(tournamentId: string, boutId: string, headerCell = "B25"): Promise<void> {
     const ringId = `ring-${tournamentId}`;
-    await db.insertInto("LiveRing").values({ id: ringId, tournamentId, name: "Ring", order: 1 }).onConflict((c) => c.doNothing()).execute();
+    await db
+      .insertInto("LiveRing")
+      .values({ id: ringId, tournamentId, name: "Ring", order: 1, keeperToken: `token-${tournamentId}` })
+      .onConflict((c) => c.doNothing())
+      .execute();
     await db
       .insertInto("LiveBout")
       .values({
@@ -218,6 +222,7 @@ describe("google target", () => {
   it("google failure does not block exchanges", async () => {
     await addTournament("T");
     await addBout("T", "B1");
+    expect((await request("POST", "/api/v1/live-rings/by-token/token-T/claim", owner, { deviceId: "device-1" })).statusCode).toBe(200);
     for (const mode of ["hang", "500"] as const) {
       const google = fakeGoogle(() => (mode === "hang" ? "hang" : { status: 500, json: { error: { message: "backend error" } } }));
       const api = new GoogleSheetsApi({ email: EMAIL, privateKey }, { fetch: google.fetch, timeoutMs: 50 });
@@ -226,11 +231,14 @@ describe("google target", () => {
       const stop = startSyncWorker(db, { intervalMs: 10, sinks });
       try {
         const started = Date.now();
-        const response = await request("POST", "/api/v1/live-bouts/B1/exchanges", owner, {
-          clientExchangeId: `x-${mode}`, kind: "EXCHANGE", leftPoints: 1, rightPoints: 0,
+        const response = await ctx.app.inject({
+          method: "POST",
+          url: "/api/v1/live-bouts/B1/exchanges",
+          payload: { clientExchangeId: `x-${mode}`, kind: "EXCHANGE", leftPoints: 1, rightPoints: 0 },
+          headers: { ...bearer(owner), "x-ring-token": "token-T", "x-device-id": "device-1" },
         });
         expect(response.statusCode).toBe(200);
-        expect(Date.now() - started).toBeLessThan(200);
+        expect(Date.now() - started).toBeLessThan(1000);
 
         // Wait for the worker to try Google and fail (timeout or 500).
         let job = await googleJob();

@@ -142,4 +142,23 @@ describe("score-view", () => {
 
     element.remove();
   });
+
+  it("without the afterblow, a both-score exchange offers only Double, and the scores cannot be edited", () => {
+    const element = document.createElement("score-view");
+    document.body.appendChild(element);
+    element.configure({
+      scores: [1, 2],
+      fighterA: { name: "A", score: 0, backgroundColor: "#fff", textColor: "#000" },
+      fighterB: { name: "B", score: 0, backgroundColor: "#000", textColor: "#fff" },
+      allowAfterblow: false,
+      allowScoreCorrection: false,
+    });
+    element.open(10);
+    const root = element.shadowRoot!;
+    (root.querySelectorAll('.score-options[data-fighter="a"] button')[1] as HTMLButtonElement).click();
+    (root.querySelectorAll('.score-options[data-fighter="b"] button')[1] as HTMLButtonElement).click();
+    expect([...root.querySelectorAll(".outcomes button")].map((button) => button.className)).toEqual(["double"]);
+    expect(root.querySelector("#fighter-a")?.hasAttribute("locked")).toBe(true);
+    element.remove();
+  });
 });

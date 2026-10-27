@@ -65,6 +65,19 @@ apps are published on the same site. Set it at build time when they are not. The
 API address is `VITE_COMPETITION_API_URL` (default `/api/v1`). Both are listed in
 `apps/competition-admin/.env.example`.
 
+## Admin app: ring links (Tournaments screen)
+
+The Tournaments screen builds each ring link as `<score-keeper app>/ring/<token>` (with a QR
+code). It finds the score-keeper app through `VITE_SCORE_KEEPER_URL` (no trailing slash, e.g.
+`https://keep.example.org`). The score-keeper builds without a Vite `base`, so its ring page
+is at the root of its site (`/ring/<token>`), and the host must serve `index.html` for that
+path.
+
+**Production must set `VITE_SCORE_KEEPER_URL` at build time.** The score-keeper is hosted
+apart from the admin app, so the admin app's own origin (the fallback in a build) gives wrong
+links. In dev it defaults to `http://localhost:5180`, where `.claude/launch.json` runs the
+score-keeper. It is listed in `apps/competition-admin/.env.example`.
+
 ## Local dev
 
 ```text
@@ -74,6 +87,53 @@ npm run dev --workspace @hema/competition   # http://localhost:5173/hema-score-k
 
 The dev server proxies `/api` to `http://localhost:3001`, so no settings are needed. To use
 another backend, set `VITE_API_BASE_URL` in `apps/competition/.env.local` (see `.env.example`).
+
+## Venue laptop: fresh database and first admin
+
+A new database is created and migrated when the backend starts, so sign-in works from the first run.
+There is no account yet, so create the first system admin once (build first: `npm run build --workspace @hema/backend`):
+
+```text
+npm run create-admin --workspace @hema/backend -- --username <username> --name "<Full name>"
+```
+
+It asks for the password on stdin (hidden in a terminal; piping it in also works) and never takes it as an
+argument and refuses a username that already exists. It prints the database file it writes to.
+
+`create-admin` must use the same `DATABASE_URL` as the server, or the admin lands in a different database.
+Use `create-admin:env` (loads `.env`, like `start:env`) when the server is started with `npm run start:env`;
+use plain `create-admin` when the server gets `DATABASE_URL` from the environment or the default.
+
+Set `AUTH_SECRET` to a long random value before the server is used at a venue. Without it the backend signs
+sign-in tokens with a built-in development secret and prints a warning at startup. Changing it later signs
+everyone out (and changes email hashes unless `AUTH_EMAIL_PEPPER` is set separately).
+
+## Venue checklist
+
+Work through this in order on the day (or the evening before). Everything runs on one laptop on the venue's
+Wi-Fi; phones only need a browser.
+
+1. **Backend on the laptop.** In `apps/backend/.env` (or the shell) set `AUTH_SECRET` (a long random value),
+   `DATABASE_URL` (for example `file:./venue.db`) and `LIVE_DATA_DIR` (where the live tournament files go,
+   for example `./data/venue-live`). Build once (`npm run build --workspace @hema/backend`), then run
+   `npm run start:env --workspace @hema/backend`. It listens on `0.0.0.0:3001` (`PORT` changes the port), so
+   add a Windows firewall inbound rule for TCP port 3001 (Private network profile), or phones cannot connect.
+2. **First admin.** `npm run create-admin:env --workspace @hema/backend -- --username <username> --name "<Full name>"`
+   (see "Venue laptop: fresh database and first admin" above; it must see the same `.env` as `start:env`).
+3. **Score-keeper for the phones.** Build it against the laptop, with the mock API off:
+   `VITE_API_BASE_URL=http://<laptop-ip>:3001/api/v1` (leave `VITE_USE_MOCK_API` unset or `false`; `apps/score-keeper/.env`
+   sets it to `true`, which makes the app use fake data). Then serve the build with a fallback to `index.html`,
+   because `/ring/<token>` is not a file:
+   `npm run build --workspace @hema/score-keeper && npm run preview --workspace @hema/score-keeper -- --host --port 5180`
+   (`vite preview` falls back to `index.html` for unknown paths). Check it:
+   `curl -i http://<laptop-ip>:5180/ring/test` must answer `200` with the app's HTML, not `404`. Allow TCP port 5180 in the firewall too.
+4. **Admin app.** Build or run it with `VITE_COMPETITION_API_URL=http://<laptop-ip>:3001/api/v1` and
+   `VITE_SCORE_KEEPER_URL=http://<laptop-ip>:5180`. The ring links the admin shows use `VITE_SCORE_KEEPER_URL`;
+   the default `http://localhost:5180` only works on the laptop itself, so a phone scanning that QR code gets nothing.
+5. **No mixed content.** A score-keeper served over HTTPS (for example GitHub Pages) cannot call an HTTP backend
+   on the LAN: the browser blocks it. Serve the score-keeper and the backend both over plain HTTP on the LAN, or both over HTTPS.
+6. **Final check.** Open a ring link from the admin app on a phone on the venue Wi-Fi. You should see the
+   sign-in screen. If not, check the laptop's IP, the firewall rules and that both URLs above use that IP.
 
 ## Tournament schedule sheet
 
@@ -147,3 +207,24 @@ Scoring routes, for the scorer apps: an undo must name the exchange it removes,
 that already happened answers 200 with the current score and removes nothing; any other id than the newest active
 exchange is 409. Bouts carry `score: { left, right, doubles }`, or `null` when nobody has scored yet, on both
 `GET /api/v1/live-rings/:id/bouts` and `GET /api/v1/live-tournaments/:id`.
+
+### Ring links and the ring keeper
+
+Each ring has a secret keeper token (24 random bytes, base64url). The ring link is
+`<score-keeper>/ring/<token>`. The link alone does not let anyone score: the scorer must also be signed in.
+
+- `GET /api/v1/live-tournaments/:id/rings` lists the rings with their tokens. Creator or system admin.
+- `POST /api/v1/live-rings/:id/rotate-token` makes a new token. The old link stops working at once, and nobody
+  keeps the ring until someone claims it with the new link. Creator or system admin.
+- `GET /api/v1/live-rings/by-token/:token` gives `{ ring, tournament, bouts, activeKeeper, youAreKeeper }` (`youAreKeeper`: the optional `X-Device-Id` header is the active keeper; the device id itself is never returned) (404 for an unknown or
+  rotated token).
+- `POST /api/v1/live-rings/by-token/:token/claim` with `{ deviceId, confirm? }` makes that device the ring's one
+  active keeper. When another device keeps the ring, it answers 409 `{ reason: "ACTIVE_KEEPER", activeKeeper }`
+  unless `confirm` is true. A claim pauses any running bout clock of the ring at its stored seconds.
+
+Every live-bout write (start, exchanges, undo, finish and `POST /api/v1/live-bouts/:id/clock` with
+`{ seconds, running }`) needs the headers `X-Ring-Token` (the bout's ring) and `X-Device-Id` (the active keeper).
+A missing or wrong token is 403; any other device gets 409 `{ reason: "TAKEN_OVER", activeKeeper }`. One exception:
+a resend of an exchange that was already stored under the same `clientExchangeId` answers 200 with the stored
+exchange, also from a device that was replaced since; it creates nothing. The clock is what the device reports; the
+server never counts it.

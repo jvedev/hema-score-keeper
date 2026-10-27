@@ -31,6 +31,11 @@
   color: var(--danger);
 }
 
+/* Nothing to double-tap while locked (ring mode, read-only). */
+:host([locked]) .hint {
+  display: none;
+}
+
 .hint {
   color: var(--text-dim);
   display: block;

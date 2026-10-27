@@ -316,6 +316,12 @@ interface LiveRingTable {
   tournamentId: string;
   name: string;
   order: number;
+  /** Secret part of the ring link (24 random bytes, base64url). Set when the ring is created. */
+  keeperToken: string;
+  /** The one device that may write to this ring's bouts; null until someone claims the ring. */
+  activeDeviceId: string | null;
+  activeUserId: string | null;
+  activeSince: string | null;
 }
 
 interface LiveBoutTable {
@@ -331,6 +337,10 @@ interface LiveBoutTable {
   status: "PENDING" | "RUNNING" | "DONE";
   startedAt: string | null;
   finishedAt: string | null;
+  /** The bout clock as the keeper's device last reported it; the server never counts. */
+  clockSeconds: Generated<number>;
+  clockRunning: Generated<number>;
+  clockUpdatedAt: string | null;
 }
 
 interface LiveExchangeTable {
@@ -416,7 +426,7 @@ export interface BackendDatabase {
 
 export type DbExecutor = Kysely<BackendDatabase> | Transaction<BackendDatabase>;
 
-function resolveDatabasePath(databaseUrl = process.env.DATABASE_URL ?? "file:./dev.db"): string {
+export function resolveDatabasePath(databaseUrl = process.env.DATABASE_URL ?? "file:./dev.db"): string {
   if (!databaseUrl.startsWith("file:")) {
     return databaseUrl;
   }

@@ -1,6 +1,5 @@
 import type { FastifyInstance } from "fastify";
 import {
-  sql,
   type Kysely,
   type KyselyPlugin,
   type PluginTransformQueryArgs,
@@ -61,15 +60,6 @@ export async function createTestContext(options: { now?: () => Date; plugins?: K
   for (const plugin of options.plugins ?? []) {
     database = database.withPlugin(plugin);
   }
-  // Created outside the competition bootstrap in real databases; user lookups join it.
-  await sql`
-    CREATE TABLE IF NOT EXISTS Skill (
-      id TEXT NOT NULL PRIMARY KEY,
-      userId TEXT NOT NULL REFERENCES User(id) ON DELETE CASCADE,
-      skillName TEXT NOT NULL,
-      skillLevel INTEGER NOT NULL
-    )
-  `.execute(database);
   const app = createApp(database, options.now ? { now: options.now } : {});
   await app.ready();
   return { app, database };

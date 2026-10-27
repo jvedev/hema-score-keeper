@@ -151,6 +151,12 @@
   border-color: var(--hema-left-color, #21c15b);
 }
 
+/* Read-only (another device keeps the ring): the controls look switched off. */
+:host([read-only]) button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 #end-match-button {
   background: color-mix(in srgb, var(--warning) 18%, var(--surface-raised));
   border-color: var(--warning);

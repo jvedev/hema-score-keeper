@@ -205,3 +205,149 @@ body[data-mode="fight"] #rotate-overlay {
 .competition-error {
   color: #e3714f;
 }
+
+/* Ring mode (/ring/:token) */
+.ring-card {
+  width: min(100%, 520px);
+  text-align: left;
+}
+
+.ring-body {
+  display: grid;
+  gap: 14px;
+}
+
+.ring-body h1 {
+  margin: 0;
+}
+
+.ring-keeper {
+  color: #8a97a1;
+}
+
+.ring-notice {
+  background: rgba(227, 113, 79, 0.14);
+  border: 1px solid #e3714f;
+  border-radius: 12px;
+  color: #f2f5f7;
+  margin: 0;
+  padding: 10px 12px;
+}
+
+.ring-status {
+  color: #55ae98;
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+.ring-status-offline {
+  color: #f5a623;
+}
+
+.ring-status-alarm {
+  color: #e5484d;
+  font-weight: 600;
+}
+
+.ring-link {
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0 4px;
+  text-decoration: underline;
+}
+
+.ring-not-applied {
+  border: 1px solid #f5a623;
+  border-radius: 12px;
+  padding: 8px 12px;
+}
+
+.ring-not-applied p,
+.ring-not-applied ul {
+  margin: 0 0 6px;
+}
+
+.ring-bouts {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ring-bout {
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 2ch 1fr auto auto;
+  padding: 10px 12px;
+}
+
+.ring-bout-next {
+  border-color: #21c15b;
+}
+
+.ring-bout-done {
+  opacity: 0.6;
+}
+
+.ring-bout-order {
+  color: #8a97a1;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+.ring-bout-names small {
+  color: #8a97a1;
+}
+
+.ring-bout-status {
+  display: block;
+}
+
+.ring-bout-score {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  white-space: nowrap;
+}
+
+.ring-bout .mode-button {
+  padding: 8px 12px;
+}
+
+.ring-bar {
+  display: grid;
+  gap: 6px;
+  padding: 0 12px;
+}
+
+.ring-bar-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ring-bar-row .ring-status {
+  flex: 1 1 100%;
+}
+
+.ring-bar-button {
+  background: none;
+  border: 1px solid #2a313c;
+  border-radius: 6px;
+  color: #f2f5f7;
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  padding: 6px 10px;
+  text-transform: uppercase;
+}
+
+.ring-bar-button:disabled {
+  opacity: 0.4;
+}

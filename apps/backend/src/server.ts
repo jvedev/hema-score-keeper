@@ -17,6 +17,7 @@ import { registerBoutRoutes } from "./bouts/bout-routes.js";
 import { competitionBoutHistory, competitionStandings, standingsForViewer } from "./bouts/standings.js";
 import { registerBoutRoutes as registerLiveBoutRoutes } from "./live/bout-routes.js";
 import { registerLiveRoutes } from "./live/live-routes.js";
+import { registerRingRoutes } from "./live/ring-routes.js";
 import { startSyncWorker } from "./live/sync-worker.js";
 import { registerClubRoutes } from "./club-routes.js";
 import { registerPeopleRoutes } from "./people-routes.js";
@@ -122,7 +123,7 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   app.addHook("onRequest", async (request, reply) => {
     reply.header("Access-Control-Allow-Origin", "*");
     reply.header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-    reply.header("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization");
+    reply.header("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization, X-Ring-Token, X-Device-Id");
     reply.header("Vary", "Origin");
     if (request.method === "OPTIONS") {
       reply.status(204).send();
@@ -133,6 +134,7 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof HttpError) {
       reply.status(error.statusCode).send({
+        ...error.body,
         error: error.message,
         details: error.details,
       });
@@ -297,6 +299,7 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   registerBoutRoutes(app, database);
   registerLiveRoutes(app, database);
   registerLiveBoutRoutes(app, database);
+  registerRingRoutes(app, database);
   registerPeopleRoutes(app, database);
   registerCompetitionAdminRoutes(app, database);
   registerParticipantRoutes(app, database);
@@ -1722,6 +1725,11 @@ function resolveEliminationParticipantCount(
 }
 
 async function start(): Promise<void> {
+  if (!process.env.AUTH_SECRET?.trim()) {
+    console.warn(
+      "WARNING: AUTH_SECRET is not set; sign-in tokens use the built-in development secret. Set AUTH_SECRET to a long random value before using this server at a venue.",
+    );
+  }
   const app = createApp();
   const port = Number(process.env.PORT ?? 3001);
   if (process.env.NODE_ENV !== "test") {

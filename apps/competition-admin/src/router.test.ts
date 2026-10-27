@@ -9,6 +9,8 @@ const cases: Array<[string, Route]> = [
   ["/competitions/c1/bouts/b1", { name: "bout", competitionId: "c1", boutId: "b1" }],
   ["/competitions/c1/settings", { name: "settings", competitionId: "c1" }],
   ["/objections/b1", { name: "objection", boutId: "b1" }],
+  ["/tournaments", { name: "tournaments" }],
+  ["/tournaments/t1", { name: "tournament", tournamentId: "t1" }],
 ];
 
 describe("router", () => {

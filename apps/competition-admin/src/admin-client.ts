@@ -7,6 +7,10 @@ import type {
   CompetitionDetail,
   CompetitionSummary,
   HistoryBout,
+  ImportReport,
+  LiveRingLink,
+  LiveTournamentDetail,
+  LiveTournamentSummary,
   NeedsYouResponse,
   NewInvite,
   ObjectionResolution,
@@ -14,6 +18,7 @@ import type {
   PersonSearchResult,
   SignupDecisionResult,
   StandingRow,
+  SyncTarget,
 } from "./api-types";
 import { ApiSession, type AuthResponse, type Session as ApiSessionState } from "@hema/api-session";
 
@@ -76,6 +81,18 @@ export class AdminClient {
   transferOwnership = (id: string, userId: string) => this.#send<CompetitionAdminEntry[]>("POST", `/competitions/${e(id)}/owner`, { userId });
   searchPeople = (query: string) => this.#send<PersonSearchResult[]>("GET", `/people?q=${e(query)}`);
   clubs = () => this.#send<Club[]>("GET", "/clubs");
+
+  liveTournaments = async () => (await this.#send<{ tournaments: LiveTournamentSummary[] }>("GET", "/live-tournaments")).tournaments;
+  createLiveTournament = (input: { name: string; googleSpreadsheetId?: string }) => this.#send<{ id: string }>("POST", "/live-tournaments", input);
+  liveTournament = (id: string) => this.#send<LiveTournamentDetail>("GET", `/live-tournaments/${e(id)}`);
+  /** Sends the .xlsx as the raw request body. */
+  importWorkbook = (id: string, file: Blob) => this.#send<ImportReport>("POST", `/live-tournaments/${e(id)}/import/xlsx`, file);
+  importGoogle = (id: string) => this.#send<ImportReport>("POST", `/live-tournaments/${e(id)}/import/google`);
+  syncStatus = async (id: string) => (await this.#send<{ targets: SyncTarget[] }>("GET", `/live-tournaments/${e(id)}/sync`)).targets;
+  /** The backup needs the sign-in header, so it is fetched (not linked) and saved from the blob. */
+  downloadBackup = (id: string) => this.#api.send<Blob>("GET", `/live-tournaments/${e(id)}/backup.xlsx`, undefined, true, { responseType: "blob" });
+  liveRings = async (id: string) => (await this.#send<{ rings: LiveRingLink[] }>("GET", `/live-tournaments/${e(id)}/rings`)).rings;
+  rotateRingToken = async (ringId: string) => (await this.#send<{ ring: LiveRingLink }>("POST", `/live-rings/${e(ringId)}/rotate-token`)).ring;
 
   #send<T>(method: string, path: string, body?: unknown, authenticated = true): Promise<T> {
     return this.#api.send<T>(method, path, body, authenticated);

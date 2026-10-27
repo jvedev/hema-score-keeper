@@ -183,4 +183,74 @@ describe("fight-view", () => {
     element.remove();
   });
 
+
+  it("ring mode hides reset and forfeit and locks the score correction", () => {
+    const element = document.createElement("fight-view");
+    document.body.appendChild(element);
+    const root = element.shadowRoot!;
+
+    element.setRingMode(true);
+    expect(root.querySelector<HTMLElement>("#reset-button")?.hidden).toBe(true);
+    expect(root.querySelector<HTMLElement>("#forfeit-button")?.hidden).toBe(true);
+    expect(root.querySelector("#fighter-left")?.hasAttribute("locked")).toBe(true);
+    expect(root.querySelector("#fighter-right")?.hasAttribute("locked")).toBe(true);
+    expect(root.querySelector('slot[name="ring-bar"]')).not.toBeNull();
+    // The bout time is not edited by hand in ring mode (keeper or read-only).
+    expect(root.querySelector("#timer")?.hasAttribute("locked")).toBe(true);
+
+    element.setRingMode(false);
+    expect(root.querySelector<HTMLElement>("#reset-button")?.hidden).toBe(false);
+    expect(root.querySelector("#fighter-left")?.hasAttribute("locked")).toBe(false);
+    element.remove();
+  });
+
+  it("opens paused at a stored clock and reports each pause and resume", () => {
+    const element = document.createElement("fight-view");
+    document.body.appendChild(element);
+    const root = element.shadowRoot!;
+    element.setMatchDuration(120);
+    element.setMatchActive(true);
+    element.setClock(75, true);
+    expect(element.clockSeconds).toBe(75);
+    expect(element.clockRunning).toBe(false);
+    expect(root.querySelector("#timer")?.shadowRoot?.querySelector(".digits")?.textContent).toBe("00:45");
+    expect(root.querySelector<HTMLButtonElement>("#hit-button")?.disabled).toBe(false);
+
+    const reports: Array<{ elapsedTimeSeconds: number; running: boolean }> = [];
+    element.addEventListener("clock-toggled", (event) => reports.push(event.detail));
+    root.querySelector<HTMLButtonElement>("#timeout-button")!.click();
+    root.querySelector<HTMLButtonElement>("#timeout-button")!.click();
+    expect(reports).toEqual([
+      { elapsedTimeSeconds: 75, running: true },
+      { elapsedTimeSeconds: 75, running: false },
+    ]);
+    element.remove();
+  });
+
+  it("read-only stops the clock and disables every control", () => {
+    const element = document.createElement("fight-view");
+    document.body.appendChild(element);
+    const root = element.shadowRoot!;
+    element.setMatchActive(true);
+    element.setClock(10, true);
+    root.querySelector<HTMLButtonElement>("#timeout-button")!.click();
+    expect(element.clockRunning).toBe(true);
+
+    element.setReadOnly(true);
+    expect(element.clockRunning).toBe(false);
+    for (const id of ["#hit-button", "#warning-button", "#timeout-button", "#end-match-button"]) {
+      expect(root.querySelector<HTMLButtonElement>(id)?.disabled).toBe(true);
+    }
+    expect(root.querySelector("#fighter-left")?.hasAttribute("locked")).toBe(true);
+    expect(root.querySelector("#timer")?.hasAttribute("locked")).toBe(true);
+    // Disabled buttons look dimmed in the read-only view, and normally again afterwards.
+    expect(Number(getComputedStyle(root.querySelector("#hit-button")!).opacity)).toBeLessThan(1);
+
+    element.setReadOnly(false);
+    expect(Number(getComputedStyle(root.querySelector("#hit-button")!).opacity)).toBe(1);
+    expect(root.querySelector("#timer")?.hasAttribute("locked")).toBe(false);
+    expect(root.querySelector<HTMLButtonElement>("#hit-button")?.disabled).toBe(false);
+    expect(root.querySelector<HTMLButtonElement>("#end-match-button")?.disabled).toBe(false);
+    element.remove();
+  });
 });
