@@ -310,6 +310,33 @@ const MIGRATIONS: readonly SchemaMigration[] = [
       addColumn(database, "LiveBout", "clockUpdatedAt", "TEXT");
     },
   },
+  {
+    // Bout format: a tournament ruleset, and the bout's round, period and warnings as the keeper reports them.
+    name: "2026-10-28-live-bout-format",
+    apply(database) {
+      addColumn(database, "LiveTournament", "ruleset", "TEXT");
+      addColumn(database, "LiveBout", "round", "INTEGER NOT NULL DEFAULT 1");
+      addColumn(database, "LiveBout", "period", "TEXT NOT NULL DEFAULT 'REGULAR' CHECK (period IN ('REGULAR', 'BREAK', 'EXTENSION', 'SUDDEN_DEATH'))");
+      addColumn(database, "LiveBout", "extension", "INTEGER NOT NULL DEFAULT 0");
+      addColumn(database, "LiveBout", "periodStartedAt", "TEXT");
+      addColumn(database, "LiveBout", "warningsLeft", "INTEGER NOT NULL DEFAULT 0");
+      addColumn(database, "LiveBout", "warningsRight", "INTEGER NOT NULL DEFAULT 0");
+      addColumn(database, "LiveExchange", "round", "INTEGER NOT NULL DEFAULT 1");
+    },
+  },
+  {
+    // Scoreboard: a view-only link per ring, and the ring's fighter colours.
+    name: "2026-10-28-live-scoreboard",
+    apply(database) {
+      addColumn(database, "LiveRing", "scoreboardToken", "TEXT");
+      addColumn(database, "LiveRing", "leftColor", "TEXT NOT NULL DEFAULT '#21c15b'");
+      addColumn(database, "LiveRing", "rightColor", "TEXT NOT NULL DEFAULT '#2f7dfa'");
+      const missing = database.prepare("SELECT id FROM LiveRing WHERE scoreboardToken IS NULL").all() as Array<{ id: string }>;
+      const setToken = database.prepare("UPDATE LiveRing SET scoreboardToken = ? WHERE id = ?");
+      for (const ring of missing) setToken.run(randomBytes(24).toString("base64url"), ring.id);
+      database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_liveRing_scoreboardToken ON LiveRing(scoreboardToken)");
+    },
+  },
 ];
 
 export function applySchemaMigrations(database: NativeDatabase): void {

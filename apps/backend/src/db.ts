@@ -309,6 +309,8 @@ interface LiveTournamentTable {
   googleSpreadsheetId: string | null;
   createdByUserId: string;
   createdAt: string;
+  /** Ring-mode match parameters and bout format as JSON (`parseRingRules`); null = the ring defaults. */
+  ruleset: Generated<string | null>;
 }
 
 interface LiveRingTable {
@@ -322,6 +324,11 @@ interface LiveRingTable {
   activeDeviceId: string | null;
   activeUserId: string | null;
   activeSince: string | null;
+  /** Secret part of the scoreboard link (view only, no sign-in). */
+  scoreboardToken: string;
+  /** The ring's fighter colours (#rrggbb), on the table and the scoreboard. */
+  leftColor: Generated<string>;
+  rightColor: Generated<string>;
 }
 
 interface LiveBoutTable {
@@ -341,6 +348,14 @@ interface LiveBoutTable {
   clockSeconds: Generated<number>;
   clockRunning: Generated<number>;
   clockUpdatedAt: string | null;
+  /** Where the bout is, as the keeper's device last reported it (see `BoutPhase`). */
+  round: Generated<number>;
+  period: Generated<"REGULAR" | "BREAK" | "EXTENSION" | "SUDDEN_DEATH">;
+  extension: Generated<number>;
+  /** Server time the current period began (the break countdown runs from it). */
+  periodStartedAt: string | null;
+  warningsLeft: Generated<number>;
+  warningsRight: Generated<number>;
 }
 
 interface LiveExchangeTable {
@@ -352,6 +367,8 @@ interface LiveExchangeTable {
   rightPoints: number;
   isDouble: number;
   firstScorer: "LEFT" | "RIGHT" | null;
+  /** The round the exchange was scored in (1 without rounds). */
+  round: Generated<number>;
   clientExchangeId: string;
   createdByUserId: string;
   createdAt: string;

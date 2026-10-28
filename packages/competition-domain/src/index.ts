@@ -47,3 +47,4 @@ export {
   type ScopeClub,
   type ScopeKind,
 } from "./competition-scope.js";
+export * from "./ring-rules.js";

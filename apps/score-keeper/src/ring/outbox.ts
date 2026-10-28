@@ -1,7 +1,7 @@
 import { ApiError, SessionExpiredError } from "@hema/api-session";
 import type { LiveExchangeInput } from "./exchange-mapping";
 import { newId } from "./ids";
-import type { ActiveKeeper, LiveWriter } from "./live-client";
+import type { ActiveKeeper, BoutStateReport, LiveWriter } from "./live-client";
 
 export type { LiveWriter } from "./live-client";
 
@@ -17,7 +17,7 @@ interface OpBase {
 export type OutboxOp =
   | (OpBase & { type: "start" })
   | (OpBase & { type: "finish" })
-  | (OpBase & { type: "clock"; seconds: number; running: boolean })
+  | (OpBase & { type: "clock"; seconds: number; running: boolean; state?: BoutStateReport })
   /** The `clientExchangeId` is made when the exchange is queued and sent unchanged on every retry. */
   | (OpBase & { type: "exchange"; clientExchangeId: string; exchange: LiveExchangeInput })
   /** Names the exchange by its server id, or by the `clientExchangeId` of one queued here (its server id is looked up when it is sent). */
@@ -169,8 +169,9 @@ export class Outbox {
   }
 
   /** Only the newest unsent clock matters, so older unsent ones are dropped. */
-  enqueueClock(clock: { seconds: number; running: boolean }): void {
-    this.#enqueue((opId) => ({ opId, type: "clock", seconds: clock.seconds, running: clock.running }), (op) => op.type !== "clock" || op.opId === this.#inflight);
+  enqueueClock(clock: { seconds: number; running: boolean; state?: BoutStateReport }): void {
+    const state = clock.state ? { ...clock.state } : undefined;
+    this.#enqueue((opId) => ({ opId, type: "clock", seconds: clock.seconds, running: clock.running, ...(state ? { state } : {}) }), (op) => op.type !== "clock" || op.opId === this.#inflight);
   }
 
   /** Queues the exchange and returns its `clientExchangeId`. */
@@ -332,7 +333,7 @@ export class Outbox {
         await this.#writer.finishBout(token, this.#boutId);
         return null;
       case "clock":
-        await this.#writer.setClock(token, this.#boutId, { seconds: op.seconds, running: op.running });
+        await this.#writer.setClock(token, this.#boutId, { seconds: op.seconds, running: op.running, ...(op.state ? { state: op.state } : {}) });
         return null;
       case "exchange": {
         const ack = await this.#writer.postExchange(token, this.#boutId, { clientExchangeId: op.clientExchangeId, ...op.exchange });

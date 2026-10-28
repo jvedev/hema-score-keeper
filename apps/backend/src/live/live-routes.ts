@@ -7,6 +7,7 @@ import { requirePathParam, type AccessUser } from "../access-user.js";
 import { requireUser } from "../bouts/bout-routes.js";
 import type { BackendDatabase, LiveTarget } from "../db.js";
 import { ensureObject, HttpError, optionalString, requireString } from "../http.js";
+import { rulesOf } from "./bout-display.js";
 import { boutScores } from "./bout-routes.js";
 import { XlsxCellSource } from "./cell-source.js";
 import { backupPath } from "./data-dir.js";
@@ -117,7 +118,7 @@ function registerLiveRoutesInScope(app: FastifyInstance, database: Kysely<Backen
     const rings = await database.selectFrom("LiveRing").selectAll().where("tournamentId", "=", tournamentId).orderBy("order").execute();
     return {
       rings: await Promise.all(
-        rings.map(async (ring) => ({ ...publicRing(ring), keeperToken: ring.keeperToken, activeKeeper: await activeKeeperOf(database, ring) })),
+        rings.map(async (ring) => ({ ...publicRing(ring), keeperToken: ring.keeperToken, scoreboardToken: ring.scoreboardToken, activeKeeper: await activeKeeperOf(database, ring) })),
       ),
     };
   });
@@ -136,6 +137,17 @@ function registerLiveRoutesInScope(app: FastifyInstance, database: Kysely<Backen
       .header("content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
       .header("content-disposition", `attachment; filename="tournament-${tournamentId}.xlsx"`)
       .send(bytes);
+  });
+
+  // The ring rules (match parameters and bout format). Stored as sent after checking; read back leniently (`parseRingRules`).
+  app.put("/api/v1/live-tournaments/:id/rules", async (request) => {
+    const user = await requireUser(request, database);
+    const tournamentId = requirePathParam(request, "id");
+    await requireTournamentAdmin(database, tournamentId, user);
+    const body = ensureObject(request.body, "Rules");
+    const rules = rulesOf(JSON.stringify(body));
+    await database.updateTable("LiveTournament").set({ ruleset: JSON.stringify(rules) }).where("id", "=", tournamentId).execute();
+    return { rules };
   });
 
   app.get("/api/v1/live-tournaments/:id", async (request) => {
@@ -158,8 +170,10 @@ function registerLiveRoutesInScope(app: FastifyInstance, database: Kysely<Backen
       .execute();
     // Same shape as GET /live-rings/:id/bouts: { left, right, doubles } from the active exchanges, null when unscored.
     const scores = await boutScores(database, bouts.map((bout) => bout.id));
+    const { ruleset, ...rest } = tournament;
     return {
-      ...tournament,
+      ...rest,
+      rules: rulesOf(ruleset),
       rings,
       bouts: bouts.map((bout) => ({ ...bout, score: scores.get(bout.id) ?? null })),
     };

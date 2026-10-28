@@ -1,3 +1,4 @@
+import type { BoutDisplay, BoutPeriod } from "@hema/competition-domain";
 import { ApiSession, type AuthResponse, type Session as ApiSessionState } from "@hema/api-session";
 import type { LiveExchangeInput } from "./exchange-mapping";
 import { newId } from "./ids";
@@ -32,6 +33,9 @@ export interface LiveRing {
   tournamentId: string;
   name: string;
   order: number;
+  /** The ring's fighter colours (#rrggbb); absent from an older backend. */
+  leftColor?: string;
+  rightColor?: string;
 }
 
 export interface BoutClock {
@@ -46,6 +50,21 @@ export interface BoutScore {
   doubles: number;
 }
 
+/** Where the bout is, sent with every clock report (the backend keeps the newest). */
+export interface BoutStateReport {
+  round: number;
+  period: BoutPeriod;
+  extension: number;
+  warningsLeft: number;
+  warningsRight: number;
+}
+
+export interface ClockReport {
+  seconds: number;
+  running: boolean;
+  state?: BoutStateReport;
+}
+
 export interface LiveBoutRow {
   id: string;
   ringId: string;
@@ -56,6 +75,12 @@ export interface LiveBoutRow {
   status: "PENDING" | "RUNNING" | "DONE";
   score: BoutScore | null;
   clock: BoutClock;
+  /** Absent from an older backend (then: round 1, regular time, no warnings). */
+  round?: number;
+  period?: BoutPeriod;
+  extension?: number;
+  warningsLeft?: number;
+  warningsRight?: number;
 }
 
 export interface ServerExchange {
@@ -66,6 +91,7 @@ export interface ServerExchange {
   rightPoints: number;
   isDouble: boolean;
   firstScorer: "LEFT" | "RIGHT" | null;
+  round?: number;
   seq: number;
   undoneAt: string | null;
 }
@@ -73,6 +99,8 @@ export interface ServerExchange {
 export interface RingByToken {
   ring: LiveRing;
   tournament: { id: string; name: string; mode: string };
+  /** The tournament's ring rules, raw (read with `parseRingRules`; absent from an older backend). */
+  rules?: unknown;
   bouts: LiveBoutRow[];
   activeKeeper: ActiveKeeper | null;
   /** This device is the ring's active keeper (the server compares the X-Device-Id it was sent). */
@@ -84,6 +112,8 @@ export interface BoutDetail {
   exchanges: ServerExchange[];
   score: BoutScore;
   clock: BoutClock;
+  /** What a scoreboard shows now (absent from an older backend). */
+  display?: BoutDisplay;
 }
 
 export type ExchangeToSend = LiveExchangeInput & { clientExchangeId: string };
@@ -96,7 +126,7 @@ export interface AcknowledgedExchange {
 export interface LiveWriter {
   startBout(ringToken: string, boutId: string): Promise<unknown>;
   finishBout(ringToken: string, boutId: string): Promise<unknown>;
-  setClock(ringToken: string, boutId: string, clock: { seconds: number; running: boolean }): Promise<unknown>;
+  setClock(ringToken: string, boutId: string, clock: ClockReport): Promise<unknown>;
   undo(ringToken: string, boutId: string, expectedExchangeId: string): Promise<unknown>;
   postExchange(ringToken: string, boutId: string, exchange: ExchangeToSend): Promise<AcknowledgedExchange>;
 }
@@ -231,8 +261,8 @@ export class LiveClient implements LiveWriter {
 
   startBout = (ringToken: string, boutId: string) => this.#write<unknown>("POST", `/live-bouts/${e(boutId)}/start`, ringToken, {});
   finishBout = (ringToken: string, boutId: string) => this.#write<unknown>("POST", `/live-bouts/${e(boutId)}/finish`, ringToken, {});
-  setClock = (ringToken: string, boutId: string, clock: { seconds: number; running: boolean }) =>
-    this.#write<unknown>("POST", `/live-bouts/${e(boutId)}/clock`, ringToken, { seconds: clock.seconds, running: clock.running });
+  setClock = (ringToken: string, boutId: string, clock: ClockReport) =>
+    this.#write<unknown>("POST", `/live-bouts/${e(boutId)}/clock`, ringToken, { seconds: clock.seconds, running: clock.running, ...(clock.state ?? {}) });
   undo = (ringToken: string, boutId: string, expectedExchangeId: string) =>
     this.#write<unknown>("POST", `/live-bouts/${e(boutId)}/undo`, ringToken, { expectedExchangeId });
   postExchange = (ringToken: string, boutId: string, exchange: ExchangeToSend) =>

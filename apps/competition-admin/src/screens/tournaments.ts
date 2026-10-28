@@ -1,9 +1,10 @@
-import { escapeHtml, formatDateTime, t } from "@hema/ui";
+import { escapeHtml, formatDateTime, t, type MessageKey } from "@hema/ui";
 import { SessionExpiredError } from "../admin-client";
 import type { ImportReport, LiveRingLink, LiveTournamentSummary } from "../api-types";
 import type { AppContext } from "../app-context";
 import { scoreKeeperAppUrl } from "../config";
-import { parseSpreadsheetId, rotateConfirmMessage, rotateTarget, toImportReportView, toRingCards, toSyncCards } from "../mappers/tournaments";
+import { defaultRingRules, type RingRules } from "@hema/competition-domain";
+import { parseSpreadsheetId, rotateConfirmMessage, rotateTarget, rulesFromForm, toImportReportView, toRingCards, toSyncCards } from "../mappers/tournaments";
 import type { Translate } from "../mappers/translate";
 
 /** How often the sync status card reloads while the screen is open. */
@@ -108,6 +109,14 @@ export async function renderTournamentScreen(container: HTMLElement, context: Ap
       <div class="row"><button type="button" data-backup>${t("tournaments.downloadBackup")}</button></div>
       <p class="error" hidden></p>
     </section>
+    <form class="panel rules">
+      <h2>${t("tournaments.rulesHeading")}</h2>
+      <p class="muted">${t("tournaments.rulesNote")}</p>
+      <div class="rules-grid"></div>
+      <div class="row"><button type="submit" class="primary">${t("tournaments.rulesSave")}</button></div>
+      <p class="muted saved" role="status" hidden>${t("tournaments.rulesSaved")}</p>
+      <p class="error" hidden></p>
+    </form>
     <section class="panel rings">
       <h2>${t("tournaments.ringsHeading")}</h2>
       <p class="muted">${t("tournaments.ringsNote")}</p>
@@ -136,6 +145,31 @@ export async function renderTournamentScreen(container: HTMLElement, context: Ap
     box.hidden = false;
     box.textContent = format(message(caught));
   };
+
+  // ---- Ring rules ----
+  const rulesForm = container.querySelector<HTMLFormElement>("form.rules")!;
+  const rulesSaved = rulesForm.querySelector<HTMLElement>(".saved")!;
+  const rulesError = rulesForm.querySelector<HTMLElement>(".error")!;
+  let rules: RingRules = tournament.rules ?? defaultRingRules();
+  rulesForm.querySelector<HTMLElement>(".rules-grid")!.innerHTML = rulesFields(rules);
+  rulesForm.addEventListener("input", () => {
+    rulesSaved.hidden = true;
+  });
+  rulesForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = rulesForm.querySelector<HTMLButtonElement>("button[type=submit]")!;
+    button.disabled = true;
+    rulesError.hidden = true;
+    try {
+      rules = await context.client.saveLiveRules(tournamentId, rulesFromForm(new FormData(rulesForm), rules));
+      rulesForm.querySelector<HTMLElement>(".rules-grid")!.innerHTML = rulesFields(rules);
+      rulesSaved.hidden = false;
+    } catch (caught) {
+      fail(rulesError, caught);
+    } finally {
+      button.disabled = false;
+    }
+  });
 
   // ---- Sync status: reloads every SYNC_REFRESH_MS while this screen is open ----
   const drawSync = (current: typeof targets): void => {
@@ -216,7 +250,7 @@ export async function renderTournamentScreen(container: HTMLElement, context: Ap
   let shownRings: readonly LiveRingLink[] = rings;
   /** Updates the "who is scoring" lines in place; redraws only when the rings themselves changed (new links, new rings). */
   const syncKeepers = (fresh: readonly LiveRingLink[]): void => {
-    const same = fresh.length === shownRings.length && fresh.every((ring, index) => ring.id === shownRings[index]!.id && ring.keeperToken === shownRings[index]!.keeperToken);
+    const same = fresh.length === shownRings.length && fresh.every((ring, index) => ring.id === shownRings[index]!.id && ring.keeperToken === shownRings[index]!.keeperToken && ring.scoreboardToken === shownRings[index]!.scoreboardToken);
     if (!same) {
       drawRings(fresh);
       return;
@@ -242,14 +276,51 @@ export async function renderTournamentScreen(container: HTMLElement, context: Ap
       .map(
         (card) => `<article class="ring-card" data-ring="${escapeHtml(card.id)}">
           <div class="row"><strong>${escapeHtml(card.name)}</strong><span class="muted" data-kept="${card.kept}">${escapeHtml(card.keeper)}</span></div>
-          <invite-share></invite-share>
+          <invite-share data-keeper-link></invite-share>
           <div class="row"><button type="button" data-rotate>${t("tournaments.newLink")}</button></div>
+          <invite-share data-scoreboard-link heading="${escapeHtml(t("tournaments.scoreboardHeading"))}"></invite-share>
+          <div class="row"><button type="button" data-rotate-scoreboard>${t("tournaments.newScoreboardLink")}</button></div>
+          <form class="row ring-colors">
+            <label>${t("tournaments.leftColor")} <input type="color" name="leftColor" value="${escapeHtml(card.leftColor)}" /></label>
+            <label>${t("tournaments.rightColor")} <input type="color" name="rightColor" value="${escapeHtml(card.rightColor)}" /></label>
+            <button type="submit">${t("tournaments.saveColors")}</button>
+          </form>
         </article>`,
       )
       .join("");
     ringCards.querySelectorAll<HTMLElement>("article.ring-card").forEach((element) => {
       const ringId = element.dataset.ring!;
-      element.querySelector("invite-share")!.link = cards.find((card) => card.id === ringId)!.link;
+      const card = cards.find((candidate) => candidate.id === ringId)!;
+      element.querySelector<HTMLElementTagNameMap["invite-share"]>("[data-keeper-link]")!.link = card.link;
+      element.querySelector<HTMLElementTagNameMap["invite-share"]>("[data-scoreboard-link]")!.link = card.scoreboardLink;
+      const scoreboardButton = element.querySelector<HTMLButtonElement>("[data-rotate-scoreboard]")!;
+      scoreboardButton.addEventListener("click", async () => {
+        if (!window.confirm(t("tournaments.newScoreboardLinkConfirm", { ring: card.name }))) {
+          return;
+        }
+        scoreboardButton.disabled = true;
+        ringError.hidden = true;
+        try {
+          await context.client.rotateScoreboardToken(ringId);
+          context.toast(t("tournaments.newLinkMade"));
+          drawRings(await context.client.liveRings(tournamentId));
+        } catch (caught) {
+          scoreboardButton.disabled = false;
+          fail(ringError, caught);
+        }
+      });
+      const colors = element.querySelector<HTMLFormElement>("form.ring-colors")!;
+      colors.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const data = new FormData(colors);
+        ringError.hidden = true;
+        try {
+          await context.client.setRingColors(ringId, { leftColor: String(data.get("leftColor")), rightColor: String(data.get("rightColor")) });
+          context.toast(t("tournaments.colorsSaved"));
+        } catch (caught) {
+          fail(ringError, caught);
+        }
+      });
       const button = element.querySelector<HTMLButtonElement>("[data-rotate]")!;
       button.addEventListener("click", async () => {
         button.disabled = true;
@@ -332,4 +403,24 @@ export async function renderTournamentScreen(container: HTMLElement, context: Ap
   googleButton.addEventListener("click", () => void runImport(() => context.client.importGoogle(tournamentId)));
 
   return stop;
+}
+
+function rulesFields(rules: RingRules): string {
+  const number = (name: string, label: MessageKey, value: number) =>
+    `<label>${t(label)}<input name="${name}" type="number" min="0" step="1" inputmode="numeric" value="${Number(value)}" /></label>`;
+  const format = rules.format;
+  return `${number("maxDurationSeconds", "tournaments.rulesDuration", rules.maxDurationSeconds)}
+    <label>${t("tournaments.rulesScores")}<input name="scores" value="${escapeHtml(rules.scores.join(", "))}" /></label>
+    ${number("maxDoubles", "tournaments.rulesMaxDoubles", rules.maxDoubles)}
+    ${number("maxPointsCap", "tournaments.rulesPointCap", rules.maxPointsCap ?? 0)}
+    ${number("lastExchangeSeconds", "tournaments.rulesLastExchange", format.lastExchangeSeconds)}
+    ${number("rounds", "tournaments.rulesRounds", format.rounds)}
+    ${number("breakSeconds", "tournaments.rulesBreak", format.breakSeconds)}
+    <label>${t("tournaments.rulesOvertimeAfter")}<select name="overtimeAfter">
+      <option value="LAST_ROUND"${format.overtimeAfter === "LAST_ROUND" ? " selected" : ""}>${t("tournaments.rulesOvertimeLast")}</option>
+      <option value="EVERY_ROUND"${format.overtimeAfter === "EVERY_ROUND" ? " selected" : ""}>${t("tournaments.rulesOvertimeEvery")}</option>
+    </select></label>
+    ${number("extensions", "tournaments.rulesExtensions", format.extensions)}
+    ${number("extensionSeconds", "tournaments.rulesExtensionSeconds", format.extensionSeconds)}
+    <label class="check"><input name="suddenDeath" type="checkbox"${format.suddenDeath ? " checked" : ""} /> ${t("tournaments.rulesSuddenDeath")}</label>`;
 }

@@ -86,7 +86,7 @@ export async function applySchedulePlan(db: DbExecutor, tournamentId: string, pl
   const ringId = async (name: string): Promise<string> => {
     const known = rings.get(name);
     if (known) return known.id;
-    const created = { id: randomUUID(), tournamentId, name, order: nextRingOrder++, keeperToken: newKeeperToken() };
+    const created = { id: randomUUID(), tournamentId, name, order: nextRingOrder++, keeperToken: newKeeperToken(), scoreboardToken: newKeeperToken() };
     await db.insertInto("LiveRing").values(created).execute();
     rings.set(name, created);
     return created.id;

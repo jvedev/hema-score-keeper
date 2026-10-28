@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LiveRingLink, SyncTarget } from "../api-types";
-import { elapsedLabel, parseSpreadsheetId, ringLink, rotateConfirmMessage, rotateTarget, toImportReportView, toRingCards, toSyncCards } from "./tournaments";
+import { defaultRingRules } from "@hema/competition-domain";
+import { elapsedLabel, parseSpreadsheetId, ringLink, rotateConfirmMessage, rotateTarget, rulesFromForm, toImportReportView, toRingCards, toSyncCards } from "./tournaments";
 import type { Translate } from "./translate";
 
 /** Echoes the key and the params so the tests see what was asked for. */
@@ -94,7 +95,7 @@ describe("toImportReportView", () => {
 });
 
 describe("rotate confirmation", () => {
-  const ring: LiveRingLink = { id: "r1", tournamentId: "t1", name: "Ring <1>", order: 1, keeperToken: "tok", activeKeeper: null };
+  const ring: LiveRingLink = { id: "r1", tournamentId: "t1", name: "Ring <1>", order: 1, keeperToken: "tok", scoreboardToken: "sb", leftColor: "#21c15b", rightColor: "#2f7dfa", activeKeeper: null };
 
   it("always asks, naming the ring", () => {
     expect(rotateConfirmMessage(ring, t)).toBe("tournaments.newLinkConfirm(ring=Ring <1>)");
@@ -110,18 +111,24 @@ describe("rotate confirmation", () => {
 describe("toRingCards", () => {
   it("gives each ring its link and who is keeping it", () => {
     const rings: LiveRingLink[] = [
-      { id: "r1", tournamentId: "t1", name: "Ring 1", order: 1, keeperToken: "tok1", activeKeeper: { userName: "Alice", since: "x" } },
-      { id: "r2", tournamentId: "t1", name: "Ring 2", order: 2, keeperToken: "tok2", activeKeeper: null },
+      { id: "r1", tournamentId: "t1", name: "Ring 1", order: 1, keeperToken: "tok1", scoreboardToken: "sb1", leftColor: "#ff0000", rightColor: "#0000ff", activeKeeper: { userName: "Alice", since: "x" } },
+      { id: "r2", tournamentId: "t1", name: "Ring 2", order: 2, keeperToken: "tok2", scoreboardToken: "sb2", leftColor: "#21c15b", rightColor: "#2f7dfa", activeKeeper: null },
     ];
     expect(toRingCards(rings, "https://keep.example.org", t)).toEqual([
-      { id: "r1", name: "Ring 1", link: "https://keep.example.org/ring/tok1", keeper: "tournaments.keeping(name=Alice)", kept: true },
-      { id: "r2", name: "Ring 2", link: "https://keep.example.org/ring/tok2", keeper: "tournaments.notKept", kept: false },
+      {
+        id: "r1", name: "Ring 1", link: "https://keep.example.org/ring/tok1", scoreboardLink: "https://keep.example.org/scoreboard/sb1",
+        leftColor: "#ff0000", rightColor: "#0000ff", keeper: "tournaments.keeping(name=Alice)", kept: true,
+      },
+      {
+        id: "r2", name: "Ring 2", link: "https://keep.example.org/ring/tok2", scoreboardLink: "https://keep.example.org/scoreboard/sb2",
+        leftColor: "#21c15b", rightColor: "#2f7dfa", keeper: "tournaments.notKept", kept: false,
+      },
     ]);
   });
 });
 
 describe("rotateTarget", () => {
-  const ring: LiveRingLink = { id: "r1", tournamentId: "t1", name: "Ring 1", order: 1, keeperToken: "tok", activeKeeper: null };
+  const ring: LiveRingLink = { id: "r1", tournamentId: "t1", name: "Ring 1", order: 1, keeperToken: "tok", scoreboardToken: "sb", leftColor: "#21c15b", rightColor: "#2f7dfa", activeKeeper: null };
   it("takes the fresh copy of the ring, so a keeper who claimed it meanwhile is named", () => {
     const fresh = { ...ring, activeKeeper: { userName: "Alice", since: "x" } };
     expect(rotateTarget([fresh], "r1")).toBe(fresh);
@@ -129,5 +136,31 @@ describe("rotateTarget", () => {
   });
   it("is null when the ring is gone", () => {
     expect(rotateTarget([ring], "other")).toBeNull();
+  });
+});
+
+describe("rulesFromForm", () => {
+  const form = (fields: Record<string, string>) => {
+    const data = new FormData();
+    for (const [name, value] of Object.entries(fields)) data.set(name, value);
+    return data;
+  };
+
+  it("reads every field", () => {
+    const rules = rulesFromForm(
+      form({ maxDurationSeconds: "120", scores: "1, 2, x, 3", maxDoubles: "3", maxPointsCap: "7", rounds: "3", breakSeconds: "30", lastExchangeSeconds: "10", overtimeAfter: "EVERY_ROUND", extensions: "2", extensionSeconds: "45", suddenDeath: "on" }),
+      defaultRingRules(),
+    );
+    expect(rules).toMatchObject({ maxDurationSeconds: 120, scores: [1, 2, 3], maxDoubles: 3, maxPointsCap: 7 });
+    expect(rules.format).toEqual({ rounds: 3, breakSeconds: 30, lastExchangeSeconds: 10, overtimeAfter: "EVERY_ROUND", extensions: 2, extensionSeconds: 45, suddenDeath: true });
+  });
+
+  it("keeps the current value for empty or bad numbers", () => {
+    const current = defaultRingRules();
+    const rules = rulesFromForm(form({ maxDurationSeconds: "", rounds: "1.5", scores: "" }), current);
+    expect(rules.maxDurationSeconds).toBe(180);
+    expect(rules.format.rounds).toBe(1);
+    expect(rules.scores).toEqual([1, 2, 3]);
+    expect(rules.format.suddenDeath).toBe(false);
   });
 });

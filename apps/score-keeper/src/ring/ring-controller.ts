@@ -1,10 +1,22 @@
 import { ApiError, SessionExpiredError } from "@hema/api-session";
+import {
+  nextSteps,
+  parseRingRules,
+  roundSeconds,
+  roundsWon,
+  type BoutPeriod,
+  type BoutPhase,
+  type NextSteps,
+  type RingRules,
+  type SideScore,
+} from "@hema/competition-domain";
 import type { MatchEventDetail } from "@hema/ui";
 import { exchangeFromMatchEvent, type LiveExchangeInput } from "./exchange-mapping";
 import type {
   AcknowledgedExchange,
   ActiveKeeper,
   BoutDetail,
+  BoutStateReport,
   BoutScore,
   ExchangeToSend,
   LiveBoutRow,
@@ -48,6 +60,8 @@ export interface OpenBout {
   fighterLeft: string;
   fighterRight: string;
   clockSeconds: number;
+  /** The countdown length of the round the bout is in (its time plus extensions). */
+  durationSeconds: number;
   /** The bout has begun (it runs on the server, or has time or exchanges): the screen opens past its Start button. */
   started: boolean;
   score: BoutScore;
@@ -63,6 +77,8 @@ export interface BoutScreen {
   show(): void;
   /** The clock now: elapsed seconds and whether it runs. */
   clock(): { seconds: number; running: boolean };
+  /** A new countdown length with `elapsedSeconds` gone (an extension keeps the time gone; a new round starts at 0). Clock paused. */
+  setDuration(totalSeconds: number, elapsedSeconds: number): void;
   close(): Promise<void>;
 }
 
@@ -87,6 +103,20 @@ export interface SendStatus {
   rejected: readonly RejectedOp[];
 }
 
+/** Where the open bout is, for the ring bar. */
+export interface PhaseView {
+  round: number;
+  rounds: number;
+  period: BoutPeriod;
+  extension: number;
+  roundsWon: SideScore;
+  warnings: SideScore;
+  /** What the keeper may do now (all false when read-only). */
+  steps: NextSteps;
+  /** In a break: seconds left (0 once it is over). */
+  breakRemaining: number | null;
+}
+
 export interface RingModeState {
   screen: "loading" | "signIn" | "invalidLink" | "error" | "ring" | "bout";
   signInError: string | null;
@@ -109,6 +139,10 @@ export interface RingModeState {
   canUndo: boolean;
   /** The ring could not be loaded because the server cannot be reached: it is tried again by itself. `unsent` counts score ops still queued. */
   loadRetry: { unsent: number } | null;
+  /** The tournament's ring rules. */
+  rules: RingRules;
+  /** The open bout's round, period and warnings; null off the scoring screen. */
+  phase: PhaseView | null;
 }
 
 export interface RingView {
@@ -130,6 +164,8 @@ export interface RingControllerOptions {
   /** The outbox's retry timers. */
   timers?: OutboxTimers;
   clockTimer?: ClockTimer;
+  /** Milliseconds now (the break countdown). */
+  now?: () => number;
 }
 
 interface HistoryEntry {
@@ -190,7 +226,13 @@ export class RingController {
   readonly #timers: OutboxTimers | undefined;
   readonly #clockTimer: ClockTimer;
   readonly #writer: LiveWriter;
+  readonly #now: () => number;
   #token = "";
+  #phase: BoutPhase = { round: 1, period: "REGULAR", extension: 0 };
+  #warnings: SideScore = { left: 0, right: 0 };
+  /** When the break began on this device (ms), and the timer that counts it down on screen. */
+  #breakStartedAt: number | null = null;
+  #breakHandle: unknown = null;
   #state: RingModeState = RingController.#initial();
   /** Bouts whose outbox this page uses, with their last seen state. */
   readonly #touched = new Map<string, { outbox: Outbox; last: OutboxState; unsubscribe: () => void }>();
@@ -221,6 +263,7 @@ export class RingController {
     this.#timers = options.timers;
     this.#clockTimer = options.clockTimer ?? { every: (run, ms) => setInterval(run, ms), cancel: (handle) => clearInterval(handle as ReturnType<typeof setInterval>) };
     this.#writer = this.#scoreCapturingWriter();
+    this.#now = options.now ?? (() => Date.now());
   }
 
   static #initial(): RingModeState {
@@ -241,6 +284,8 @@ export class RingController {
       notApplied: [],
       canUndo: false,
       loadRetry: null,
+      rules: parseRingRules(null),
+      phase: null,
     };
   }
 
@@ -324,6 +369,7 @@ export class RingController {
     }
     this.#serverScore = detail.score;
     this.#history = this.#historyFrom(detail, outbox);
+    this.#restorePhase(detail);
     const started = detail.bout.status !== "PENDING" || detail.clock.seconds > 0 || detail.exchanges.length > 0;
     this.#setBoutStatus(boutId, detail.bout.status);
     this.#update({ screen: "bout", boutId, nextBoutId: null });
@@ -333,6 +379,7 @@ export class RingController {
       fighterLeft: row.fighterLeft,
       fighterRight: row.fighterRight,
       clockSeconds: detail.clock.seconds,
+      durationSeconds: roundSeconds(this.#state.rules, this.#phase.extension),
       started,
       score: this.#displayScore(),
     });
@@ -341,7 +388,7 @@ export class RingController {
     if (this.#state.isKeeper) {
       // The bout opens paused; a clock the server still has running is reported paused too, so the scoreboard agrees.
       if (detail.clock.running) {
-        outbox.enqueueClock({ seconds: detail.clock.seconds, running: false });
+        outbox.enqueueClock(this.#withState({ seconds: detail.clock.seconds, running: false }));
       }
       void outbox.flush();
     }
@@ -353,10 +400,16 @@ export class RingController {
     if (!outbox || this.#state.readOnly) {
       return;
     }
-    const exchange = exchangeFromMatchEvent(event);
-    if (!exchange) {
+    if (event.type === "warning") {
+      const side = event.fighter === "A" ? "left" : "right";
+      this.#warnings = { ...this.#warnings, [side]: this.#warnings[side] + 1 };
+      this.#reportState();
+    }
+    const mapped = exchangeFromMatchEvent(event);
+    if (!mapped) {
       return;
     }
+    const exchange = this.#state.rules.format.rounds > 1 ? { ...mapped, round: this.#phase.round } : mapped;
     const clientExchangeId = outbox.enqueueExchange(exchange);
     this.#history.push({ clientExchangeId, serverId: null, exchange });
     this.#setBoutStatus(this.#state.boutId!, "RUNNING", true);
@@ -392,8 +445,9 @@ export class RingController {
       outbox.enqueueStart();
       this.#setBoutStatus(this.#state.boutId!, "RUNNING", true);
     }
-    outbox.enqueueClock(clock);
+    outbox.enqueueClock(this.#withState(clock));
     this.#stopClockReports();
+    this.#refreshPhase();
     if (clock.running) {
       this.#clockHandle = this.#clockTimer.every(() => {
         const now = this.#screen.clock();
@@ -401,9 +455,51 @@ export class RingController {
           this.#stopClockReports();
           return;
         }
-        this.#currentOutbox()?.enqueueClock(now);
+        this.#currentOutbox()?.enqueueClock(this.#withState(now));
       }, CLOCK_REPORT_MS);
     }
+  }
+
+  /** A tied round at time-up: an extension adds its time to the countdown. */
+  extension(): void {
+    if (!this.#state.phase?.steps.extension) {
+      return;
+    }
+    const clock = this.#screen.clock();
+    this.#phase = { ...this.#phase, period: "EXTENSION", extension: this.#phase.extension + 1 };
+    this.#screen.setDuration(roundSeconds(this.#state.rules, this.#phase.extension), clock.seconds);
+    this.#reportState();
+  }
+
+  /** A tied round after the extensions: first point wins, no time. */
+  suddenDeath(): void {
+    if (!this.#state.phase?.steps.suddenDeath) {
+      return;
+    }
+    this.#phase = { ...this.#phase, period: "SUDDEN_DEATH" };
+    this.#reportState();
+  }
+
+  /** Ends the round: the break between rounds starts counting down. */
+  nextRound(): void {
+    if (!this.#state.phase?.steps.nextRound) {
+      return;
+    }
+    this.#phase = { ...this.#phase, period: "BREAK" };
+    this.#startBreak(this.#now());
+    this.#reportState();
+  }
+
+  /** From the break (whenever the keeper is ready): the next round starts at 0–0 with a full clock. */
+  startRound(): void {
+    if (!this.#state.phase?.steps.startRound) {
+      return;
+    }
+    this.#stopBreak();
+    this.#phase = { round: this.#phase.round + 1, period: "REGULAR", extension: 0 };
+    this.#screen.setDuration(this.#state.rules.maxDurationSeconds, 0);
+    this.#reportState();
+    this.#showScore();
   }
 
   /** Ends the open bout: the clock is reported paused, the bout is finished, and the next bout is offered. */
@@ -414,7 +510,7 @@ export class RingController {
       return;
     }
     if (!this.#state.readOnly) {
-      outbox.enqueueClock({ seconds: this.#screen.clock().seconds, running: false });
+      outbox.enqueueClock(this.#withState({ seconds: this.#screen.clock().seconds, running: false }));
       outbox.enqueueFinish();
       this.#setBoutStatus(boutId, "DONE", true);
     }
@@ -429,7 +525,7 @@ export class RingController {
       return;
     }
     if (!this.#state.readOnly && this.#screen.clock().running) {
-      outbox.enqueueClock({ seconds: this.#screen.clock().seconds, running: false });
+      outbox.enqueueClock(this.#withState({ seconds: this.#screen.clock().seconds, running: false }));
     }
     await this.#leaveBout(boutId, false);
   }
@@ -517,6 +613,7 @@ export class RingController {
       screen: this.#state.screen === "bout" ? "bout" : "ring",
       ring: ring.ring,
       tournamentName: ring.tournament.name,
+      rules: parseRingRules(ring.rules),
       bouts: ring.bouts,
       activeKeeper: ring.activeKeeper,
       isKeeper: keepsIt,
@@ -745,10 +842,12 @@ export class RingController {
     this.#stopClockReports();
     this.#generation++;
     const order = this.#state.bouts.find((bout) => bout.id === boutId)?.order ?? -Infinity;
+    this.#stopBreak();
     await this.#screen.close();
     this.#history = [];
     this.#serverScore = null;
     this.#update({
+      phase: null,
       screen: "ring",
       boutId: null,
       canUndo: false,
@@ -774,7 +873,14 @@ export class RingController {
       .map((exchange) => ({
         clientExchangeId: exchange.clientExchangeId,
         serverId: exchange.id,
-        exchange: { kind: exchange.kind, leftPoints: exchange.leftPoints, rightPoints: exchange.rightPoints, isDouble: exchange.isDouble, firstScorer: exchange.firstScorer },
+        exchange: {
+          kind: exchange.kind,
+          leftPoints: exchange.leftPoints,
+          rightPoints: exchange.rightPoints,
+          isDouble: exchange.isDouble,
+          firstScorer: exchange.firstScorer,
+          ...(exchange.round !== undefined && exchange.round !== 1 ? { round: exchange.round } : {}),
+        },
       }));
     // A stopped queue is not shown as applied: the screen shows what the server has.
     if (outbox.state().unconfirmed > 0) {
@@ -796,10 +902,89 @@ export class RingController {
   /** The server's score once nothing is waiting to be sent (so the screen and the sheet agree), else the sheet rule over what this device has. */
   #displayScore(): BoutScore {
     const boutId = this.#state.boutId;
+    if (this.#state.rules.format.rounds > 1) {
+      return this.#roundScore(this.#phase.round);
+    }
     if (boutId && this.#serverScore && this.#pendingFor(boutId) === 0 && !this.#stopped(boutId)) {
       return this.#serverScore;
     }
     return sheetScore(this.#history.map((entry) => entry.exchange));
+  }
+
+  /** One round's score by the sheet rule, from what this device has (an exchange without a round is round 1). */
+  #roundScore(round: number): BoutScore {
+    return sheetScore(this.#history.filter((entry) => (entry.exchange.round ?? 1) === round).map((entry) => entry.exchange));
+  }
+
+  // --- rounds, break and overtime ---
+
+  #stateReport(): BoutStateReport {
+    return { ...this.#phase, warningsLeft: this.#warnings.left, warningsRight: this.#warnings.right };
+  }
+
+  #withState(clock: { seconds: number; running: boolean }): { seconds: number; running: boolean; state: BoutStateReport } {
+    return { seconds: clock.seconds, running: clock.running, state: this.#stateReport() };
+  }
+
+  /** Reports the bout's state now (with the clock as it is) and redraws the bar. */
+  #reportState(): void {
+    if (!this.#state.readOnly) {
+      this.#currentOutbox()?.enqueueClock(this.#withState(this.#screen.clock()));
+    }
+    this.#refreshPhase();
+  }
+
+  #restorePhase(detail: BoutDetail): void {
+    this.#stopBreak();
+    const bout = detail.bout;
+    this.#phase = { round: bout.round ?? 1, period: bout.period ?? "REGULAR", extension: bout.extension ?? 0 };
+    this.#warnings = { left: bout.warningsLeft ?? 0, right: bout.warningsRight ?? 0 };
+    if (this.#phase.period === "BREAK") {
+      // The break goes on from where the server has it.
+      const breakSeconds = this.#state.rules.format.breakSeconds;
+      const remaining = detail.display?.remainingSeconds ?? breakSeconds;
+      this.#startBreak(this.#now() - (breakSeconds - remaining) * 1000);
+    }
+  }
+
+  #startBreak(startedAt: number): void {
+    this.#stopBreak();
+    this.#breakStartedAt = startedAt;
+    this.#breakHandle = this.#clockTimer.every(() => {
+      this.#refreshPhase();
+      if ((this.#state.phase?.breakRemaining ?? 0) <= 0 && this.#breakHandle !== null) {
+        this.#clockTimer.cancel(this.#breakHandle);
+        this.#breakHandle = null;
+      }
+    }, 1000);
+  }
+
+  #stopBreak(): void {
+    if (this.#breakHandle !== null) {
+      this.#clockTimer.cancel(this.#breakHandle);
+      this.#breakHandle = null;
+    }
+    this.#breakStartedAt = null;
+  }
+
+  #refreshPhase(): void {
+    if (this.#state.screen !== "bout") {
+      return;
+    }
+    const rules = this.#state.rules;
+    const phase = this.#phase;
+    const scores = Array.from({ length: phase.round }, (_, index) => this.#roundScore(index + 1));
+    const won = roundsWon(scores, phase.round - 1);
+    const clock = this.#screen.clock();
+    const timeUp = !clock.running && clock.seconds >= roundSeconds(rules, phase.extension);
+    const steps = this.#state.readOnly
+      ? { extension: false, suddenDeath: false, nextRound: false, startRound: false }
+      : nextSteps(rules, phase, this.#displayScore(), won, timeUp);
+    const breakRemaining =
+      phase.period === "BREAK" && this.#breakStartedAt !== null
+        ? Math.max(0, rules.format.breakSeconds - Math.floor((this.#now() - this.#breakStartedAt) / 1000))
+        : null;
+    this.#update({ phase: { ...phase, rounds: rules.format.rounds, roundsWon: won, warnings: { ...this.#warnings }, steps, breakRemaining } });
   }
 
   #showScore(): void {
@@ -813,6 +998,7 @@ export class RingController {
       canUndo: !this.#state.readOnly && this.#history.length > 0,
       bouts: this.#state.bouts.map((bout) => (bout.id === boutId ? { ...bout, score } : bout)),
     });
+    this.#refreshPhase();
   }
 
   /** After a takeover, an invalid link or a refusal: read the bout again and show what the server has. */

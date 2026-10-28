@@ -66,18 +66,20 @@ beforeEach(() => {
 describe("migration creates live tables", () => {
   it("has the expected columns", async () => {
     expect(await columnNames("LiveTournament")).toEqual(
-      ["id", "name", "mode", "layoutVersion", "googleSpreadsheetId", "createdByUserId", "createdAt"],
+      ["id", "name", "mode", "layoutVersion", "googleSpreadsheetId", "createdByUserId", "createdAt", "ruleset"],
     );
     expect(await columnNames("LiveRing")).toEqual([
       "id", "tournamentId", "name", "order", "keeperToken", "activeDeviceId", "activeUserId", "activeSince",
+      "scoreboardToken", "leftColor", "rightColor",
     ]);
     expect(await columnNames("LiveBout")).toEqual([
       "id", "tournamentId", "ringId", "order", "label", "sheetName", "headerCell",
       "fighterLeft", "fighterRight", "status", "startedAt", "finishedAt", "clockSeconds", "clockRunning", "clockUpdatedAt",
+      "round", "period", "extension", "periodStartedAt", "warningsLeft", "warningsRight",
     ]);
     expect(await columnNames("LiveExchange")).toEqual([
       "id", "boutId", "seq", "kind", "leftPoints", "rightPoints", "isDouble",
-      "firstScorer", "clientExchangeId", "createdByUserId", "createdAt", "undoneAt",
+      "firstScorer", "clientExchangeId", "createdByUserId", "createdAt", "undoneAt", "round",
     ]);
     expect(await columnNames("LiveSyncJob")).toEqual([
       "id", "tournamentId", "boutId", "target", "status", "attempts", "nextAttemptAt", "lastError", "updatedAt",

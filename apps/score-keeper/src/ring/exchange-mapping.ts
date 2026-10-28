@@ -10,6 +10,8 @@ export interface LiveExchangeInput {
   /** Both fighters scored. The backend derives this from the points and refuses a mismatch. */
   isDouble: boolean;
   firstScorer: "LEFT" | "RIGHT" | null;
+  /** The round it was scored in; left out without rounds (the backend takes 1). */
+  round?: number;
 }
 
 /**

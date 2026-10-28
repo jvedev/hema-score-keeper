@@ -19,6 +19,8 @@ import { LOCALE_CHANGE_EVENT, t, type MessageKey } from "@hema/ui";
 import { CompetitionClient } from "./competition/competition-client";
 import { CompetitionMode } from "./competition/competition-flow";
 import { RingMode, ringTokenFromPath } from "./ring/ring-mode";
+import { openScoreboard } from "./scoreboard/scoreboard";
+import { scoreboardTokenFromPath } from "./scoreboard/scoreboard-view";
 import "./styles.css";
 
 type OrientationLockType =
@@ -277,6 +279,11 @@ window.addEventListener("popstate", () => {
 void initializeApp();
 
 async function initializeApp(): Promise<void> {
+  const scoreboardToken = scoreboardTokenFromPath(normalizePath(window.location.pathname));
+  if (scoreboardToken !== null) {
+    openScoreboard(import.meta.env.VITE_API_BASE_URL ?? "/api/v1", scoreboardToken);
+    return;
+  }
   const route = resolveRoute();
   if (route === "event" || route === "fight") {
     showEventScreen();

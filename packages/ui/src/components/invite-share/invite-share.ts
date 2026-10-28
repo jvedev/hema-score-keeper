@@ -18,7 +18,7 @@ const COPIED_FEEDBACK_MS = 2000;
  * or property. Fires `invite-copied` with `{ link }` after a successful copy.
  */
 export class InviteShare extends BaseComponent {
-  static readonly observedAttributes = ["link"];
+  static readonly observedAttributes = ["link", "heading"];
 
   #resetTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -62,7 +62,7 @@ export class InviteShare extends BaseComponent {
     this.render(
       css,
       `<section class="share">
-        <h3>${t("invite.title")}</h3>
+        <h3>${escapeHtml(this.getAttribute("heading") ?? t("invite.title"))}</h3>
         <div class="row">
           <input class="link" type="text" readonly value="${escapeHtml(link)}" aria-label="${t("invite.link")}" />
           <button type="button" class="copy">${t("invite.copy")}</button>

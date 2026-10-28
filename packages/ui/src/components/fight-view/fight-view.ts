@@ -178,6 +178,16 @@ export class FightView extends BaseComponent {
   }
 
   /**
+   * A new countdown length with `elapsedSeconds` gone, the clock paused; scores and the started state stay
+   * (an extension keeps the time gone, a new round starts at 0).
+   */
+  setDuration(totalSeconds: number, elapsedSeconds: number): void {
+    this.#timer.setAttribute("seconds", String(Math.max(0, totalSeconds)));
+    this.#timer.setElapsed(elapsedSeconds);
+    this.#syncControls();
+  }
+
+  /**
    * Ring mode: the score lives on the backend, so reset and forfeit are not offered and the scores cannot be edited
    * by double-tapping them.
    */

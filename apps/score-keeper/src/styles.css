@@ -351,3 +351,23 @@ body[data-mode="fight"] #rotate-overlay {
 .ring-bar-button:disabled {
   opacity: 0.4;
 }
+
+.ring-bar-button-primary {
+  background: #f2f5f7;
+  border-color: #f2f5f7;
+  color: #0b0d10;
+  font-weight: 700;
+  padding: 10px 14px;
+}
+
+.ring-phase-text {
+  flex: 1 1 100%;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.ring-phase-break .ring-phase-text {
+  color: #ffb547;
+  font-size: 18px;
+}

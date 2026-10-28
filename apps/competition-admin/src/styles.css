@@ -457,3 +457,26 @@ h2 {
 .report-errors {
   color: var(--rust);
 }
+
+.rules-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+.rules-grid label:not(.check) {
+  display: grid;
+  gap: 4px;
+}
+
+.ring-colors {
+  align-items: center;
+  gap: 12px;
+}
+
+.ring-colors input[type="color"] {
+  block-size: 36px;
+  inline-size: 56px;
+  padding: 2px;
+  vertical-align: middle;
+}

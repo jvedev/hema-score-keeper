@@ -1,4 +1,5 @@
 /** Shapes of the backend responses the admin app reads. */
+import type { RingRules } from "@hema/competition-domain";
 
 export type LifecycleStatus = "DRAFT" | "REGISTRATION_OPEN" | "RUNNING" | "CLOSED" | "ARCHIVED";
 export type ScopeKind = "CLUB" | "CLUBS" | "AREA" | "COUNTRY" | "OPEN";
@@ -208,6 +209,8 @@ export interface LiveTournamentSummary {
 
 export interface LiveTournamentDetail extends LiveTournamentSummary {
   rings: Array<{ id: string; name: string; order: number }>;
+  /** Absent from an older backend (then: the ring defaults). */
+  rules?: RingRules;
 }
 
 /** What `POST .../import/xlsx` and `.../import/google` answer. `row` is the sheet row. */
@@ -237,5 +240,8 @@ export interface LiveRingLink {
   name: string;
   order: number;
   keeperToken: string;
+  scoreboardToken: string;
+  leftColor: string;
+  rightColor: string;
   activeKeeper: { userName: string; since: string } | null;
 }

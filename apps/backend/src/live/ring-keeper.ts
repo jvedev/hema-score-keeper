@@ -37,7 +37,7 @@ export async function activeKeeperOf(db: DbExecutor, ring: Pick<LiveRingRow, "ac
 
 /** A public view of a ring: no keeper token, no device id. */
 export function publicRing(ring: LiveRingRow) {
-  return { id: ring.id, tournamentId: ring.tournamentId, name: ring.name, order: ring.order };
+  return { id: ring.id, tournamentId: ring.tournamentId, name: ring.name, order: ring.order, leftColor: ring.leftColor, rightColor: ring.rightColor };
 }
 
 export interface KeeperCheck {

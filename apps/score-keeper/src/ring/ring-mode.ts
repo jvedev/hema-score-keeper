@@ -1,18 +1,16 @@
 import { escapeHtml, LOCALE_CHANGE_EVENT, setLocale, t, type FightView, type MatchEventDetail, type ScoreView, type WarningView } from "@hema/ui";
 import type { BoutScore, LiveBoutRow } from "./live-client";
 import { LiveClient } from "./live-client";
+import { textColorFor } from "../scoreboard/scoreboard-view";
 import { boutRowText, loadRetryText, type Translate } from "./ring-texts";
-import { RingController, ringPenalties, type BoutScreen, type NotAppliedItem, type OpenBout, type RingModeState, type RingView, type SendStatus } from "./ring-controller";
+import { RingController, ringPenalties, type BoutScreen, type NotAppliedItem, type OpenBout, type PhaseView, type RingModeState, type RingView, type SendStatus } from "./ring-controller";
 
-/** Sheet tournaments carry no ruleset: ring mode scores with these. The sheet itself decides what a double is worth. */
-const RING_DURATION_SECONDS = 180;
-const RING_SCORES = [1, 2, 3];
-const RING_PENALTIES = [
-  { description: "Warning", penalties: [0, 1, 2, 3], disqualify: false },
-  { description: "Ring out", penalties: [1], disqualify: false },
-];
-const LEFT_STYLE = { backgroundColor: "#21c15b", textColor: "#071a0d" };
-const RIGHT_STYLE = { backgroundColor: "#2f7dfa", textColor: "#ffffff" };
+const LEFT_COLOR = "#21c15b";
+const RIGHT_COLOR = "#2f7dfa";
+
+function fighterStyle(color: string) {
+  return { backgroundColor: color, textColor: textColorFor(color) };
+}
 
 /** The ring path: `/ring/<token>`. Null for any other path. */
 export function ringTokenFromPath(pathname: string): string | null {
@@ -160,6 +158,18 @@ export class RingMode {
       case "dismiss-rejected":
         controller.dismissRejected();
         break;
+      case "extension":
+        controller.extension();
+        break;
+      case "sudden-death":
+        controller.suddenDeath();
+        break;
+      case "next-round":
+        controller.nextRound();
+        break;
+      case "start-round":
+        controller.startRound();
+        break;
     }
   }
 
@@ -178,28 +188,31 @@ export class RingMode {
     return {
       open: async (bout: OpenBout) => {
         this.host.showFightScreen();
-        const names = { fighterA: { name: bout.fighterLeft, ...LEFT_STYLE }, fighterB: { name: bout.fighterRight, ...RIGHT_STYLE } };
+        const { rules, ring } = this.#controller!.state;
+        const leftStyle = fighterStyle(ring?.leftColor ?? LEFT_COLOR);
+        const rightStyle = fighterStyle(ring?.rightColor ?? RIGHT_COLOR);
+        const names = { fighterA: { name: bout.fighterLeft, ...leftStyle }, fighterB: { name: bout.fighterRight, ...rightStyle } };
         fightView.configureArena({
           name: bout.label,
           fighterAName: bout.fighterLeft,
           fighterBName: bout.fighterRight,
-          leftFighterStyle: LEFT_STYLE,
-          rightFighterStyle: RIGHT_STYLE,
+          leftFighterStyle: leftStyle,
+          rightFighterStyle: rightStyle,
         });
         fightView.setRingMode(true);
-        fightView.setMatchDuration(RING_DURATION_SECONDS);
+        fightView.setMatchDuration(bout.durationSeconds);
         fightView.setMatchCompleted(false);
         fightView.setMatchActive(true);
         fightView.setClock(bout.clockSeconds, bout.started);
         fightView.setScores({ fighterAScore: bout.score.left, fighterBScore: bout.score.right });
         scoreView.configure({
-          scores: RING_SCORES,
+          scores: rules.scores,
           fighterA: { ...names.fighterA, score: bout.score.left },
           fighterB: { ...names.fighterB, score: bout.score.right },
           allowAfterblow: false,
           allowScoreCorrection: false,
         });
-        warningView.configure({ ...names, penalties: ringPenalties(RING_PENALTIES) });
+        warningView.configure({ ...names, penalties: ringPenalties(rules.penalties) });
         bar.hidden = false;
         await this.host.enterFightMode();
       },
@@ -219,6 +232,7 @@ export class RingMode {
         }
       },
       clock: () => ({ seconds: fightView.clockSeconds, running: fightView.clockRunning }),
+      setDuration: (totalSeconds: number, elapsedSeconds: number) => fightView.setDuration(totalSeconds, elapsedSeconds),
       close: async () => {
         this.#resetFightView();
         await this.host.exitFightMode();
@@ -380,9 +394,51 @@ function renderNotApplied(items: readonly NotAppliedItem[]): string {
     </div>`;
 }
 
+function minutesSeconds(seconds: number): string {
+  const whole = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
+}
+
+/** Round, rounds won, overtime or the break, and the buttons the keeper may use now. */
+export function phaseLine(phase: PhaseView): string[] {
+  const parts: string[] = [];
+  if (phase.rounds > 1) {
+    parts.push(t("ring.round", { round: String(phase.round), rounds: String(phase.rounds) }));
+    parts.push(t("ring.roundsWon", { left: String(phase.roundsWon.left), right: String(phase.roundsWon.right) }));
+  }
+  if (phase.period === "EXTENSION") parts.push(t("ring.inExtension", { n: String(phase.extension) }));
+  if (phase.period === "SUDDEN_DEATH") parts.push(t("ring.inSuddenDeath"));
+  if (phase.period === "BREAK") {
+    parts.push(phase.breakRemaining ? t("ring.break", { time: minutesSeconds(phase.breakRemaining) }) : t("ring.breakOver"));
+  }
+  if (phase.warnings.left > 0 || phase.warnings.right > 0) {
+    parts.push(t("ring.warnings", { left: String(phase.warnings.left), right: String(phase.warnings.right) }));
+  }
+  return parts;
+}
+
+function renderPhase(phase: PhaseView): string {
+  const parts = phaseLine(phase);
+  const button = (action: string, label: string) => `<button type="button" class="ring-bar-button ring-bar-button-primary" data-action="${action}">${escapeHtml(label)}</button>`;
+  const buttons = [
+    phase.steps.extension ? button("extension", t("ring.extension")) : "",
+    phase.steps.suddenDeath ? button("sudden-death", t("ring.suddenDeath")) : "",
+    phase.steps.nextRound ? button("next-round", t("ring.nextRound")) : "",
+    phase.steps.startRound ? button("start-round", t("ring.startRound", { round: String(phase.round + 1) })) : "",
+  ].join("");
+  if (parts.length === 0 && buttons === "") {
+    return "";
+  }
+  return `<div class="ring-bar-row ring-phase${phase.period === "BREAK" ? " ring-phase-break" : ""}">
+      ${parts.length > 0 ? `<p class="ring-phase-text" aria-live="polite">${escapeHtml(parts.join(" · "))}</p>` : ""}
+      ${buttons}
+    </div>`;
+}
+
 function renderBar(state: Readonly<RingModeState>): string {
   const take = !state.isKeeper && state.notice?.key !== "ring.linkInvalid";
   return `${renderNotice(state)}
+    ${state.phase ? renderPhase(state.phase) : ""}
     <div class="ring-bar-row">
       ${renderStatus(state.status)}
       <button type="button" class="ring-bar-button" data-action="undo"${state.canUndo ? "" : " disabled"}>${escapeHtml(t("ring.undo"))}</button>

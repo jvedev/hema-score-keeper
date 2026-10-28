@@ -262,6 +262,99 @@ describe("live ring keeper", () => {
     expect((await post("/api/v1/live-bouts/B1/clock", alice, { seconds: 5, running: false }, keeper("dev-a", OTHER_TOKEN))).statusCode).toBe(403);
   });
 
+  it("rules: the creator sets them, the ring view and display use them", async () => {
+    const put = (as: TestUser, payload: unknown) => ctx.app.inject({ method: "PUT", url: "/api/v1/live-tournaments/T/rules", payload: payload as object, headers: bearer(as) });
+    expect((await put(alice, { rounds: 3 })).statusCode).toBe(403);
+    const saved = await put(creator, { maxDurationSeconds: 120, maxDoubles: 2, rounds: 3, breakSeconds: 30, lastExchangeSeconds: 10, extensions: 1, extensionSeconds: 30 });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json().rules.format).toMatchObject({ rounds: 3, breakSeconds: 30, extensions: 1 });
+    const view = await get(`/api/v1/live-rings/by-token/${TOKEN}`, alice);
+    expect(view.json().rules).toMatchObject({ maxDurationSeconds: 120, maxDoubles: 2, format: { rounds: 3 } });
+    expect((await get("/api/v1/live-tournaments/T", alice)).json().rules.format.rounds).toBe(3);
+
+    await claim(alice, "dev-a");
+    await exchange(alice, "dev-a", "c1", 2, 0);
+    await post("/api/v1/live-bouts/B1/exchanges", alice, { clientExchangeId: "c2", kind: "EXCHANGE", leftPoints: 1, rightPoints: 0, round: 2 }, keeper("dev-a"));
+    const state = { seconds: 100, running: false, round: 2, period: "REGULAR", extension: 0, warningsLeft: 1, warningsRight: 2 };
+    expect((await post("/api/v1/live-bouts/B1/clock", alice, state, keeper("dev-a"))).statusCode).toBe(200);
+    const detail = (await get("/api/v1/live-bouts/B1", alice)).json();
+    expect(detail.display).toMatchObject({
+      round: 2, rounds: 3, roundsWon: { left: 1, right: 0 }, score: { left: 1, right: 0 }, warnings: { left: 1, right: 2 },
+      remainingSeconds: 20, tone: "NORMAL", period: "REGULAR", extension: null,
+    });
+    await post("/api/v1/live-bouts/B1/clock", alice, { ...state, seconds: 140, period: "EXTENSION", extension: 1 }, keeper("dev-a"));
+    expect((await get("/api/v1/live-bouts/B1", alice)).json().display).toMatchObject({ extension: 1, remainingSeconds: 10, tone: "OVERTIME" });
+    for (const bad of [{ ...state, period: "NAP" }, { ...state, round: 0 }, { ...state, warningsLeft: -1 }, { seconds: 1, running: false, round: 1 }]) {
+      expect((await post("/api/v1/live-bouts/B1/clock", alice, bad, keeper("dev-a"))).statusCode, JSON.stringify(bad)).toBe(400);
+    }
+    expect((await post("/api/v1/live-bouts/B1/exchanges", alice, { clientExchangeId: "c3", kind: "EXCHANGE", leftPoints: 1, rightPoints: 0, round: 10 }, keeper("dev-a"))).statusCode).toBe(400);
+  });
+
+  it("the break counts down from when it began on the server", async () => {
+    await ctx.database.updateTable("LiveTournament").set({ ruleset: JSON.stringify({ rounds: 3, breakSeconds: 60 }) }).where("id", "=", "T").execute();
+    await claim(alice, "dev-a");
+    await post("/api/v1/live-bouts/B1/clock", alice, { seconds: 180, running: false, round: 1, period: "BREAK", extension: 0, warningsLeft: 0, warningsRight: 0 }, keeper("dev-a"));
+    const startedAt = (await bout()).periodStartedAt!;
+    // A repeat of the same state does not restart the break.
+    await post("/api/v1/live-bouts/B1/clock", alice, { seconds: 180, running: false, round: 1, period: "BREAK", extension: 0, warningsLeft: 0, warningsRight: 0 }, keeper("dev-a"));
+    expect((await bout()).periodStartedAt).toBe(startedAt);
+    await ctx.database.updateTable("LiveBout").set({ periodStartedAt: new Date(Date.parse(startedAt) - 25_000).toISOString() }).where("id", "=", "B1").execute();
+    const display = (await get("/api/v1/live-bouts/B1", alice)).json().display;
+    expect(display.period).toBe("BREAK");
+    expect(display.remainingSeconds).toBeGreaterThanOrEqual(34);
+    expect(display.remainingSeconds).toBeLessThanOrEqual(35);
+  });
+
+  it("scoreboard: view only, no sign-in, current bout, on deck and the pool", async () => {
+    await ctx.database.updateTable("LiveRing").set({ scoreboardToken: "board-1" }).where("id", "=", "R1").execute();
+    await ctx.database.insertInto("LiveBout").values({
+      id: "B3", tournamentId: "T", ringId: "R1", order: 3, label: "B3", sheetName: "Pool_1", headerCell: "B325",
+      fighterLeft: "L3", fighterRight: "R3", status: "PENDING", startedAt: null, finishedAt: null,
+    }).execute();
+    expect((await get("/api/v1/scoreboard/nope", null)).statusCode).toBe(404);
+    const idle = (await get("/api/v1/scoreboard/board-1", null)).json();
+    expect(idle).toMatchObject({ ring: { name: "Ring 1", leftColor: "#21c15b", rightColor: "#2f7dfa" }, current: null, onDeck: { label: "B1" }, after: { label: "B2" } });
+    expect(idle.pool.bouts.map((b: { label: string; isNext: boolean }) => [b.label, b.isNext])).toEqual([["B1", true], ["B2", false], ["B3", false]]);
+
+    await claim(alice, "dev-a");
+    await exchange(alice, "dev-a", "c1", 2, 0);
+    await post("/api/v1/live-bouts/B1/clock", alice, { seconds: 30, running: true }, keeper("dev-a"));
+    const live = (await get("/api/v1/scoreboard/board-1", null)).json();
+    expect(live.current).toMatchObject({ label: "B1", display: { score: { left: 2, right: 0 }, running: true } });
+    expect(live.current.display.remainingSeconds).toBeLessThanOrEqual(150);
+    expect(live).toMatchObject({ onDeck: { label: "B2" }, after: { label: "B3" } });
+    // The keeper link is not a scoreboard link, and the scoreboard token opens nothing else.
+    expect((await get(`/api/v1/scoreboard/${TOKEN}`, null)).statusCode).toBe(404);
+    expect((await get("/api/v1/live-rings/by-token/board-1", alice)).statusCode).toBe(404);
+
+    await post("/api/v1/live-bouts/B1/finish", alice, {}, keeper("dev-a"));
+    const after = (await get("/api/v1/scoreboard/board-1", null)).json();
+    expect(after.current).toBeNull();
+    expect(after.pool.bouts[0]).toMatchObject({ label: "B1", status: "DONE", result: { left: 2, right: 0 } });
+    expect(after.pool.bouts[1]).toMatchObject({ label: "B2", isNext: true, result: null });
+  });
+
+  it("a running clock runs on at most 10 s past the keeper's last report", async () => {
+    await ctx.database.updateTable("LiveBout").set({ clockSeconds: 30, clockRunning: 1, clockUpdatedAt: new Date(Date.now() - 60_000).toISOString(), status: "RUNNING" }).where("id", "=", "B1").execute();
+    await ctx.database.updateTable("LiveRing").set({ scoreboardToken: "board-1" }).where("id", "=", "R1").execute();
+    expect((await get("/api/v1/scoreboard/board-1", null)).json().current.display.remainingSeconds).toBe(140);
+  });
+
+  it("colours and a new scoreboard link: tournament admin only", async () => {
+    const put = (as: TestUser, payload: unknown) => ctx.app.inject({ method: "PUT", url: "/api/v1/live-rings/R1/colors", payload: payload as object, headers: bearer(as) });
+    expect((await put(alice, { leftColor: "#ff0000", rightColor: "#0000ff" })).statusCode).toBe(403);
+    expect((await put(creator, { leftColor: "red", rightColor: "#0000ff" })).statusCode).toBe(400);
+    expect((await put(creator, { leftColor: "#FF0000", rightColor: "#0000ff" })).json().ring).toMatchObject({ leftColor: "#ff0000", rightColor: "#0000ff" });
+    expect((await get(`/api/v1/live-rings/by-token/${TOKEN}`, alice)).json().ring).toMatchObject({ leftColor: "#ff0000" });
+    const before = (await ring()).scoreboardToken;
+    expect((await post("/api/v1/live-rings/R1/rotate-scoreboard-token", alice)).statusCode).toBe(403);
+    const rotated = (await post("/api/v1/live-rings/R1/rotate-scoreboard-token", creator)).json().ring.scoreboardToken;
+    expect(rotated).not.toBe(before);
+    expect((await ring()).keeperToken).toBe(TOKEN);
+    const links = (await get("/api/v1/live-tournaments/T/rings", creator)).json().rings;
+    expect(links[0].scoreboardToken).toBe(rotated);
+  });
+
   it("ring links visible to creator only", async () => {
     const admin = await insertUser(ctx.database, { id: "admin", role: "SYSTEM_ADMIN" });
     await claim(alice, "dev-a");

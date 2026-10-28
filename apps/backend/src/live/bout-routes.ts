@@ -5,6 +5,8 @@ import { requirePathParam } from "../access-user.js";
 import { requireUser } from "../bouts/bout-routes.js";
 import type { BackendDatabase, DbExecutor } from "../db.js";
 import { ensureObject, HttpError, requireString } from "../http.js";
+import { BOUT_PERIODS, type BoutPeriod } from "@hema/competition-domain";
+import { displayOf, tournamentRules } from "./bout-display.js";
 import { scoreOf, type BoutScore } from "./bout-score.js";
 import { activeExchanges, enqueueSync, type LiveExchangeRow } from "./live-store.js";
 import { checkRingToken, requireKeeper } from "./ring-keeper.js";
@@ -15,6 +17,8 @@ const MAX_POINTS = 10;
 /** A day; anything longer is a client bug, not a bout. */
 const MAX_CLOCK_SECONDS = 24 * 60 * 60;
 const MAX_SEQ_ATTEMPTS = 5;
+const MAX_ROUND = 9;
+const MAX_WARNINGS = 99;
 
 interface ExchangeInput {
   clientExchangeId: string;
@@ -23,6 +27,14 @@ interface ExchangeInput {
   rightPoints: number;
   isDouble: boolean;
   firstScorer: "LEFT" | "RIGHT" | null;
+  round: number;
+}
+
+function wholeNumberIn(value: unknown, label: string, min: number, max: number): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
+    throw new HttpError(400, `${label} must be a whole number from ${min} to ${max}.`);
+  }
+  return value;
 }
 
 function requirePoints(value: unknown, label: string): number {
@@ -64,7 +76,8 @@ export function parseExchangeInput(raw: unknown): ExchangeInput {
     }
     firstScorer = body.firstScorer;
   }
-  return { clientExchangeId, kind, leftPoints, rightPoints, isDouble, firstScorer };
+  const round = body.round === undefined ? 1 : wholeNumberIn(body.round, "round", 1, MAX_ROUND);
+  return { clientExchangeId, kind, leftPoints, rightPoints, isDouble, firstScorer, round };
 }
 
 export interface BoutClock {
@@ -77,21 +90,54 @@ export function clockOf(bout: Pick<LiveBoutRow, "clockSeconds" | "clockRunning" 
   return { seconds: bout.clockSeconds, running: bout.clockRunning === 1, updatedAt: bout.clockUpdatedAt };
 }
 
-function parseClockInput(raw: unknown): { seconds: number; running: boolean } {
+/** Where the bout is, sent with the clock. Older clients send only the clock; their bout keeps its state. */
+interface BoutStateInput {
+  round: number;
+  period: BoutPeriod;
+  extension: number;
+  warningsLeft: number;
+  warningsRight: number;
+}
+
+function parseBoutState(body: Record<string, unknown>): BoutStateInput | null {
+  if (body.round === undefined && body.period === undefined) return null;
+  if (typeof body.period !== "string" || !(BOUT_PERIODS as readonly string[]).includes(body.period)) {
+    throw new HttpError(400, `period must be one of ${BOUT_PERIODS.join(", ")}.`);
+  }
+  return {
+    round: wholeNumberIn(body.round, "round", 1, MAX_ROUND),
+    period: body.period as BoutPeriod,
+    extension: wholeNumberIn(body.extension, "extension", 0, MAX_ROUND),
+    warningsLeft: wholeNumberIn(body.warningsLeft, "warningsLeft", 0, MAX_WARNINGS),
+    warningsRight: wholeNumberIn(body.warningsRight, "warningsRight", 0, MAX_WARNINGS),
+  };
+}
+
+function parseClockInput(raw: unknown): { seconds: number; running: boolean; state: BoutStateInput | null } {
   const body = ensureObject(raw, "Clock");
   const seconds = body.seconds;
   if (typeof seconds !== "number" || !Number.isInteger(seconds) || seconds < 0 || seconds > MAX_CLOCK_SECONDS) {
     throw new HttpError(400, `seconds must be a whole number from 0 to ${MAX_CLOCK_SECONDS}.`);
   }
   if (typeof body.running !== "boolean") throw new HttpError(400, "running must be true or false.");
-  return { seconds, running: body.running };
+  return { seconds, running: body.running, state: parseBoutState(body) };
 }
 
-/** A ring's bouts in order, each with its score (null when unscored) and clock. */
-export async function ringBouts(db: DbExecutor, ringId: string) {
+/** A ring's bouts in order, each with its score (null when unscored), clock and what a scoreboard shows. */
+export async function ringBouts(db: DbExecutor, ringId: string, now: Date) {
   const bouts = await db.selectFrom("LiveBout").selectAll().where("ringId", "=", ringId).orderBy("order").execute();
-  const scores = await boutScores(db, bouts.map((bout) => bout.id));
-  return bouts.map((bout) => ({ ...bout, score: scores.get(bout.id) ?? null, clock: clockOf(bout) }));
+  if (bouts.length === 0) return [];
+  const rules = await tournamentRules(db, bouts[0]!.tournamentId);
+  const exchanges = await db
+    .selectFrom("LiveExchange")
+    .select(["boutId", "kind", "leftPoints", "rightPoints", "round"])
+    .where("boutId", "in", bouts.map((bout) => bout.id))
+    .where("undoneAt", "is", null)
+    .execute();
+  return bouts.map((bout) => {
+    const own = exchanges.filter((exchange) => exchange.boutId === bout.id);
+    return { ...bout, score: own.length > 0 ? scoreOf(own) : null, clock: clockOf(bout), display: displayOf(rules, bout, own, now) };
+  });
 }
 
 function isUniqueViolation(error: unknown): boolean {
@@ -118,14 +164,21 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
     const ringId = requirePathParam(request, "ringId");
     const ring = await database.selectFrom("LiveRing").select("id").where("id", "=", ringId).executeTakeFirst();
     if (!ring) throw new HttpError(404, "Ring not found.");
-    return { bouts: await ringBouts(database, ringId) };
+    return { bouts: await ringBouts(database, ringId, app.now()) };
   });
 
   app.get("/api/v1/live-bouts/:id", async (request) => {
     await requireUser(request, database);
     const bout = await getBout(database, requirePathParam(request, "id"));
     const exchanges = await activeExchanges(database, bout.id);
-    return { bout, exchanges: exchanges.map(publicExchange), score: scoreOf(exchanges), clock: clockOf(bout) };
+    const rules = await tournamentRules(database, bout.tournamentId);
+    return {
+      bout,
+      exchanges: exchanges.map(publicExchange),
+      score: scoreOf(exchanges),
+      clock: clockOf(bout),
+      display: displayOf(rules, bout, exchanges, app.now()),
+    };
   });
 
   // Every write below checks the ring keeper (X-Ring-Token + X-Device-Id) inside its own transaction, so a takeover
@@ -174,7 +227,8 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
               existing.leftPoints === input.leftPoints &&
               existing.rightPoints === input.rightPoints &&
               existing.isDouble === (input.isDouble ? 1 : 0) &&
-              existing.firstScorer === input.firstScorer;
+              existing.firstScorer === input.firstScorer &&
+              existing.round === input.round;
             if (same) return { exchange: existing, score: await scoreFor(trx, boutId) };
           }
           await keeper.requireActiveDevice();
@@ -198,6 +252,7 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
             rightPoints: input.rightPoints,
             isDouble: input.isDouble ? 1 : 0,
             firstScorer: input.firstScorer,
+            round: input.round,
             clientExchangeId: input.clientExchangeId,
             createdByUserId: user.id,
             createdAt: now,
@@ -293,9 +348,26 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
     return database.transaction().execute(async (trx) => {
       const bout = await getBout(trx, boutId);
       await requireKeeper(trx, request, bout.ringId);
+      const now = app.now().toISOString();
+      const state = input.state;
+      const newPeriod = state !== null && (state.round !== bout.round || state.period !== bout.period || state.extension !== bout.extension);
       await trx
         .updateTable("LiveBout")
-        .set({ clockSeconds: input.seconds, clockRunning: input.running ? 1 : 0, clockUpdatedAt: app.now().toISOString() })
+        .set({
+          clockSeconds: input.seconds,
+          clockRunning: input.running ? 1 : 0,
+          clockUpdatedAt: now,
+          ...(state === null
+            ? {}
+            : {
+                round: state.round,
+                period: state.period,
+                extension: state.extension,
+                warningsLeft: state.warningsLeft,
+                warningsRight: state.warningsRight,
+                ...(newPeriod ? { periodStartedAt: now } : {}),
+              }),
+        })
         .where("id", "=", boutId)
         .execute();
       return { clock: clockOf(await getBout(trx, boutId)) };

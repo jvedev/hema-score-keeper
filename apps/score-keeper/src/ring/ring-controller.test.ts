@@ -1,7 +1,7 @@
 import { ApiError, SessionExpiredError } from "@hema/api-session";
 import type { MatchEventDetail } from "@hema/ui";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ActiveKeeper, BoutDetail, BoutScore, ExchangeToSend, LiveBoutRow, LiveSession, RingByToken, ServerExchange } from "./live-client";
+import type { ActiveKeeper, BoutDetail, BoutScore, BoutStateReport, ClockReport, ExchangeToSend, LiveBoutRow, LiveSession, RingByToken, ServerExchange } from "./live-client";
 import { resetOutboxes } from "./outbox";
 import { RingController, ringPenalties, sheetScore, type BoutScreen, type OpenBout, type RingApi, type RingModeState, type RingView } from "./ring-controller";
 import { MemoryStorage } from "./test-support";
@@ -96,9 +96,12 @@ class FakeApi implements RingApi {
     this.#write(`finish ${boutId}`);
     return { score: this.#score(boutId) };
   };
-  setClock = async (_token: string, boutId: string, clock: { seconds: number; running: boolean }) => {
+  /** The bout state sent with each clock report. */
+  states: BoutStateReport[] = [];
+  setClock = async (_token: string, boutId: string, clock: ClockReport) => {
     this.#write(`clock ${clock.seconds}/${clock.running}`);
-    this.clocks[boutId] = clock;
+    this.clocks[boutId] = { seconds: clock.seconds, running: clock.running };
+    if (clock.state) this.states.push(clock.state);
   };
   undo = async (_token: string, boutId: string, expectedExchangeId: string) => {
     await this.#gate();
@@ -111,7 +114,7 @@ class FakeApi implements RingApi {
     await this.#gate();
     this.#write(`exchange ${exchange.leftPoints}/${exchange.rightPoints}`);
     const list = this.exchanges[boutId]!;
-    const stored = serverExchange(exchange.clientExchangeId, exchange.leftPoints, exchange.rightPoints, list.length + 1);
+    const stored = { ...serverExchange(exchange.clientExchangeId, exchange.leftPoints, exchange.rightPoints, list.length + 1), ...(exchange.round ? { round: exchange.round } : {}) };
     list.push(stored);
     return { exchange: { id: stored.id, clientExchangeId: stored.clientExchangeId }, score: this.#score(boutId) };
   };
@@ -153,6 +156,11 @@ class FakeBoutScreen implements BoutScreen {
   }
   clock(): { seconds: number; running: boolean } {
     return this.clockNow;
+  }
+  duration: number | null = null;
+  setDuration(totalSeconds: number, elapsedSeconds: number): void {
+    this.duration = totalSeconds;
+    this.clockNow = { seconds: elapsedSeconds, running: false };
   }
   async close(): Promise<void> {
     this.closed += 1;
@@ -833,5 +841,83 @@ describe("ring mode fixes, end-to-end check", () => {
       expect(api.calls.filter((call) => call.startsWith("ring "))).toHaveLength(2);
       expect(api.calls.filter((call) => call === "claim")).toHaveLength(1);
     });
+  });
+});
+
+describe("rounds, break and overtime", () => {
+  function withRules(rules: Record<string, unknown>): void {
+    asKeeper();
+    (api.ring as RingByToken).rules = rules;
+  }
+
+  it("ends a round at time-up, counts the break down and starts the next round at 0–0", async () => {
+    let now = 1_000_000;
+    withRules({ maxDurationSeconds: 180, rounds: 3, breakSeconds: 60 });
+    const ring = new RingController({ api, view, boutScreen: screen, storage, timers: { set: () => undefined, clear: () => undefined }, clockTimer: { every: (run, ms) => { const handle = { run, ms, cancelled: false }; intervals.push(handle); return handle; }, cancel: (handle) => { (handle as { cancelled: boolean }).cancelled = true; } }, now: () => now });
+    await ring.open("tok");
+    await ring.openBout("b1");
+    expect(screen.opened!.durationSeconds).toBe(180);
+    ring.matchEvent(hit(2, 0));
+    expect(state().phase).toMatchObject({ round: 1, rounds: 3, steps: { nextRound: true } });
+    screen.clockNow = { seconds: 180, running: false };
+    ring.clockToggled();
+    ring.nextRound();
+    expect(state().phase).toMatchObject({ period: "BREAK", breakRemaining: 60, steps: { startRound: true } });
+    await vi.waitFor(() => expect(state().status.pending).toBe(0));
+    expect(api.states.at(-1)).toMatchObject({ round: 1, period: "BREAK" });
+    now += 20_000;
+    intervals.at(-1)!.run();
+    expect(state().phase!.breakRemaining).toBe(40);
+    ring.startRound();
+    expect(state().phase).toMatchObject({ round: 2, period: "REGULAR", roundsWon: { left: 1, right: 0 }, breakRemaining: null });
+    expect(screen.duration).toBe(180);
+    expect(screen.clockNow.seconds).toBe(0);
+    expect(screen.score).toEqual({ left: 0, right: 0, doubles: 0 });
+    ring.matchEvent(hit(0, 1));
+    await vi.waitFor(() => expect(state().status.pending).toBe(0));
+    expect(api.exchanges.b1!.map((exchange) => exchange.round ?? 1)).toEqual([1, 2]);
+    expect(api.states.at(-1)).toEqual({ round: 2, period: "REGULAR", extension: 0, warningsLeft: 0, warningsRight: 0 });
+  });
+
+  it("offers an extension on a tie at time-up, then sudden death", async () => {
+    withRules({ maxDurationSeconds: 180, extensions: 1, extensionSeconds: 30, suddenDeath: true });
+    const ring = controller();
+    await ring.open("tok");
+    await ring.openBout("b1");
+    ring.matchEvent(hit(1, 0));
+    ring.matchEvent(hit(0, 1));
+    expect(state().phase!.steps.extension).toBe(false);
+    screen.clockNow = { seconds: 180, running: false };
+    ring.clockToggled();
+    expect(state().phase!.steps).toMatchObject({ extension: true, suddenDeath: false, nextRound: false });
+    ring.extension();
+    expect(screen.duration).toBe(210);
+    expect(screen.clockNow.seconds).toBe(180);
+    expect(state().phase).toMatchObject({ period: "EXTENSION", extension: 1 });
+    screen.clockNow = { seconds: 210, running: false };
+    ring.clockToggled();
+    expect(state().phase!.steps).toMatchObject({ extension: false, suddenDeath: true });
+    ring.suddenDeath();
+    await vi.waitFor(() => expect(state().status.pending).toBe(0));
+    expect(api.states.at(-1)).toMatchObject({ period: "SUDDEN_DEATH", extension: 1 });
+  });
+
+  it("sends warning counts and restores the bout state on open", async () => {
+    withRules({ rounds: 3, breakSeconds: 60 });
+    const ring = controller();
+    await ring.open("tok");
+    await ring.openBout("b1");
+    ring.matchEvent({ type: "warning", fighter: "B", description: "Warning", pointsDeducted: 0, elapsedTimeSeconds: 5 });
+    await vi.waitFor(() => expect(state().status.pending).toBe(0));
+    expect(api.states.at(-1)).toMatchObject({ warningsLeft: 0, warningsRight: 1 });
+    expect(state().phase!.warnings).toEqual({ left: 0, right: 1 });
+
+    const row = (api.ring as RingByToken).bouts.find((bout) => bout.id === "b2")!;
+    Object.assign(row, { round: 2, period: "BREAK", extension: 0, warningsLeft: 2, warningsRight: 0 });
+    const getBout = api.getBout;
+    api.getBout = async (boutId) => ({ ...(await getBout(boutId)), display: { remainingSeconds: 25 } as unknown as NonNullable<BoutDetail["display"]> });
+    await ring.backToRing();
+    await ring.openBout("b2");
+    expect(state().phase).toMatchObject({ round: 2, period: "BREAK", breakRemaining: 25, warnings: { left: 2, right: 0 } });
   });
 });

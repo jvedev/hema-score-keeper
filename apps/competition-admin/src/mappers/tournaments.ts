@@ -1,3 +1,4 @@
+import type { RingRules } from "@hema/competition-domain";
 import type { ImportReport, LiveRingLink, SyncTarget } from "../api-types";
 import type { Translate } from "./translate";
 
@@ -101,6 +102,10 @@ export interface RingCardView {
   id: string;
   name: string;
   link: string;
+  /** The ring's view-only scoreboard page. */
+  scoreboardLink: string;
+  leftColor: string;
+  rightColor: string;
   keeper: string;
   kept: boolean;
 }
@@ -110,12 +115,52 @@ export function toRingCards(rings: readonly LiveRingLink[], scoreKeeperUrl: stri
     id: ring.id,
     name: ring.name,
     link: ringLink(scoreKeeperUrl, ring.keeperToken),
+    scoreboardLink: scoreboardLink(scoreKeeperUrl, ring.scoreboardToken),
+    leftColor: ring.leftColor,
+    rightColor: ring.rightColor,
     keeper: ring.activeKeeper ? translate("tournaments.keeping", { name: ring.activeKeeper.userName }) : translate("tournaments.notKept"),
     kept: ring.activeKeeper !== null,
   }));
 }
 
+/** The link a ring's scoreboard monitor opens: view only, no sign-in. */
+export function scoreboardLink(scoreKeeperUrl: string, token: string): string {
+  return `${scoreKeeperUrl.replace(/\/+$/, "")}/scoreboard/${encodeURIComponent(token)}`;
+}
+
 /** The ring to confirm a new link for, taken from freshly loaded rings (null when it no longer exists). */
 export function rotateTarget(freshRings: readonly LiveRingLink[], ringId: string): LiveRingLink | null {
   return freshRings.find((ring) => ring.id === ringId) ?? null;
+}
+
+/**
+ * The ring-rules form back into rules. Fields left empty or not a whole number keep the current value; the backend
+ * checks the ranges again.
+ */
+export function rulesFromForm(form: FormData, current: RingRules): RingRules {
+  const whole = (name: string, fallback: number): number => {
+    const value = Number(String(form.get(name) ?? "").trim());
+    return String(form.get(name) ?? "").trim() !== "" && Number.isInteger(value) && value >= 0 ? value : fallback;
+  };
+  const scores = String(form.get("scores") ?? "")
+    .split(",")
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isInteger(value) && value > 0);
+  const overtimeAfter = form.get("overtimeAfter") === "EVERY_ROUND" ? "EVERY_ROUND" : "LAST_ROUND";
+  return {
+    ...current,
+    maxDurationSeconds: whole("maxDurationSeconds", current.maxDurationSeconds),
+    scores: scores.length > 0 ? scores : current.scores,
+    maxDoubles: whole("maxDoubles", current.maxDoubles),
+    maxPointsCap: whole("maxPointsCap", current.maxPointsCap),
+    format: {
+      rounds: whole("rounds", current.format.rounds),
+      breakSeconds: whole("breakSeconds", current.format.breakSeconds),
+      lastExchangeSeconds: whole("lastExchangeSeconds", current.format.lastExchangeSeconds),
+      overtimeAfter,
+      extensions: whole("extensions", current.format.extensions),
+      extensionSeconds: whole("extensionSeconds", current.format.extensionSeconds),
+      suddenDeath: form.get("suddenDeath") === "on",
+    },
+  };
 }

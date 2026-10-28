@@ -82,7 +82,7 @@ describe("applySchemaMigrations", () => {
     expect(() => applySchemaMigrations(database)).not.toThrow();
     expect(adminRows()).toHaveLength(admins);
     expect(database.prepare("SELECT COUNT(*) AS count FROM SchemaMigration").get()).toEqual({ count: applied });
-    expect(applied).toBe(16);
+    expect(applied).toBe(18);
   });
 });
 

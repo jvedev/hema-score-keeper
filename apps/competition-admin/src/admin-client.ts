@@ -1,3 +1,4 @@
+import type { RingRules } from "@hema/competition-domain";
 import type {
   AdminUser,
   BoutResponse,
@@ -85,6 +86,7 @@ export class AdminClient {
   liveTournaments = async () => (await this.#send<{ tournaments: LiveTournamentSummary[] }>("GET", "/live-tournaments")).tournaments;
   createLiveTournament = (input: { name: string; googleSpreadsheetId?: string }) => this.#send<{ id: string }>("POST", "/live-tournaments", input);
   liveTournament = (id: string) => this.#send<LiveTournamentDetail>("GET", `/live-tournaments/${e(id)}`);
+  saveLiveRules = async (id: string, rules: RingRules) => (await this.#send<{ rules: RingRules }>("PUT", `/live-tournaments/${e(id)}/rules`, rules)).rules;
   /** Sends the .xlsx as the raw request body. */
   importWorkbook = (id: string, file: Blob) => this.#send<ImportReport>("POST", `/live-tournaments/${e(id)}/import/xlsx`, file);
   importGoogle = (id: string) => this.#send<ImportReport>("POST", `/live-tournaments/${e(id)}/import/google`);
@@ -92,6 +94,9 @@ export class AdminClient {
   /** The backup needs the sign-in header, so it is fetched (not linked) and saved from the blob. */
   downloadBackup = (id: string) => this.#api.send<Blob>("GET", `/live-tournaments/${e(id)}/backup.xlsx`, undefined, true, { responseType: "blob" });
   liveRings = async (id: string) => (await this.#send<{ rings: LiveRingLink[] }>("GET", `/live-tournaments/${e(id)}/rings`)).rings;
+  rotateScoreboardToken = async (ringId: string) => (await this.#send<{ ring: LiveRingLink }>("POST", `/live-rings/${e(ringId)}/rotate-scoreboard-token`)).ring;
+  setRingColors = async (ringId: string, colors: { leftColor: string; rightColor: string }) =>
+    (await this.#send<{ ring: LiveRingLink }>("PUT", `/live-rings/${e(ringId)}/colors`, colors)).ring;
   rotateRingToken = async (ringId: string) => (await this.#send<{ ring: LiveRingLink }>("POST", `/live-rings/${e(ringId)}/rotate-token`)).ring;
 
   #send<T>(method: string, path: string, body?: unknown, authenticated = true): Promise<T> {
