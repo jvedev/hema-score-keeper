@@ -11,6 +11,7 @@ export type Route =
   | { name: "fighter"; competitionId: string; participantId: string }
   | { name: "bout"; competitionId: string; boutId: string }
   | { name: "profile" }
+  | { name: "live-tournament"; tournamentId: string }
   | { name: "join"; code: string };
 
 /** The main tabs (sidebar on a laptop, bottom tabs on a phone). */
@@ -24,6 +25,7 @@ const NAV_FOR: Record<Route["name"], NavItem> = {
   fighter: "competitions",
   bout: "competitions",
   profile: "profile",
+  "live-tournament": "home",
   join: "competitions",
 };
 
@@ -52,6 +54,9 @@ export function parseRoute(pathname: string, base: string = APP_BASE): Route {
   }
   if (first === "join" && id && parts.length === 2) {
     return { name: "join", code: id };
+  }
+  if (first === "tournaments" && id && parts.length === 2) {
+    return { name: "live-tournament", tournamentId: id };
   }
   if (first === "competitions") {
     if (parts.length === 1) {
@@ -94,6 +99,8 @@ function relativePath(route: Route): string {
       return `competitions/${e(route.competitionId)}/bouts/${e(route.boutId)}`;
     case "profile":
       return "profile";
+    case "live-tournament":
+      return `tournaments/${e(route.tournamentId)}`;
     case "join":
       return `join/${e(route.code)}`;
   }

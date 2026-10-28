@@ -341,6 +341,10 @@ interface LiveBoutTable {
   headerCell: string;
   fighterLeft: string;
   fighterRight: string;
+  fighterLeftId: Generated<string | null>;
+  fighterRightId: Generated<string | null>;
+  fighterLeftManuallyAssigned: Generated<number>;
+  fighterRightManuallyAssigned: Generated<number>;
   status: "PENDING" | "RUNNING" | "DONE";
   startedAt: string | null;
   finishedAt: string | null;
@@ -356,6 +360,18 @@ interface LiveBoutTable {
   periodStartedAt: string | null;
   warningsLeft: Generated<number>;
   warningsRight: Generated<number>;
+}
+
+interface LiveTournamentFighterTable {
+  id: string;
+  tournamentId: string;
+  name: string;
+  nameKey: string;
+  userId: string | null;
+  active: Generated<number>;
+  ambiguous: Generated<number>;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface LiveExchangeTable {
@@ -393,6 +409,30 @@ interface LiveSyncStateTable {
   lastSuccessAt: string | null;
   lastError: string | null;
   lastErrorAt: string | null;
+}
+
+interface LivePushSubscriptionTable {
+  id: string;
+  userId: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface LivePushJobTable {
+  id: string;
+  subscriptionId: string;
+  tournamentId: string;
+  boutId: string;
+  payload: string;
+  status: "PENDING" | "SENDING" | "DONE" | "FAILED";
+  attempts: number;
+  nextAttemptAt: string;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface BackendDatabase {
@@ -434,11 +474,14 @@ export interface BackendDatabase {
   BoutCompetition: BoutCompetitionTable;
   BoutRevision: BoutRevisionTable;
   LiveTournament: LiveTournamentTable;
+  LiveTournamentFighter: LiveTournamentFighterTable;
   LiveRing: LiveRingTable;
   LiveBout: LiveBoutTable;
   LiveExchange: LiveExchangeTable;
   LiveSyncJob: LiveSyncJobTable;
   LiveSyncState: LiveSyncStateTable;
+  LivePushSubscription: LivePushSubscriptionTable;
+  LivePushJob: LivePushJobTable;
 }
 
 export type DbExecutor = Kysely<BackendDatabase> | Transaction<BackendDatabase>;

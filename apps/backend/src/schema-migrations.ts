@@ -337,6 +337,80 @@ const MIGRATIONS: readonly SchemaMigration[] = [
       database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_liveRing_scoreboardToken ON LiveRing(scoreboardToken)");
     },
   },
+  {
+    // Imported fighter identities and optional account links for the fighter app.
+    name: "2026-10-28-live-tournament-fighters",
+    apply(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS LiveTournamentFighter (
+          id TEXT PRIMARY KEY,
+          tournamentId TEXT NOT NULL REFERENCES LiveTournament(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          nameKey TEXT NOT NULL,
+          userId TEXT REFERENCES User(id) ON DELETE SET NULL,
+          active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+          createdAt TEXT NOT NULL,
+          updatedAt TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_liveTournamentFighter_name
+          ON LiveTournamentFighter(tournamentId, nameKey);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_liveTournamentFighter_user
+          ON LiveTournamentFighter(tournamentId, userId) WHERE userId IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_liveTournamentFighter_active
+          ON LiveTournamentFighter(tournamentId, active, name);
+      `);
+      addColumn(database, "LiveBout", "fighterLeftId", "TEXT REFERENCES LiveTournamentFighter(id) ON DELETE SET NULL");
+      addColumn(database, "LiveBout", "fighterRightId", "TEXT REFERENCES LiveTournamentFighter(id) ON DELETE SET NULL");
+    },
+  },
+  {
+    name: "2026-10-28-live-tournament-push",
+    apply(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS LivePushSubscription (
+          id TEXT PRIMARY KEY,
+          userId TEXT NOT NULL REFERENCES User(id) ON DELETE CASCADE,
+          endpoint TEXT NOT NULL UNIQUE,
+          p256dh TEXT NOT NULL,
+          auth TEXT NOT NULL,
+          createdAt TEXT NOT NULL,
+          updatedAt TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_livePushSubscription_user
+          ON LivePushSubscription(userId);
+        CREATE TABLE IF NOT EXISTS LivePushJob (
+          id TEXT PRIMARY KEY,
+          subscriptionId TEXT NOT NULL REFERENCES LivePushSubscription(id) ON DELETE CASCADE,
+          tournamentId TEXT NOT NULL REFERENCES LiveTournament(id) ON DELETE CASCADE,
+          boutId TEXT NOT NULL REFERENCES LiveBout(id) ON DELETE CASCADE,
+          payload TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'SENDING', 'DONE', 'FAILED')),
+          attempts INTEGER NOT NULL DEFAULT 0,
+          nextAttemptAt TEXT NOT NULL,
+          lastError TEXT,
+          createdAt TEXT NOT NULL,
+          updatedAt TEXT NOT NULL,
+          UNIQUE (boutId, subscriptionId)
+        );
+        CREATE INDEX IF NOT EXISTS idx_livePushJob_due
+          ON LivePushJob(status, nextAttemptAt);
+      `);
+    },
+  },
+  {
+    name: "2026-10-28-live-tournament-fighter-identity-review",
+    apply(database) {
+      database.exec("DROP INDEX IF EXISTS idx_liveTournamentFighter_name");
+      database.exec(`
+        CREATE INDEX IF NOT EXISTS idx_liveTournamentFighter_name
+          ON LiveTournamentFighter(tournamentId, nameKey, active);
+      `);
+      addColumn(database, "LiveTournamentFighter", "ambiguous", "INTEGER NOT NULL DEFAULT 1 CHECK (ambiguous IN (0, 1))");
+      addColumn(database, "LiveBout", "fighterLeftManuallyAssigned", "INTEGER NOT NULL DEFAULT 0 CHECK (fighterLeftManuallyAssigned IN (0, 1))");
+      addColumn(database, "LiveBout", "fighterRightManuallyAssigned", "INTEGER NOT NULL DEFAULT 0 CHECK (fighterRightManuallyAssigned IN (0, 1))");
+      database.exec("UPDATE LiveTournamentFighter SET ambiguous = 1");
+    },
+  },
 ];
 
 export function applySchemaMigrations(database: NativeDatabase): void {

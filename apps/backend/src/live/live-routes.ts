@@ -8,7 +8,7 @@ import { requireUser } from "../bouts/bout-routes.js";
 import type { BackendDatabase, LiveTarget } from "../db.js";
 import { ensureObject, HttpError, optionalString, requireString } from "../http.js";
 import { rulesOf } from "./bout-display.js";
-import { boutScores } from "./bout-routes.js";
+import { boutScores, ringBouts } from "./bout-routes.js";
 import { XlsxCellSource } from "./cell-source.js";
 import { backupPath } from "./data-dir.js";
 import { GoogleCellSource, GoogleError, googleCredentials, sharedGoogleApi } from "./google-sheets.js";
@@ -16,6 +16,7 @@ import { applySchedulePlan, readSchedulePlan, tournamentLayout } from "./import.
 import { enqueueSync } from "./live-store.js";
 import { activeKeeperOf, publicRing } from "./ring-keeper.js";
 import { withTournamentLock } from "./tournament-lock.js";
+import { registerPushRoutes } from "./push-notifications.js";
 
 const IMPORT_BODY_LIMIT = 20 * 1024 * 1024;
 
@@ -25,6 +26,7 @@ export function registerLiveRoutes(app: FastifyInstance, database: Kysely<Backen
 }
 
 function registerLiveRoutesInScope(app: FastifyInstance, database: Kysely<BackendDatabase>): void {
+  registerPushRoutes(app, database);
   app.addContentTypeParser("application/octet-stream", { parseAs: "buffer" }, (_request, body, done) => {
     done(null, body);
   });
@@ -110,6 +112,265 @@ function registerLiveRoutesInScope(app: FastifyInstance, database: Kysely<Backen
     return { targets: await syncStatus(database, tournamentId) };
   });
 
+  app.get("/api/v1/live-tournaments/:id/fighters", async (request) => {
+    const user = await requireUser(request, database);
+    const tournamentId = requirePathParam(request, "id");
+    await requireTournamentAdmin(database, tournamentId, user);
+    const rows = await database
+      .selectFrom("LiveTournamentFighter as Fighter")
+      .leftJoin("User as Account", "Account.id", "Fighter.userId")
+      .select([
+        "Fighter.id as id",
+        "Fighter.name as name",
+        "Fighter.nameKey as nameKey",
+        "Fighter.userId as userId",
+        "Fighter.active as active",
+        "Fighter.ambiguous as ambiguous",
+        "Account.name as linkedName",
+        "Account.username as linkedUsername",
+      ])
+      .where("Fighter.tournamentId", "=", tournamentId)
+      .orderBy("Fighter.active", "desc")
+      .orderBy("Fighter.name")
+      .orderBy("Fighter.id")
+      .execute();
+    const identityCounts = new Map<string, number>();
+    return {
+      fighters: rows.map((row) => {
+        const identityNumber = (identityCounts.get(row.nameKey) ?? 0) + 1;
+        identityCounts.set(row.nameKey, identityNumber);
+        return {
+        id: row.id,
+        name: row.name,
+        nameKey: row.nameKey,
+        userId: row.userId,
+        active: row.active === 1,
+        ambiguous: row.ambiguous === 1,
+        identityNumber,
+        user: row.userId && row.linkedName && row.linkedUsername
+          ? { id: row.userId, name: row.linkedName, username: row.linkedUsername }
+          : null,
+        };
+      }),
+    };
+  });
+
+  app.post("/api/v1/live-tournaments/:id/fighters/identities", async (request) => {
+    const user = await requireUser(request, database);
+    const tournamentId = requirePathParam(request, "id");
+    await requireTournamentAdmin(database, tournamentId, user);
+    const body = ensureObject(request.body, "Fighter identity");
+    const name = requireString(body.name, "Name").trim().replace(/\s+/g, " ");
+    const nameKey = fighterNameKey(name);
+    if (!nameKey) throw new HttpError(400, "Name is required.");
+    const group = await database
+      .selectFrom("LiveTournamentFighter")
+      .select("id")
+      .where("tournamentId", "=", tournamentId)
+      .where("nameKey", "=", nameKey)
+      .where("active", "=", 1)
+      .where("ambiguous", "=", 1)
+      .executeTakeFirst();
+    if (!group) throw new HttpError(409, "This name does not need identity review.");
+    const now = app.now().toISOString();
+    const fighter = {
+      id: randomUUID(),
+      tournamentId,
+      name,
+      nameKey,
+      userId: null,
+      active: 1 as const,
+      ambiguous: 1 as const,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await database.insertInto("LiveTournamentFighter").values(fighter).execute();
+    return { fighter: { ...fighter, active: true, ambiguous: true, user: null } };
+  });
+
+  app.get("/api/v1/live-tournaments/:id/ambiguous-bouts", async (request) => {
+    const user = await requireUser(request, database);
+    const tournamentId = requirePathParam(request, "id");
+    await requireTournamentAdmin(database, tournamentId, user);
+    const ambiguousIdentities = await database
+      .selectFrom("LiveTournamentFighter")
+      .select(["id", "name", "nameKey", "userId"])
+      .where("tournamentId", "=", tournamentId)
+      .where("active", "=", 1)
+      .where("ambiguous", "=", 1)
+      .orderBy("name")
+      .orderBy("id")
+      .execute();
+    const candidatesByName = new Map<string, typeof ambiguousIdentities>();
+    for (const identity of ambiguousIdentities) {
+      candidatesByName.set(identity.nameKey, [...(candidatesByName.get(identity.nameKey) ?? []), identity]);
+    }
+    const bouts = await database
+      .selectFrom("LiveBout")
+      .innerJoin("LiveRing", "LiveRing.id", "LiveBout.ringId")
+      .select([
+        "LiveBout.id as id",
+        "LiveBout.label as label",
+        "LiveBout.sheetName as sheetName",
+        "LiveBout.order as order",
+        "LiveRing.name as ringName",
+        "LiveBout.fighterLeft as fighterLeft",
+        "LiveBout.fighterLeftId as fighterLeftId",
+        "LiveBout.fighterRight as fighterRight",
+        "LiveBout.fighterRightId as fighterRightId",
+      ])
+      .where("LiveBout.tournamentId", "=", tournamentId)
+      .orderBy("LiveRing.order")
+      .orderBy("LiveBout.order")
+      .execute();
+    return {
+      bouts: bouts.flatMap((bout) => {
+        const side = (name: string, fighterId: string | null) => {
+          const candidates = candidatesByName.get(fighterNameKey(name));
+          return candidates
+            ? { name, fighterId, candidates: candidates.map(({ id, name: candidateName, userId }) => ({ id, name: candidateName, linked: userId !== null })) }
+            : null;
+        };
+        const left = side(bout.fighterLeft, bout.fighterLeftId);
+        const right = side(bout.fighterRight, bout.fighterRightId);
+        return left || right ? [{ id: bout.id, label: bout.label, sheetName: bout.sheetName, order: bout.order, ringName: bout.ringName, left, right }] : [];
+      }),
+    };
+  });
+
+  app.put("/api/v1/live-tournaments/:id/bouts/:boutId/sides/:side/identity", async (request) => {
+    const user = await requireUser(request, database);
+    const tournamentId = requirePathParam(request, "id");
+    const boutId = requirePathParam(request, "boutId");
+    const side = requirePathParam(request, "side");
+    await requireTournamentAdmin(database, tournamentId, user);
+    if (side !== "LEFT" && side !== "RIGHT") throw new HttpError(400, "Side must be LEFT or RIGHT.");
+    const body = ensureObject(request.body, "Fighter identity assignment");
+    if (!Object.hasOwn(body, "fighterId") || (body.fighterId !== null && typeof body.fighterId !== "string")) {
+      throw new HttpError(400, "fighterId must be an identity id or null.");
+    }
+    const bout = await database
+      .selectFrom("LiveBout")
+      .select(["fighterLeft", "fighterRight"])
+      .where("id", "=", boutId)
+      .where("tournamentId", "=", tournamentId)
+      .executeTakeFirst();
+    if (!bout) throw new HttpError(404, "Tournament bout not found.");
+    const name = side === "LEFT" ? bout.fighterLeft : bout.fighterRight;
+    const nameKey = fighterNameKey(name);
+    if (!nameKey) throw new HttpError(409, "This bout side has no imported fighter name.");
+    const fighterId = body.fighterId as string | null;
+    if (fighterId !== null) {
+      const candidate = await database
+        .selectFrom("LiveTournamentFighter")
+        .select("id")
+        .where("id", "=", fighterId)
+        .where("tournamentId", "=", tournamentId)
+        .where("nameKey", "=", nameKey)
+        .where("active", "=", 1)
+        .executeTakeFirst();
+      if (!candidate) throw new HttpError(409, "Choose an identity with the same imported name.");
+    }
+
+    const now = app.now().toISOString();
+    await database.transaction().execute(async (trx) => {
+      const changes = side === "LEFT"
+        ? { fighterLeftId: fighterId, fighterLeftManuallyAssigned: fighterId === null ? 0 : 1 }
+        : { fighterRightId: fighterId, fighterRightManuallyAssigned: fighterId === null ? 0 : 1 };
+      await trx.updateTable("LiveBout").set(changes).where("id", "=", boutId).execute();
+      const rows = await trx
+        .selectFrom("LiveBout")
+        .select(["fighterLeft", "fighterLeftId", "fighterLeftManuallyAssigned", "fighterRight", "fighterRightId", "fighterRightManuallyAssigned"])
+        .where("tournamentId", "=", tournamentId)
+        .execute();
+      const assigned = rows.flatMap((row) => [
+        { name: row.fighterLeft, id: row.fighterLeftId, manual: row.fighterLeftManuallyAssigned },
+        { name: row.fighterRight, id: row.fighterRightId, manual: row.fighterRightManuallyAssigned },
+      ]).filter((entry) => fighterNameKey(entry.name) === nameKey);
+      const resolved = assigned.every((entry) => entry.id !== null && entry.manual === 1);
+      await trx
+        .updateTable("LiveTournamentFighter")
+        .set({ ambiguous: resolved ? 0 : 1, updatedAt: now })
+        .where("tournamentId", "=", tournamentId)
+        .where("nameKey", "=", nameKey)
+        .execute();
+    });
+    return { fighterId, ambiguous: fighterId === null };
+  });
+
+  app.put("/api/v1/live-tournaments/:id/fighters/:fighterId/account", async (request) => {
+    const user = await requireUser(request, database);
+    const tournamentId = requirePathParam(request, "id");
+    const fighterId = requirePathParam(request, "fighterId");
+    await requireTournamentAdmin(database, tournamentId, user);
+    const body = ensureObject(request.body, "Fighter account");
+    if (body.userId !== null && (typeof body.userId !== "string" || body.userId.trim() === "")) {
+      throw new HttpError(400, "userId must be an account id or null.");
+    }
+    const userId = body.userId as string | null;
+    try {
+      return await database.transaction().execute(async (trx) => {
+        const fighter = await trx
+          .selectFrom("LiveTournamentFighter")
+          .select(["id", "name", "nameKey", "ambiguous", "active"])
+          .where("id", "=", fighterId)
+          .where("tournamentId", "=", tournamentId)
+          .executeTakeFirst();
+        if (!fighter) throw new HttpError(404, "Tournament fighter not found.");
+        if (fighter.active !== 1) throw new HttpError(409, "Inactive identities cannot be linked.");
+        if (fighter.ambiguous === 1 && userId !== null) {
+          throw new HttpError(409, "Resolve all bout-side identities before linking an account.");
+        }
+
+        const account = userId === null
+          ? null
+          : await trx.selectFrom("User").select(["id", "name", "username", "status"]).where("id", "=", userId).executeTakeFirst();
+        if (userId !== null && !account) throw new HttpError(404, "Account not found.");
+        if (account && account.status !== "ACTIVE") throw new HttpError(409, "Only an active account can be linked.");
+        if (userId !== null) {
+          const alreadyLinked = await trx
+            .selectFrom("LiveTournamentFighter")
+            .select("id")
+            .where("tournamentId", "=", tournamentId)
+            .where("userId", "=", userId)
+            .where("id", "!=", fighterId)
+            .executeTakeFirst();
+          if (alreadyLinked) throw new HttpError(409, "This account is already linked to another fighter in this tournament.");
+        }
+
+        await trx
+          .updateTable("LiveTournamentFighter")
+          .set({ userId, updatedAt: app.now().toISOString() })
+          .where("id", "=", fighterId)
+          .execute();
+        const sameName = await trx
+          .selectFrom("LiveTournamentFighter")
+          .select("id")
+          .where("tournamentId", "=", tournamentId)
+          .where("nameKey", "=", fighter.nameKey)
+          .orderBy("id")
+          .execute();
+        return {
+          fighter: {
+            id: fighter.id,
+            name: fighter.name,
+            nameKey: fighter.nameKey,
+            userId,
+            active: true,
+            ambiguous: fighter.ambiguous === 1,
+            identityNumber: sameName.findIndex((identity) => identity.id === fighter.id) + 1,
+            user: account ? { id: account.id, name: account.name, username: account.username } : null,
+          },
+        };
+      });
+    } catch (error) {
+      if (error instanceof Error && /UNIQUE constraint failed: LiveTournamentFighter\./.test(error.message)) {
+        throw new HttpError(409, "This account is already linked to another fighter in this tournament.");
+      }
+      throw error;
+    }
+  });
+
   // The ring links (with their secret keeper tokens) for the laptop person: tournament creator or system admin only.
   app.get("/api/v1/live-tournaments/:id/rings", async (request) => {
     const user = await requireUser(request, database);
@@ -137,6 +398,81 @@ function registerLiveRoutesInScope(app: FastifyInstance, database: Kysely<Backen
       .header("content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
       .header("content-disposition", `attachment; filename="tournament-${tournamentId}.xlsx"`)
       .send(bytes);
+  });
+
+  app.get("/api/v1/me/live-tournaments", async (request) => {
+    const user = await requireUser(request, database);
+    const rows = await database
+      .selectFrom("LiveTournamentFighter as Fighter")
+      .innerJoin("LiveTournament as Tournament", "Tournament.id", "Fighter.tournamentId")
+      .select([
+        "Tournament.id as id",
+        "Tournament.name as name",
+        "Fighter.id as fighterId",
+        "Fighter.name as fighterName",
+      ])
+      .where("Fighter.userId", "=", user.id)
+      .where("Fighter.active", "=", 1)
+      .where("Fighter.ambiguous", "=", 0)
+      .orderBy("Tournament.createdAt", "desc")
+      .orderBy("Tournament.name")
+      .execute();
+    return { tournaments: rows };
+  });
+
+  app.get("/api/v1/live-tournaments/:id/fighter-view", async (request) => {
+    const user = await requireUser(request, database);
+    const tournamentId = requirePathParam(request, "id");
+    const fighter = await database
+      .selectFrom("LiveTournamentFighter")
+      .select(["id", "name"])
+      .where("tournamentId", "=", tournamentId)
+      .where("userId", "=", user.id)
+      .where("active", "=", 1)
+      .where("ambiguous", "=", 0)
+      .executeTakeFirst();
+    if (!fighter) throw new HttpError(404, "Tournament fighter not found.");
+    const tournament = await database
+      .selectFrom("LiveTournament")
+      .select(["id", "name"])
+      .where("id", "=", tournamentId)
+      .executeTakeFirst();
+    if (!tournament) throw new HttpError(404, "Tournament not found.");
+
+    const rings = await database
+      .selectFrom("LiveRing")
+      .select(["id", "name", "order"])
+      .where("tournamentId", "=", tournamentId)
+      .orderBy("order")
+      .execute();
+    const bouts = (await Promise.all(rings.map(async (ring) =>
+      (await ringBouts(database, ring.id, app.now())).map((bout) => ({ ...bout, ringName: ring.name })),
+    ))).flat();
+    const onDeck = new Set(
+      rings.flatMap((ring) => bouts.find((bout) => bout.ringId === ring.id && bout.status === "PENDING")?.id ?? []),
+    );
+    const fighterBouts = bouts.filter((bout) => bout.fighterLeftId === fighter.id || bout.fighterRightId === fighter.id);
+    const schedule = fighterBouts.map((bout) => ({
+      ...fighterBoutView(bout),
+      mySide: bout.fighterLeftId === fighter.id ? "LEFT" as const : "RIGHT" as const,
+      isOnDeck: onDeck.has(bout.id),
+    }));
+    const groups = new Map<string, typeof bouts>();
+    for (const bout of bouts) {
+      const group = groups.get(bout.sheetName) ?? [];
+      group.push(bout);
+      groups.set(bout.sheetName, group);
+    }
+
+    return {
+      tournament,
+      fighter,
+      schedule,
+      pools: [...groups.entries()].map(([name, poolBouts]) => ({
+        name,
+        bouts: poolBouts.sort((left, right) => left.order - right.order).map(fighterBoutView),
+      })),
+    };
   });
 
   // The ring rules (match parameters and bout format). Stored as sent after checking; read back leniently (`parseRingRules`).
@@ -178,6 +514,26 @@ function registerLiveRoutesInScope(app: FastifyInstance, database: Kysely<Backen
       bouts: bouts.map((bout) => ({ ...bout, score: scores.get(bout.id) ?? null })),
     };
   });
+}
+
+function fighterBoutView(bout: Awaited<ReturnType<typeof ringBouts>>[number] & { ringName: string }) {
+  const { fighterLeftId: _fighterLeftId, fighterRightId: _fighterRightId, ...visible } = bout;
+  return {
+    id: visible.id,
+    label: visible.label,
+    sheetName: visible.sheetName,
+    order: visible.order,
+    status: visible.status,
+    fighterLeft: visible.fighterLeft,
+    fighterRight: visible.fighterRight,
+    ringName: bout.ringName,
+    score: visible.score,
+    display: visible.display,
+  };
+}
+
+function fighterNameKey(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("en");
 }
 
 export async function requireTournamentAdmin(database: Kysely<BackendDatabase>, tournamentId: string, user: AccessUser): Promise<void> {

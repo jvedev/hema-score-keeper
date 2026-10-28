@@ -65,6 +65,33 @@ export interface MyCompetition {
   bouts: number;
 }
 
+export interface LiveTournamentSummary {
+  id: string;
+  name: string;
+  fighterId: string;
+  fighterName: string;
+}
+
+export interface LiveTournamentBout {
+  id: string;
+  label: string;
+  sheetName: string;
+  order: number;
+  status: "PENDING" | "RUNNING" | "DONE";
+  fighterLeft: string;
+  fighterRight: string;
+  ringName: string;
+  score: { left: number; right: number; doubles: number } | null;
+  display: { roundsWon: { left: number; right: number } | null } | null;
+}
+
+export interface LiveTournamentFighterView {
+  tournament: { id: string; name: string };
+  fighter: { id: string; name: string };
+  schedule: Array<LiveTournamentBout & { mySide: "LEFT" | "RIGHT"; isOnDeck: boolean }>;
+  pools: Array<{ name: string; bouts: LiveTournamentBout[] }>;
+}
+
 /** `GET /me/home`. Every to-do list is oldest first. */
 export interface MeHome {
   todo: {

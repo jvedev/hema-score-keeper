@@ -83,6 +83,53 @@ describe("live tournament endpoints", () => {
     expect(calls.map((call) => call.url)).toEqual(["/api/v1/live-tournaments/t1/sync", "/api/v1/live-tournaments/t1/rings", "/api/v1/live-tournaments/t1"]);
   });
 
+  it("reads imported fighters and changes their account link", async () => {
+    const fighter = {
+      id: "f1",
+      name: "Anna",
+      nameKey: "anna",
+      userId: "u1",
+      active: true,
+      ambiguous: false,
+      identityNumber: 1,
+      user: { id: "u1", name: "Anna A", username: "anna" },
+    };
+    reply = json({ fighters: [fighter] });
+    expect(await client.liveFighters("t 1")).toEqual([fighter]);
+    reply = json({ fighter });
+    expect(await client.linkLiveFighter("t 1", "f/1", "u1")).toEqual(fighter);
+    expect(calls.map(({ method, url }) => `${method} ${url}`)).toEqual([
+      "GET /api/v1/live-tournaments/t%201/fighters",
+      "PUT /api/v1/live-tournaments/t%201/fighters/f%2F1/account",
+    ]);
+    expect(JSON.parse(String(calls[1]!.body))).toEqual({ userId: "u1" });
+  });
+
+  it("lists ambiguous bout sides, adds identities and assigns a side", async () => {
+    const bouts = [{
+      id: "b1",
+      label: "Match 1",
+      sheetName: "Pool 1",
+      order: 1,
+      ringName: "Ring A",
+      left: { name: "Anna", fighterId: null, candidates: [{ id: "f1", name: "Anna", linked: false }] },
+      right: null,
+    }];
+    reply = json({ bouts });
+    expect(await client.ambiguousLiveBouts("t1")).toEqual(bouts);
+    reply = json({ fighter: { id: "f2", name: "Anna" } });
+    await client.createLiveFighterIdentity("t1", "Anna");
+    reply = json({ fighterId: "f2", ambiguous: false });
+    await client.assignLiveBoutFighter("t1", "b1", "LEFT", "f2");
+    expect(calls.map(({ method, url }) => `${method} ${url}`)).toEqual([
+      "GET /api/v1/live-tournaments/t1/ambiguous-bouts",
+      "POST /api/v1/live-tournaments/t1/fighters/identities",
+      "PUT /api/v1/live-tournaments/t1/bouts/b1/sides/LEFT/identity",
+    ]);
+    expect(JSON.parse(String(calls[1]!.body))).toEqual({ name: "Anna" });
+    expect(JSON.parse(String(calls[2]!.body))).toEqual({ fighterId: "f2" });
+  });
+
   it("rotates a ring token", async () => {
     reply = json({ ring: { id: "r1", keeperToken: "new", activeKeeper: null } });
     expect(await client.rotateRingToken("r 1")).toEqual({ id: "r1", keeperToken: "new", activeKeeper: null });

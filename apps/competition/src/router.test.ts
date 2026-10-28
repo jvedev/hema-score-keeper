@@ -11,6 +11,7 @@ const cases: Array<[string, Route]> = [
   ["/hema-score-keeper/competition/competitions/c1/fighters/p1", { name: "fighter", competitionId: "c1", participantId: "p1" }],
   ["/hema-score-keeper/competition/competitions/c1/bouts/b1", { name: "bout", competitionId: "c1", boutId: "b1" }],
   ["/hema-score-keeper/competition/profile", { name: "profile" }],
+  ["/hema-score-keeper/competition/tournaments/t1", { name: "live-tournament", tournamentId: "t1" }],
   ["/hema-score-keeper/competition/join/AbC123", { name: "join", code: "AbC123" }],
 ];
 

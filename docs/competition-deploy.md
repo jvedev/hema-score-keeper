@@ -78,6 +78,22 @@ apart from the admin app, so the admin app's own origin (the fallback in a build
 links. In dev it defaults to `http://localhost:5180`, where `.claude/launch.json` runs the
 score-keeper. It is listed in `apps/competition-admin/.env.example`.
 
+## On-deck push notifications
+
+The fighter portal can show on-deck alerts while closed using Web Push. In `apps/backend/.env`,
+set `WEB_PUSH_PUBLIC_KEY`, `WEB_PUSH_PRIVATE_KEY`, and `WEB_PUSH_SUBJECT`. Generate a VAPID key
+pair with `npx web-push generate-vapid-keys`; keep the private key secret, stable, and out of Git.
+`COMPETITION_PWA_BASE_PATH` defaults to `/hema-score-keeper/competition/` and should match the
+published participant-app path. The browser asks the signed-in fighter for notification permission
+when they enable alerts. Subscriptions are stored per account/device; expired endpoints are removed
+automatically, and transient delivery failures retry from the database-backed queue.
+
+Closed-app delivery is best-effort and requires a browser with Web Push support, HTTPS for the
+participant app and API, notification permission, and internet access to the browser's push service.
+The usual venue setup using HTTP on a local Wi-Fi network does **not** meet those requirements;
+the in-app schedule and on-deck indicator continue to work there without push or internet. Push
+delivery runs independently from bout scoring and cannot block score requests.
+
 ## Local dev
 
 ```text

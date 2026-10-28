@@ -19,6 +19,7 @@ import { registerBoutRoutes as registerLiveBoutRoutes } from "./live/bout-routes
 import { registerLiveRoutes } from "./live/live-routes.js";
 import { registerRingRoutes } from "./live/ring-routes.js";
 import { startSyncWorker } from "./live/sync-worker.js";
+import { startPushWorker } from "./live/push-notifications.js";
 import { registerClubRoutes } from "./club-routes.js";
 import { registerPeopleRoutes } from "./people-routes.js";
 import { competitionAccessFilter, competitionAdminRole, requireCompetitionAccess } from "./competitions/access.js";
@@ -1736,6 +1737,8 @@ async function start(): Promise<void> {
     // Mirrors live bouts into the backup .xlsx (and the Google Sheet) in the background, off the request path.
     const stopSync = startSyncWorker(db);
     app.addHook("onClose", async () => stopSync());
+    const stopPush = startPushWorker(db);
+    app.addHook("onClose", async () => stopPush());
   }
   await app.listen({ port, host: "0.0.0.0" });
   console.log(`HEMA backend listening on http://localhost:${port}`);

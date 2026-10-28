@@ -1,6 +1,13 @@
 import { escapeHtml, formatDateTime, t, type MessageKey } from "@hema/ui";
 import { SessionExpiredError } from "../admin-client";
-import type { ImportReport, LiveRingLink, LiveTournamentSummary } from "../api-types";
+import type {
+  AmbiguousBoutIdentity,
+  AmbiguousBoutSide,
+  ImportReport,
+  LiveRingLink,
+  LiveTournamentFighterLink,
+  LiveTournamentSummary,
+} from "../api-types";
 import type { AppContext } from "../app-context";
 import { scoreKeeperAppUrl } from "../config";
 import { defaultRingRules, type RingRules } from "@hema/competition-domain";
@@ -75,15 +82,32 @@ function tournamentRow(tournament: LiveTournamentSummary): string {
   </a>`;
 }
 
+function identitySideControl(bout: AmbiguousBoutIdentity, side: "LEFT" | "RIGHT", value: AmbiguousBoutSide | null): string {
+  if (!value) return "";
+  const options = value.candidates.map((candidate, index) => {
+    const identity = t("tournaments.identityLabel", { number: index + 1 });
+    const account = candidate.linked ? ` · ${t("tournaments.fighterLink")}` : "";
+    return `<option value="${escapeHtml(candidate.id)}"${candidate.id === value.fighterId ? " selected" : ""}>${escapeHtml(identity)}${escapeHtml(account)}</option>`;
+  }).join("");
+  return `<label class="field">${side} · ${escapeHtml(value.name)}
+    <select data-bout="${escapeHtml(bout.id)}" data-side="${side}">
+      <option value="">${t("tournaments.identityChoose")}</option>
+      ${options}
+    </select>
+  </label>`;
+}
+
 /**
  * One tournament: import the schedule, watch the backup and sync, hand out ring links.
  * Returns a cleanup that stops the sync refresh when the screen is left.
  */
 export async function renderTournamentScreen(container: HTMLElement, context: AppContext, tournamentId: string): Promise<() => void> {
-  const [tournament, rings, targets] = await Promise.all([
+  const [tournament, rings, targets, fighters, ambiguousBouts] = await Promise.all([
     context.client.liveTournament(tournamentId),
     context.client.liveRings(tournamentId),
     context.client.syncStatus(tournamentId),
+    context.client.liveFighters(tournamentId),
+    context.client.ambiguousLiveBouts(tournamentId),
   ]);
 
   container.innerHTML = `<div>
@@ -117,6 +141,13 @@ export async function renderTournamentScreen(container: HTMLElement, context: Ap
       <p class="muted saved" role="status" hidden>${t("tournaments.rulesSaved")}</p>
       <p class="error" hidden></p>
     </form>
+    <section class="panel fighters">
+      <h2>${t("tournaments.fightersHeading")}</h2>
+      <p class="muted">${t("tournaments.fightersNote")}</p>
+      <div class="fighter-links"></div>
+      <div class="fighter-ambiguities"></div>
+      <p class="error" hidden></p>
+    </section>
     <section class="panel rings">
       <h2>${t("tournaments.ringsHeading")}</h2>
       <p class="muted">${t("tournaments.ringsNote")}</p>
@@ -135,6 +166,10 @@ export async function renderTournamentScreen(container: HTMLElement, context: Ap
   const ringSection = container.querySelector<HTMLElement>("section.rings")!;
   const ringCards = ringSection.querySelector<HTMLElement>(".ring-cards")!;
   const ringError = ringSection.querySelector<HTMLElement>(".error")!;
+  const fighterSection = container.querySelector<HTMLElement>("section.fighters")!;
+  const fighterRows = fighterSection.querySelector<HTMLElement>(".fighter-links")!;
+  const fighterAmbiguities = fighterSection.querySelector<HTMLElement>(".fighter-ambiguities")!;
+  const fighterError = fighterSection.querySelector<HTMLElement>(".error")!;
 
   /** Shows a failure next to its section; an expired login goes back to the sign-in page. */
   const fail = (box: HTMLElement, caught: unknown, format: (text: string) => string = (text) => text): void => {
@@ -145,6 +180,143 @@ export async function renderTournamentScreen(container: HTMLElement, context: Ap
     box.hidden = false;
     box.textContent = format(message(caught));
   };
+
+  // ---- Imported fighter accounts ----
+  const drawAmbiguousBouts = (bouts: typeof ambiguousBouts): void => {
+    if (bouts.length === 0) {
+      fighterAmbiguities.innerHTML = `<section class="identity-review"><h3>${t("tournaments.identityReviewHeading")}</h3><p class="muted">${t("tournaments.identityReviewNone")}</p></section>`;
+      return;
+    }
+    fighterAmbiguities.innerHTML = `<section class="identity-review">
+      <h3>${t("tournaments.identityReviewHeading")}</h3>
+      <p class="muted">${t("tournaments.identityReviewNote")}</p>
+      ${bouts.map((bout) => `<article class="identity-review__bout">
+        <strong>${escapeHtml(bout.ringName)} · ${escapeHtml(bout.label)} · ${escapeHtml(bout.sheetName)} #${bout.order}</strong>
+        <div class="identity-review__sides">
+          ${identitySideControl(bout, "LEFT", bout.left)}
+          ${identitySideControl(bout, "RIGHT", bout.right)}
+        </div>
+      </article>`).join("")}
+    </section>`;
+  };
+  const drawFighters = (current: readonly LiveTournamentFighterLink[], unresolved: typeof ambiguousBouts = ambiguousBouts): void => {
+    drawAmbiguousBouts(unresolved);
+    const active = current.filter((fighter) => fighter.active);
+    if (active.length === 0) {
+      fighterRows.innerHTML = `<p class="muted">${t("tournaments.fightersNone")}</p>`;
+      return;
+    }
+    fighterRows.innerHTML = active.map((fighter) => `<article class="fighter-link${fighter.ambiguous ? " is-ambiguous" : ""}" data-fighter="${escapeHtml(fighter.id)}">
+      <div class="fighter-link__identity">
+        <strong>${escapeHtml(fighter.name)}${fighter.ambiguous ? ` · ${escapeHtml(t("tournaments.identityLabel", { number: fighter.identityNumber }))}` : ""}</strong>
+        <span class="muted" data-account>${fighter.user ? `${escapeHtml(fighter.user.name)} · @${escapeHtml(fighter.user.username)}` : t("tournaments.fighterUnlinked")}</span>
+      </div>
+      <div class="fighter-link__actions">
+        ${fighter.ambiguous
+          ? `${fighter.identityNumber === 1 ? `<button type="button" data-add-identity>${t("tournaments.identityAdd")}</button>` : ""}
+            ${fighter.user ? `<button type="button" data-unlink>${t("tournaments.fighterUnlink")}</button>` : ""}`
+          : `<label class="field">${t("tournaments.fighterSearch")}
+              <input type="search" data-search autocomplete="off" />
+            </label>
+            ${fighter.user ? `<button type="button" data-unlink>${t("tournaments.fighterUnlink")}</button>` : ""}`}
+      </div>
+      ${fighter.ambiguous ? `<p class="identity-review__warning">${t("tournaments.identityAmbiguousDetail")}</p>` : ""}
+      <div class="fighter-link__results" data-results role="list"></div>
+      <p class="error" data-error hidden></p>
+    </article>`).join("");
+
+    fighterRows.querySelectorAll<HTMLElement>(".fighter-link").forEach((row) => {
+      const fighterId = row.dataset.fighter!;
+      const search = row.querySelector<HTMLInputElement>("[data-search]")!;
+      const results = row.querySelector<HTMLElement>("[data-results]")!;
+      const error = row.querySelector<HTMLElement>("[data-error]")!;
+      let searchVersion = 0;
+
+      search?.addEventListener("input", () => {
+        const query = search.value.trim();
+        const version = ++searchVersion;
+        if (query.length < 2) {
+          results.textContent = t("tournaments.fighterSearchHint");
+          return;
+        }
+        results.textContent = t("app.loading");
+        void context.client.searchPeople(query).then((people) => {
+          if (version !== searchVersion || !row.isConnected) return;
+          results.innerHTML = people.length === 0
+            ? `<span class="muted">${t("tournaments.fighterNoAccounts")}</span>`
+            : people.map((person) => `<button type="button" class="fighter-link__option" data-user="${escapeHtml(person.userId)}">
+                ${escapeHtml(person.name)} <span class="muted">@${escapeHtml(person.username)}${person.clubName ? ` · ${escapeHtml(person.clubName)}` : ""}</span>
+              </button>`).join("");
+        }).catch((caught: unknown) => {
+          if (version === searchVersion && row.isConnected) fail(error, caught, (text) => `${t("tournaments.fighterLinkFailed")} ${text}`);
+        });
+      });
+
+      results.addEventListener("click", (event) => {
+        const option = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-user]");
+        if (option && row.contains(option)) void saveFighterLink(fighterId, option.dataset.user!, row);
+      });
+      row.querySelector<HTMLButtonElement>("[data-unlink]")?.addEventListener("click", () => {
+        void saveFighterLink(fighterId, null, row);
+      });
+      row.querySelector<HTMLButtonElement>("[data-add-identity]")?.addEventListener("click", () => {
+        const fighter = active.find((candidate) => candidate.id === fighterId)!;
+        void addFighterIdentity(fighter.name);
+      });
+    });
+  };
+
+  const reloadFighters = async (): Promise<void> => {
+    const [current, unresolved] = await Promise.all([
+      context.client.liveFighters(tournamentId),
+      context.client.ambiguousLiveBouts(tournamentId),
+    ]);
+    drawFighters(current, unresolved);
+  };
+
+  const addFighterIdentity = async (name: string): Promise<void> => {
+    fighterError.hidden = true;
+    try {
+      await context.client.createLiveFighterIdentity(tournamentId, name);
+      await reloadFighters();
+      context.toast(t("tournaments.identityAssigned"));
+    } catch (caught) {
+      fail(fighterError, caught);
+    }
+  };
+
+  fighterAmbiguities.addEventListener("change", (event) => {
+    const select = (event.target as HTMLElement).closest<HTMLSelectElement>("select[data-bout][data-side]");
+    if (!select) return;
+    select.disabled = true;
+    void context.client
+      .assignLiveBoutFighter(tournamentId, select.dataset.bout!, select.dataset.side as "LEFT" | "RIGHT", select.value || null)
+      .then(async () => {
+        await reloadFighters();
+        context.toast(t("tournaments.identityAssigned"));
+      })
+      .catch((caught: unknown) => fail(fighterError, caught, (text) => `${t("tournaments.identityFailed")} ${text}`))
+      .finally(() => {
+        if (select.isConnected) select.disabled = false;
+      });
+  });
+
+  const saveFighterLink = async (fighterId: string, userId: string | null, row: HTMLElement): Promise<void> => {
+    const error = row.querySelector<HTMLElement>("[data-error]")!;
+    const buttons = row.querySelectorAll<HTMLButtonElement>("button");
+    buttons.forEach((button) => (button.disabled = true));
+    error.hidden = true;
+    try {
+      await context.client.linkLiveFighter(tournamentId, fighterId, userId);
+      await reloadFighters();
+      context.toast(t("tournaments.fighterLinkSaved"));
+    } catch (caught) {
+      buttons.forEach((button) => (button.disabled = false));
+      fail(error, caught, (text) => `${t("tournaments.fighterLinkFailed")} ${text}`);
+    }
+  };
+
+  drawFighters(fighters, ambiguousBouts);
 
   // ---- Ring rules ----
   const rulesForm = container.querySelector<HTMLFormElement>("form.rules")!;
@@ -389,6 +561,12 @@ export async function renderTournamentScreen(container: HTMLElement, context: Ap
     } finally {
       importButtons.forEach((button) => (button.disabled = false));
       googleButton.disabled = !tournament.googleSpreadsheetId;
+    }
+    try {
+      drawFighters(await context.client.liveFighters(tournamentId));
+      fighterError.hidden = true;
+    } catch (caught) {
+      fail(fighterError, caught);
     }
   };
 

@@ -9,6 +9,8 @@ import type {
   InvitePreview,
   JoinableCompetition,
   Language,
+  LiveTournamentFighterView,
+  LiveTournamentSummary,
   LeaveResult,
   MeHome,
   ParticipantUser,
@@ -73,6 +75,12 @@ export class ParticipantClient {
   /** Leaves a competition, or withdraws a sign-up that is still waiting for the organiser. */
   leave = (competitionId: string) => this.#send<LeaveResult>("DELETE", `/competitions/${e(competitionId)}/signup`);
   joinable = () => this.#send<JoinableCompetition[]>("GET", "/me/joinable");
+  liveTournaments = async () => (await this.#send<{ tournaments: LiveTournamentSummary[] }>("GET", "/me/live-tournaments")).tournaments;
+  liveTournamentFighterView = (id: string) => this.#send<LiveTournamentFighterView>("GET", `/live-tournaments/${e(id)}/fighter-view`);
+  pushPublicKey = async () => (await this.#send<{ publicKey: string }>("GET", "/push/vapid-public-key", undefined, false)).publicKey;
+  savePushSubscription = (subscription: { endpoint: string; keys: { p256dh: string; auth: string } }) =>
+    this.#send<{ ok: boolean }>("POST", "/me/push-subscriptions", { subscription });
+  removePushSubscription = (endpoint: string) => this.#send<{ ok: boolean }>("DELETE", "/me/push-subscriptions", { endpoint });
   competition = (id: string) => this.#send<CompetitionDetail>("GET", `/competitions/${e(id)}`);
   participants = (id: string) => this.#send<CompetitionParticipant[]>("GET", `/competitions/${e(id)}/participants`);
   standings = (id: string) => this.#send<StandingRow[]>("GET", `/competitions/${e(id)}/standings`);

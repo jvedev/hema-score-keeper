@@ -1,4 +1,4 @@
-const CACHE = "hema-competition-v2";
+const CACHE = "hema-competition-v3";
 const SCOPE = "/hema-score-keeper/competition/";
 const CORE_ASSETS = [SCOPE, `${SCOPE}manifest.json`, `${SCOPE}icon.svg`];
 
@@ -65,6 +65,30 @@ self.addEventListener("fetch", (event) => {
       } catch (error) {
         throw error;
       }
+    }),
+  );
+});
+
+self.addEventListener("push", (event) => {
+  const message = event.data ? event.data.json() : {};
+  event.waitUntil(
+    self.registration.showNotification(message.title || "HEMA Competition", {
+      body: message.body || "",
+      tag: message.tag || "hema-live-tournament",
+      data: { url: message.url || SCOPE },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || SCOPE, self.location.origin);
+  if (target.origin !== self.location.origin) return;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+      const existing = windows.find((client) => new URL(client.url).origin === target.origin);
+      if (existing) return existing.navigate(target.href).then(() => existing.focus());
+      return self.clients.openWindow(target.href);
     }),
   );
 });

@@ -1,16 +1,15 @@
 # Repository workflow
 
-- Work directly on `master`; do not create or rename branches unless the user explicitly requests it.
-- Keep completed work consolidated into one working `master` branch.
-- Don't commit changes to `master`; this will be done by the user.
+- Work directly on the current user-selected branch. Do not create or rename branches unless explicitly requested.
+- Do not commit unless the user explicitly asks for a commit.
 
 # Current work: tournament mode
 
 - Start with `docs/superpowers/agent-session-context.md` for the project summary, current status, and how to resume.
 - Approved design: `docs/superpowers/specs/2026-10-25-tournament-mode-design.md`.
-- Latest phase plan/status: `docs/superpowers/plans/2026-10-28-tournament-bout-format.md`; read its "Status / next" section first.
+- Latest completed phase plan/status: `docs/superpowers/plans/2026-10-28-tournament-bout-format.md`; read its "Status / next" section first.
 - Phases 1–3 are complete; the latest phase commit is `885e6be`. Verify the current Git state rather than assuming whether it has been pushed.
-- Next is phase 4 (fighter phones): prepare a short plan and get the user's approval before implementation.
+- Phase 4 (fighter phones) is approved and in progress on `co-pilot`; read `docs/superpowers/plans/2026-10-28-tournament-fighter-phones.md` and `.superpowers/sdd/2026-10-28-tournament-fighter-phones/progress.md`.
 - Do not read `apps/backend/src/google-sheets.ts` or `packages/sheets-client` for tournament mode; the user explicitly asked to keep that legacy integration out of scope.
 
 # Working with plans and session context

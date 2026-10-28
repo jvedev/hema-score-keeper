@@ -63,11 +63,25 @@ const RENDERERS: Renderers = {
 
 /** Home: the blocks the app chose (to-do when there is any, then my competitions). */
 export async function renderHomeScreen(container: HTMLElement, context: AppContext): Promise<void> {
-  const home = await context.client.home();
+  const [home, tournaments] = await Promise.all([context.client.home(), context.client.liveTournaments()]);
   const name = context.client.currentSession()?.user.name ?? "";
   container.innerHTML = `<div><p class="eyebrow">${escapeHtml(t("app.signedInAs", { name }))}</p><h1>${t("app.home")}</h1></div>`;
   for (const block of homeBlocks(home, context.homeBlocks)) {
     const render = RENDERERS[block.kind] as (block: HomeBlock, context: AppContext) => HTMLElement;
     container.append(render(block, context));
+  }
+  if (tournaments.length > 0) {
+    const section = document.createElement("section");
+    section.className = "block live-tournaments";
+    section.innerHTML = `<h2>${t("liveTournament.title")}</h2><div class="live-tournament-links"></div>`;
+    const links = section.querySelector<HTMLElement>(".live-tournament-links")!;
+    links.innerHTML = tournaments.map((tournament) => `<button type="button" class="live-tournament-link" data-tournament="${escapeHtml(tournament.id)}">
+      <strong>${escapeHtml(tournament.name)}</strong>
+      <span class="muted">${escapeHtml(tournament.fighterName)}</span>
+    </button>`).join("");
+    links.querySelectorAll<HTMLButtonElement>("[data-tournament]").forEach((button) => {
+      button.addEventListener("click", () => context.navigate({ name: "live-tournament", tournamentId: button.dataset.tournament! }));
+    });
+    container.append(section);
   }
 }

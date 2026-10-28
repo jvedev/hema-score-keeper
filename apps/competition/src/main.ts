@@ -9,6 +9,7 @@ import { registerPwa } from "./pwa";
 import { navigate as navigateTo, navItemFor, parseRoute, type Route } from "./router";
 import { renderSignInPage } from "./screens/auth";
 import { renderHomeScreen } from "./screens/home";
+import { renderLiveTournamentScreen } from "./screens/live-tournament";
 import { joinWithInvite, renderJoinLanding, renderJoinScreen } from "./screens/join";
 import { renderCompetitionScreen } from "./screens/competition";
 import { renderCompetitionsScreen } from "./screens/competitions";
@@ -25,6 +26,7 @@ const client = new ParticipantClient(import.meta.env.VITE_API_BASE_URL || "/api/
 
 let shell: Shell | null = null;
 let renderToken = 0;
+let routeCleanup: (() => void) | null = null;
 
 const context: AppContext = {
   client,
@@ -86,6 +88,8 @@ function startShell(session: Session): void {
 
 /** Renders the screen for a route; a newer navigation cancels an older one still loading. */
 async function showRoute(next: Route): Promise<void> {
+  routeCleanup?.();
+  routeCleanup = null;
   if (!client.currentSession()) {
     showSignedOut(next);
     return;
@@ -99,6 +103,7 @@ async function showRoute(next: Route): Promise<void> {
   frame.content.innerHTML = `<p class="loading">${t("app.loading")}</p>`;
   const screen = document.createElement("div");
   screen.className = "screen";
+  let cleanup: (() => void) | void = undefined;
   try {
     switch (next.name) {
       case "home":
@@ -119,9 +124,15 @@ async function showRoute(next: Route): Promise<void> {
       case "profile":
         await renderProfileScreen(screen, context);
         break;
+      case "live-tournament":
+        cleanup = await renderLiveTournamentScreen(screen, context, next.tournamentId);
+        break;
     }
     if (token === renderToken) {
       frame.content.replaceChildren(screen);
+      routeCleanup = cleanup ?? null;
+    } else {
+      cleanup?.();
     }
   } catch (error) {
     if (error instanceof SessionExpiredError) {

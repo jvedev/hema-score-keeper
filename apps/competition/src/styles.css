@@ -444,3 +444,107 @@ h2 {
 .dialog-form .row {
   justify-content: flex-end;
 }
+
+/* ---------- live tournament fighter view ---------- */
+.live-tournament-links,
+.live-fixtures,
+.live-pools {
+  display: grid;
+  gap: 10px;
+}
+
+.live-tournament-link {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+}
+
+.live-tournament-status {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.live-tournament-status > div {
+  display: grid;
+  gap: 4px;
+}
+
+.live-tournament-status .error {
+  grid-column: 1 / -1;
+}
+
+.live-push-settings {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.live-push-settings > div {
+  display: grid;
+  gap: 4px;
+}
+
+.live-push-settings p {
+  margin: 0;
+}
+
+.live-push-settings .error {
+  grid-column: 1 / -1;
+}
+
+.live-pool {
+  display: grid;
+  gap: 8px;
+}
+
+.live-pool h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.live-fixture {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--plate);
+}
+
+.live-fixture.is-on-deck {
+  border-color: var(--brass);
+}
+
+.live-fixture__meta,
+.live-fixture__result {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.live-fixture__fighters {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.live-fixture__fighters strong:last-child {
+  text-align: right;
+}
+
+.live-fixture__result strong {
+  color: var(--ink);
+}
+
+.live-on-deck {
+  color: var(--brass);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

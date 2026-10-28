@@ -5,12 +5,14 @@ import type {
   Club,
   CompetitionAdminEntry,
   AdminCompetitionDetail,
+  AmbiguousBoutIdentity,
   CompetitionDetail,
   CompetitionSummary,
   HistoryBout,
   ImportReport,
   LiveRingLink,
   LiveTournamentDetail,
+  LiveTournamentFighterLink,
   LiveTournamentSummary,
   NeedsYouResponse,
   NewInvite,
@@ -86,6 +88,24 @@ export class AdminClient {
   liveTournaments = async () => (await this.#send<{ tournaments: LiveTournamentSummary[] }>("GET", "/live-tournaments")).tournaments;
   createLiveTournament = (input: { name: string; googleSpreadsheetId?: string }) => this.#send<{ id: string }>("POST", "/live-tournaments", input);
   liveTournament = (id: string) => this.#send<LiveTournamentDetail>("GET", `/live-tournaments/${e(id)}`);
+  liveFighters = async (id: string) =>
+    (await this.#send<{ fighters: LiveTournamentFighterLink[] }>("GET", `/live-tournaments/${e(id)}/fighters`)).fighters;
+  ambiguousLiveBouts = async (id: string) =>
+    (await this.#send<{ bouts: AmbiguousBoutIdentity[] }>("GET", `/live-tournaments/${e(id)}/ambiguous-bouts`)).bouts;
+  createLiveFighterIdentity = async (id: string, name: string) =>
+    (await this.#send<{ fighter: LiveTournamentFighterLink }>("POST", `/live-tournaments/${e(id)}/fighters/identities`, { name })).fighter;
+  assignLiveBoutFighter = (tournamentId: string, boutId: string, side: "LEFT" | "RIGHT", fighterId: string | null) =>
+    this.#send<{ fighterId: string | null; ambiguous: boolean }>(
+      "PUT",
+      `/live-tournaments/${e(tournamentId)}/bouts/${e(boutId)}/sides/${side}/identity`,
+      { fighterId },
+    );
+  linkLiveFighter = async (tournamentId: string, fighterId: string, userId: string | null) =>
+    (await this.#send<{ fighter: LiveTournamentFighterLink }>(
+      "PUT",
+      `/live-tournaments/${e(tournamentId)}/fighters/${e(fighterId)}/account`,
+      { userId },
+    )).fighter;
   saveLiveRules = async (id: string, rules: RingRules) => (await this.#send<{ rules: RingRules }>("PUT", `/live-tournaments/${e(id)}/rules`, rules)).rules;
   /** Sends the .xlsx as the raw request body. */
   importWorkbook = (id: string, file: Blob) => this.#send<ImportReport>("POST", `/live-tournaments/${e(id)}/import/xlsx`, file);

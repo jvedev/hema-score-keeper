@@ -5,15 +5,15 @@ This is the concise, repository-owned handoff for an AI agent starting a new ses
 ## Repository and collaboration
 
 - This is the HEMA Score Keeper monorepo: several apps, shared packages, and a backend.
-- Work directly on `master`. The user commits changes; do not commit.
+- Work directly on the current user-selected branch. The user commits changes unless they explicitly request a commit.
 - Ask questions one at a time. For large work, agree on the plan for the current phase before implementing it.
 - The user wants work and decisions captured continuously, not reconstructed from a long conversation later. Update the relevant notes as decisions and results happen, and leave an explicit resume point before ending a session.
 
 ## Current project: tournament mode
 
-The approved design is [`specs/2026-10-25-tournament-mode-design.md`](specs/2026-10-25-tournament-mode-design.md). The latest phase plan and status is [`plans/2026-10-28-tournament-bout-format.md`](plans/2026-10-28-tournament-bout-format.md); read its **Status / next** section before acting.
+The approved design is [`specs/2026-10-25-tournament-mode-design.md`](specs/2026-10-25-tournament-mode-design.md). Phases 1–3 are complete. Phase 4 fighter phones is approved and in progress on `co-pilot`; read [`plans/2026-10-28-tournament-fighter-phones.md`](plans/2026-10-28-tournament-fighter-phones.md) and `.superpowers/sdd/2026-10-28-tournament-fighter-phones/progress.md`.
 
-Phases 1–3 are complete. The last phase commit is `885e6be` (verify the checkout's actual Git state; do not assume it is pushed). **The next phase is phase 4, fighter phones.** Start by drafting a short phase-4 plan and getting the user's approval; do not begin implementation until approved.
+Phases 1–3 are complete. The phase-4 plan has been approved and implementation is underway on `co-pilot`.
 
 ### Product direction and decisions to preserve
 
@@ -48,9 +48,6 @@ Before any work, inspect `git status`; preserve unrelated user changes. In parti
 
 ## Current resume point
 
-1. Read the **Status / next** section of `docs/superpowers/plans/2026-10-28-tournament-bout-format.md`.
-2. Check Git status and inspect the current phase-4 context in the approved design/spec.
-3. Draft the phase-4 plan and ask the user to approve it.
-4. After approval, implement only the agreed phase, verify it, and keep the progress ledger and tracked status current.
+Read `docs/superpowers/plans/2026-10-28-tournament-fighter-phones.md` and `.superpowers/sdd/2026-10-28-tournament-fighter-phones/progress.md`. The fighter portal, explicit same-name identity resolution, account-scoped API, admin linking, and Web Push/outbox are implemented. Remaining phase-4 work is final broader verification and any manual HTTPS/browser/device checks. Preserve pre-existing `apps/backend/data/dev.db` and `package.json` changes.
 
 This handoff was created on 2026-10-28. If the repository's plans or commit history have moved on, trust the newer repository evidence and update this file rather than following stale status here.

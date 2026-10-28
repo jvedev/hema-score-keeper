@@ -163,7 +163,131 @@ export async function applySchedulePlan(db: DbExecutor, tournamentId: string, pl
       await db.deleteFrom("LiveRing").where("id", "=", ring.id).execute();
     }
   }
+  await syncFighterRoster(db, tournamentId);
   return report;
+}
+
+function fighterNameKey(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("en");
+}
+
+interface FighterOccurrence {
+  boutId: string;
+  side: "Left" | "Right";
+  name: string;
+  fighterId: string | null;
+  manuallyAssigned: number;
+}
+
+async function syncFighterRoster(db: DbExecutor, tournamentId: string): Promise<void> {
+  const bouts = await db
+    .selectFrom("LiveBout")
+    .select([
+      "id",
+      "fighterLeft",
+      "fighterRight",
+      "fighterLeftId",
+      "fighterRightId",
+      "fighterLeftManuallyAssigned",
+      "fighterRightManuallyAssigned",
+    ])
+    .where("tournamentId", "=", tournamentId)
+    .execute();
+  const occurrencesByName = new Map<string, FighterOccurrence[]>();
+  for (const bout of bouts) {
+    for (const [side, rawName, fighterId, manuallyAssigned] of [
+      ["Left", bout.fighterLeft, bout.fighterLeftId, bout.fighterLeftManuallyAssigned],
+      ["Right", bout.fighterRight, bout.fighterRightId, bout.fighterRightManuallyAssigned],
+    ] as const) {
+      const name = rawName.trim().replace(/\s+/g, " ");
+      const nameKey = fighterNameKey(name);
+      if (nameKey === "") {
+        await updateBoutFighter(db, bout.id, side, null, false);
+        continue;
+      }
+      const occurrences = occurrencesByName.get(nameKey) ?? [];
+      occurrences.push({ boutId: bout.id, side, name, fighterId, manuallyAssigned });
+      occurrencesByName.set(nameKey, occurrences);
+    }
+  }
+  const now = new Date().toISOString();
+  await db.updateTable("LiveTournamentFighter").set({ active: 0, updatedAt: now }).where("tournamentId", "=", tournamentId).execute();
+  for (const [nameKey, occurrences] of occurrencesByName) {
+    const identities = await db
+      .selectFrom("LiveTournamentFighter")
+      .select(["id", "ambiguous"])
+      .where("tournamentId", "=", tournamentId)
+      .where("nameKey", "=", nameKey)
+      .executeTakeFirst();
+    const identityRows = identities ? [identities, ...(await db
+      .selectFrom("LiveTournamentFighter")
+      .select(["id", "ambiguous"])
+      .where("tournamentId", "=", tournamentId)
+      .where("nameKey", "=", nameKey)
+      .where("id", "!=", identities.id)
+      .execute())] : [];
+    if (identityRows.length === 0) {
+      const id = randomUUID();
+      await db
+        .insertInto("LiveTournamentFighter")
+        .values({
+          id,
+          tournamentId,
+          name: occurrences[0]!.name,
+          nameKey,
+          userId: null,
+          active: 1,
+          ambiguous: 1,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .execute();
+      identityRows.push({ id, ambiguous: 1 });
+    } else {
+      await db
+        .updateTable("LiveTournamentFighter")
+        .set({ name: occurrences[0]!.name, active: 1, updatedAt: now })
+        .where("tournamentId", "=", tournamentId)
+        .where("nameKey", "=", nameKey)
+        .execute();
+    }
+
+    const requiresReview = occurrences.length > 1 || identityRows.length > 1;
+    if (!requiresReview) {
+      const identity = identityRows[0]!;
+      for (const occurrence of occurrences) await updateBoutFighter(db, occurrence.boutId, occurrence.side, identity.id, false);
+      await db.updateTable("LiveTournamentFighter").set({ ambiguous: 0 }).where("id", "=", identity.id).execute();
+      continue;
+    }
+
+    const validIdentityIds = new Set(identityRows.map((identity) => identity.id));
+    for (const occurrence of occurrences) {
+      const keepManualAssignment = occurrence.manuallyAssigned === 1 && occurrence.fighterId !== null && validIdentityIds.has(occurrence.fighterId);
+      if (!keepManualAssignment) await updateBoutFighter(db, occurrence.boutId, occurrence.side, null, false);
+    }
+    const allAssigned = occurrences.every(
+      (occurrence) => occurrence.manuallyAssigned === 1 && occurrence.fighterId !== null && validIdentityIds.has(occurrence.fighterId),
+    );
+    await db
+      .updateTable("LiveTournamentFighter")
+      .set({ ambiguous: allAssigned ? 0 : 1, updatedAt: now })
+      .where("tournamentId", "=", tournamentId)
+      .where("nameKey", "=", nameKey)
+      .execute();
+  }
+}
+
+async function updateBoutFighter(
+  db: DbExecutor,
+  boutId: string,
+  side: "Left" | "Right",
+  fighterId: string | null,
+  manuallyAssigned: boolean,
+): Promise<void> {
+  const changes = side === "Left"
+    ? { fighterLeftId: fighterId, fighterLeftManuallyAssigned: manuallyAssigned ? 1 : 0 }
+    : { fighterRightId: fighterId, fighterRightManuallyAssigned: manuallyAssigned ? 1 : 0 };
+  await db.updateTable("LiveBout").set(changes).where("id", "=", boutId).execute();
 }
 
 function text(value: CellValue | undefined): string {

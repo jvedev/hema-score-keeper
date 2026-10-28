@@ -133,6 +133,44 @@ describe("ParticipantClient", () => {
     expect(calls[0]).toMatchObject({ url: "/api/v1/me/home", method: "GET", authorization: "Bearer a1" });
   });
 
+  it("reads only the signed-in fighter's live tournament list and view", async () => {
+    await signedIn();
+    const tournament = { id: "t 1", name: "Open", fighterId: "f1", fighterName: "Eva" };
+    const view = { tournament: { id: "t 1", name: "Open" }, fighter: { id: "f1", name: "Eva" }, schedule: [], pools: [] };
+    responses.push({ status: 200, body: { tournaments: [tournament] } }, { status: 200, body: view });
+    expect(await client.liveTournaments()).toEqual([tournament]);
+    expect(await client.liveTournamentFighterView("t 1")).toEqual(view);
+    expect(calls.map((call) => [call.method, call.url, call.authorization !== null])).toEqual([
+      ["GET", "/api/v1/me/live-tournaments", true],
+      ["GET", "/api/v1/live-tournaments/t%201/fighter-view", true],
+    ]);
+  });
+
+  it("registers and removes a push subscription for the signed-in account", async () => {
+    await signedIn();
+    responses.push(
+      { status: 200, body: { publicKey: "vapid-public" } },
+      { status: 200, body: { ok: true } },
+      { status: 200, body: { ok: true } },
+    );
+    expect(await client.pushPublicKey()).toBe("vapid-public");
+    const subscription = {
+      endpoint: "https://fcm.googleapis.com/device",
+      keys: { p256dh: "public", auth: "secret" },
+    };
+    await client.savePushSubscription(subscription);
+    await client.removePushSubscription(subscription.endpoint);
+    expect(calls.map(({ method, url }) => [method, url])).toEqual([
+      ["GET", "/api/v1/push/vapid-public-key"],
+      ["POST", "/api/v1/me/push-subscriptions"],
+      ["DELETE", "/api/v1/me/push-subscriptions"],
+    ]);
+    expect(calls[0]?.authorization).toBeNull();
+    expect(calls.slice(1).every((call) => call.authorization !== null)).toBe(true);
+    expect(calls[1]?.body).toEqual({ subscription });
+    expect(calls[2]?.body).toEqual({ endpoint: subscription.endpoint });
+  });
+
   it("saves the language on the account and in the session", async () => {
     await signedIn();
     responses.push({ status: 200, body: { ...user, language: "nl" } });

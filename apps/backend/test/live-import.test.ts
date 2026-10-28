@@ -168,6 +168,95 @@ describe("live import", () => {
     ]);
   });
 
+  it("marks repeated names ambiguous until every bout side is manually assigned and preserves the resolution on re-import", async () => {
+    const first = await workbook({
+      pools: {
+        Pool_1: [
+          { header: "B25", fighters: ["  Anna  Smith ", "Bea"] },
+          { header: "H25", fighters: ["Anna Smith", "Cor"] },
+        ],
+      },
+      schedule: [
+        ["Ring A", 1, "Pool_1", "B25", null],
+        ["Ring A", 2, "Pool_1", "H25", null],
+      ],
+    });
+    await runImport(first);
+
+    const roster = await ctx.database
+      .selectFrom("LiveTournamentFighter")
+      .select(["name", "nameKey", "userId", "active", "ambiguous"])
+      .where("tournamentId", "=", tournamentId)
+      .orderBy("nameKey")
+      .execute();
+    expect(roster).toEqual([
+      { name: "Anna Smith", nameKey: "anna smith", userId: null, active: 1, ambiguous: 1 },
+      { name: "Bea", nameKey: "bea", userId: null, active: 1, ambiguous: 0 },
+      { name: "Cor", nameKey: "cor", userId: null, active: 1, ambiguous: 0 },
+    ]);
+
+    const anna = await ctx.database
+      .selectFrom("LiveTournamentFighter")
+      .select("id")
+      .where("tournamentId", "=", tournamentId)
+      .where("nameKey", "=", "anna smith")
+      .executeTakeFirstOrThrow();
+    const fighterAccount = await insertUser(ctx.database, { id: "anna-account", role: "USER", name: "Anna Smith" });
+    const annaBouts = await ctx.database
+      .selectFrom("LiveBout")
+      .select(["id", "headerCell"])
+      .where("tournamentId", "=", tournamentId)
+      .orderBy("order")
+      .execute();
+    for (const bout of annaBouts) {
+      const assigned = await ctx.app.inject({
+        method: "PUT",
+        url: `/api/v1/live-tournaments/${tournamentId}/bouts/${bout.id}/sides/LEFT/identity`,
+        headers: bearer(owner),
+        payload: { fighterId: anna.id },
+      });
+      expect(assigned.statusCode).toBe(200);
+      if (bout.headerCell === "B25") {
+        const partial = await ctx.database
+          .selectFrom("LiveTournamentFighter")
+          .select("ambiguous")
+          .where("id", "=", anna.id)
+          .executeTakeFirstOrThrow();
+        expect(partial.ambiguous).toBe(1);
+      }
+    }
+    const linked = await ctx.app.inject({
+      method: "PUT",
+      url: `/api/v1/live-tournaments/${tournamentId}/fighters/${anna.id}/account`,
+      headers: bearer(owner),
+      payload: { userId: fighterAccount.id },
+    });
+    expect(linked.statusCode).toBe(200);
+
+    await runImport(await workbook({
+      pools: {
+        Pool_1: [
+          { header: "B25", fighters: ["Anna Smith", "Bea"] },
+          { header: "H25", fighters: ["Anna Smith", "Cor"] },
+        ],
+      },
+      schedule: [
+        ["Ring A", 1, "Pool_1", "B25", null],
+        ["Ring A", 2, "Pool_1", "H25", null],
+      ],
+    }));
+
+    const refreshed = await ctx.database
+      .selectFrom("LiveTournamentFighter")
+      .select(["name", "userId", "active", "ambiguous"])
+      .where("tournamentId", "=", tournamentId)
+      .where("active", "=", 1)
+      .orderBy("name")
+      .execute();
+    expect(refreshed).toContainEqual({ name: "Anna Smith", userId: fighterAccount.id, active: 1, ambiguous: 0 });
+    expect(refreshed).toHaveLength(3);
+  });
+
   it("re-import skips a bout that has exchanges", async () => {
     await runImport(await workbook({
       pools: { Pool_1: [{ header: "B25", fighters: ["Ronald", "Diego"] }] },

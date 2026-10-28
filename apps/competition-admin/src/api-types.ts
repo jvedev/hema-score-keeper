@@ -213,6 +213,33 @@ export interface LiveTournamentDetail extends LiveTournamentSummary {
   rules?: RingRules;
 }
 
+export interface LiveTournamentFighterLink {
+  id: string;
+  name: string;
+  nameKey: string;
+  userId: string | null;
+  active: boolean;
+  ambiguous: boolean;
+  identityNumber: number;
+  user: { id: string; name: string; username: string } | null;
+}
+
+export interface AmbiguousBoutIdentity {
+  id: string;
+  label: string;
+  sheetName: string;
+  order: number;
+  ringName: string;
+  left: AmbiguousBoutSide | null;
+  right: AmbiguousBoutSide | null;
+}
+
+export interface AmbiguousBoutSide {
+  name: string;
+  fighterId: string | null;
+  candidates: Array<{ id: string; name: string; linked: boolean }>;
+}
+
 /** What `POST .../import/xlsx` and `.../import/google` answer. `row` is the sheet row. */
 export interface ImportReport {
   added: number;
