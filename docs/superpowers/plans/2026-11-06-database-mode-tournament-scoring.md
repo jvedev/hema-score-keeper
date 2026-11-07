@@ -1,9 +1,9 @@
 # Database-mode tournament scoring
 
 Status: implementation in progress. The user approved the updated plan on 2026-11-06.
-Ownership/admin APIs and the Event-admin admin-management UI are implemented and the
-backend test suite now passes; bracket scheduling, database-mode projection and scoring
-remain outstanding.
+Ownership/admin APIs, bracket scheduling, database-mode activation/projection, and
+server-side ring authorization are implemented. Transactional result/correction projection
+remains outstanding.
 
 ## Goal
 
@@ -184,14 +184,23 @@ resolved as recorded above.
 - Database-mode tournaments do not enqueue sheet-sync jobs, and sheet import, backup, and
   sync endpoints reject database-mode tournaments. Pool ring order can be edited in the
   Event-admin match view after it has been generated.
+- Added server-side database-mode ring authorization for ring reads, claims, bout details,
+  and every score/clock write. `TABLE`, `JUDGE`, and `JURY` assignments are checked against
+  the bout's current scheduled phase on each request; tournament admins and system admins
+  bypass assignments. Ring lineup reads are filtered to assigned phases, and sheet-mode
+  permissions remain unchanged.
+- Added coverage for all allowed assignment roles, disallowed `FIGHTER`/unassigned users,
+  phase-scoped read access, role revocation, and authorization on exchange, undo, start,
+  finish, and clock writes.
 - The user requested intermediate commits and pushes on `co-pilot`; the completed prior
   milestone was committed as `617ded9` and pushed to `origin/co-pilot`.
-- Verification after activation: full backend suite passes (37 files, 361 tests);
-  backend typecheck/build, shared-UI suite (42 files, 226 tests), Event-admin API/UI
-  typechecks, and Event-admin production build pass. No packages were installed.
-- The activation and schedule-projection checkpoint is ready to commit and push to
-  `co-pilot`. Then implement server-side ring authorization, followed by transactional
-  result and correction projection.
+- The activation/projection checkpoint was committed as `be965e1` and pushed to
+  `origin/co-pilot`.
+- Verification after ring authorization: backend typecheck/build and full suite pass
+  (38 files, 364 tests). Shared-UI suite (42 files, 226 tests), Event-admin API/UI typechecks,
+  and Event-admin production build also pass. No packages were installed.
+- Commit and push ring authorization to `co-pilot`, then implement transactional result and
+  correction projection.
 
 ## Local command note
 
@@ -232,8 +241,8 @@ are explicitly placed in a phase. This ordering is sequence only, not a guarante
 time or duration. Correction behavior is to preserve the prior exchange state as a revision
 and re-project the corrected result. Ownership/admin and explicit bracket scheduling passed
 the full backend suite (353 tests) and shared-UI suite (224 tests) before activation.
-Activation, schedule projection, and pool-order editing now also pass the full backend suite
-(37 files, 361 tests) and shared-UI suite (42 files, 226 tests), along with relevant typechecks
-and builds. Commit and push this checkpoint to `co-pilot`, then implement server-side ring
-authorization followed by transactional result/correction projection. Continue without
+Activation, schedule projection, and pool-order editing pass the full backend suite (37 files,
+361 tests) and shared-UI suite (42 files, 226 tests). Ring authorization now passes the full
+backend suite (38 files, 364 tests), typecheck, and build. Commit and push that checkpoint to
+`co-pilot`, then implement transactional result/correction projection. Continue without
 PowerShell or package installation.

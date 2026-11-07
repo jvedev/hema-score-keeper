@@ -7,6 +7,7 @@ import { ensureObject, HttpError, requireString } from "../http.js";
 import { displayOf, rulesOf, type RoundExchange } from "./bout-display.js";
 import { ringBouts } from "./bout-routes.js";
 import { requireTournamentAdmin } from "./live-routes.js";
+import { requireLiveRingAccess } from "./ring-access.js";
 import { activeKeeperOf, newKeeperToken, publicRing } from "./ring-keeper.js";
 
 async function ringByToken(db: DbExecutor, token: string) {
@@ -32,8 +33,9 @@ function isActiveDevice(activeDeviceId: string | null, header: string | string[]
 export function registerRingRoutes(app: FastifyInstance, database: Kysely<BackendDatabase>): void {
   // Any signed-in account holding the ring link may open and claim the ring; the link alone (no sign-in) may not.
   app.get("/api/v1/live-rings/by-token/:token", async (request) => {
-    await requireUser(request, database);
+    const user = await requireUser(request, database);
     const ring = await ringByToken(database, requirePathParam(request, "token"));
+    const accessiblePhases = await requireLiveRingAccess(database, ring.id, user);
     const tournament = await database
       .selectFrom("LiveTournament")
       .select(["id", "name", "mode", "ruleset"])
@@ -43,7 +45,7 @@ export function registerRingRoutes(app: FastifyInstance, database: Kysely<Backen
       ring: publicRing(ring),
       tournament: { id: tournament.id, name: tournament.name, mode: tournament.mode },
       rules: rulesOf(tournament.ruleset),
-      bouts: await ringBouts(database, ring.id, app.now()),
+      bouts: await ringBouts(database, ring.id, app.now(), accessiblePhases ?? undefined),
       activeKeeper: await activeKeeperOf(database, ring),
       // Whether the device asking (optional X-Device-Id) is the active keeper. The device id itself is never returned.
       youAreKeeper: isActiveDevice(ring.activeDeviceId, request.headers["x-device-id"]),
@@ -60,6 +62,7 @@ export function registerRingRoutes(app: FastifyInstance, database: Kysely<Backen
     const confirm = body.confirm === true;
     return database.transaction().execute(async (trx) => {
       const ring = await ringByToken(trx, token);
+      await requireLiveRingAccess(trx, ring.id, user);
       if (ring.activeDeviceId !== null && ring.activeDeviceId !== deviceId && !confirm) {
         const activeKeeper = await activeKeeperOf(trx, ring);
         throw new HttpError(409, "Someone else is keeping this ring; confirm to take it over.", undefined, {

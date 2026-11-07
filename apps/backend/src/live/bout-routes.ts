@@ -10,6 +10,7 @@ import { displayOf, tournamentRules } from "./bout-display.js";
 import { scoreOf, type BoutScore } from "./bout-score.js";
 import { activeExchanges, enqueueSync, type LiveExchangeRow } from "./live-store.js";
 import { checkRingToken, requireKeeper } from "./ring-keeper.js";
+import { requireLiveRingAccess } from "./ring-access.js";
 
 type LiveBoutRow = Selectable<BackendDatabase["LiveBout"]>;
 
@@ -124,8 +125,13 @@ function parseClockInput(raw: unknown): { seconds: number; running: boolean; sta
 }
 
 /** A ring's bouts in order, each with its score (null when unscored), clock and what a scoreboard shows. */
-export async function ringBouts(db: DbExecutor, ringId: string, now: Date) {
-  const bouts = await db.selectFrom("LiveBout").selectAll().where("ringId", "=", ringId).orderBy("order").execute();
+export async function ringBouts(db: DbExecutor, ringId: string, now: Date, scheduledPhaseIds?: string[]) {
+  let query = db.selectFrom("LiveBout").selectAll().where("ringId", "=", ringId);
+  if (scheduledPhaseIds !== undefined) {
+    if (scheduledPhaseIds.length === 0) return [];
+    query = query.where("scheduledPhaseId", "in", scheduledPhaseIds);
+  }
+  const bouts = await query.orderBy("order").execute();
   if (bouts.length === 0) return [];
   const rules = await tournamentRules(db, bouts[0]!.tournamentId);
   const exchanges = await db
@@ -160,16 +166,18 @@ async function scoreFor(db: DbExecutor, boutId: string): Promise<BoutScore> {
 
 export function registerBoutRoutes(app: FastifyInstance, database: Kysely<BackendDatabase>): void {
   app.get("/api/v1/live-rings/:ringId/bouts", async (request) => {
-    await requireUser(request, database);
+    const user = await requireUser(request, database);
     const ringId = requirePathParam(request, "ringId");
     const ring = await database.selectFrom("LiveRing").select("id").where("id", "=", ringId).executeTakeFirst();
     if (!ring) throw new HttpError(404, "Ring not found.");
-    return { bouts: await ringBouts(database, ringId, app.now()) };
+    const accessiblePhases = await requireLiveRingAccess(database, ringId, user);
+    return { bouts: await ringBouts(database, ringId, app.now(), accessiblePhases ?? undefined) };
   });
 
   app.get("/api/v1/live-bouts/:id", async (request) => {
-    await requireUser(request, database);
+    const user = await requireUser(request, database);
     const bout = await getBout(database, requirePathParam(request, "id"));
+    await requireLiveRingAccess(database, bout.ringId, user, bout.scheduledPhaseId);
     const exchanges = await activeExchanges(database, bout.id);
     const rules = await tournamentRules(database, bout.tournamentId);
     return {
@@ -187,10 +195,11 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
   // Start and finish change the bout's state only. They queue no sheet write: the sheet's content depends only on
   // the exchanges, and a write here would blank a bout range someone typed by hand.
   app.post("/api/v1/live-bouts/:id/start", async (request) => {
-    await requireUser(request, database);
+    const user = await requireUser(request, database);
     const boutId = requirePathParam(request, "id");
     return database.transaction().execute(async (trx) => {
       const bout = await getBout(trx, boutId);
+      await requireLiveRingAccess(trx, bout.ringId, user, bout.scheduledPhaseId);
       await requireKeeper(trx, request, bout.ringId);
       if (bout.status === "DONE") throw new HttpError(409, "This bout is finished.");
       if (bout.status === "PENDING") {
@@ -212,6 +221,7 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
       try {
         const result = await database.transaction().execute(async (trx) => {
           const bout = await getBout(trx, boutId);
+          await requireLiveRingAccess(trx, bout.ringId, user, bout.scheduledPhaseId);
           const keeper = await checkRingToken(trx, request, bout.ringId);
           // A resend of an exchange we already stored returns it, whatever the bout's state is now, and even from a
           // device that has since been replaced: the exchange was accepted while that device kept the ring.
@@ -273,7 +283,7 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
   });
 
   app.post("/api/v1/live-bouts/:id/undo", async (request) => {
-    await requireUser(request, database);
+    const user = await requireUser(request, database);
     const boutId = requirePathParam(request, "id");
     // The client names the exchange it means to undo, so a retry after a timeout can't undo a second one.
     const body = ensureObject(request.body ?? {}, "Undo");
@@ -283,6 +293,7 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
     const expectedExchangeId = body.expectedExchangeId;
     return database.transaction().execute(async (trx) => {
       const bout = await getBout(trx, boutId);
+      await requireLiveRingAccess(trx, bout.ringId, user, bout.scheduledPhaseId);
       // Unlike an exchange resend, an undo retry needs the active keeper: the undo may have been done by another device.
       await requireKeeper(trx, request, bout.ringId);
       // A retry of an undo that already happened answers again, whatever the bout's state is now.
@@ -322,10 +333,11 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
   });
 
   app.post("/api/v1/live-bouts/:id/finish", async (request) => {
-    await requireUser(request, database);
+    const user = await requireUser(request, database);
     const boutId = requirePathParam(request, "id");
     return database.transaction().execute(async (trx) => {
       const bout = await getBout(trx, boutId);
+      await requireLiveRingAccess(trx, bout.ringId, user, bout.scheduledPhaseId);
       await requireKeeper(trx, request, bout.ringId);
       if (bout.status !== "DONE") {
         const now = app.now().toISOString();
@@ -342,11 +354,12 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
   // The device reports its clock; the server never counts. Allowed in any bout state (a pause sent right after
   // finish must not be refused), it doesn't start the bout and queues no sheet write.
   app.post("/api/v1/live-bouts/:id/clock", async (request) => {
-    await requireUser(request, database);
+    const user = await requireUser(request, database);
     const boutId = requirePathParam(request, "id");
     const input = parseClockInput(request.body);
     return database.transaction().execute(async (trx) => {
       const bout = await getBout(trx, boutId);
+      await requireLiveRingAccess(trx, bout.ringId, user, bout.scheduledPhaseId);
       await requireKeeper(trx, request, bout.ringId);
       const now = app.now().toISOString();
       const state = input.state;
