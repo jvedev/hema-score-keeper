@@ -488,6 +488,13 @@ export async function loadEvents(executor: DbExecutor, eventIds?: readonly strin
       .where("timeSlotId", "in", timeSlotIds)
       .execute();
   const scheduledPhaseIds = scheduledPhaseRows.map((row) => row.id);
+  const scheduledMatchRows = matchRows.length === 0
+    ? []
+    : await executor
+      .selectFrom("ScheduledMatch")
+      .selectAll()
+      .where("matchId", "in", matchRows.map((row) => row.id))
+      .execute();
 
   const assignmentRows = scheduledPhaseIds.length === 0
     ? []
@@ -533,6 +540,10 @@ export async function loadEvents(executor: DbExecutor, eventIds?: readonly strin
   }
 
   const matchesByRoundId = new Map<string, ApiMatch[]>();
+  const scheduledMatchById = new Map(scheduledMatchRows.map((row) => [
+    row.matchId,
+    { scheduledPhaseId: row.scheduledPhaseId, order: row.order },
+  ] as const));
   for (const row of matchRows) {
     const match: ApiMatch = {
       id: row.id,
@@ -544,6 +555,7 @@ export async function loadEvents(executor: DbExecutor, eventIds?: readonly strin
       scoreA: row.scoreA,
       scoreB: row.scoreB,
       ruleset: row.rulesetId ? rulesetById.get(row.rulesetId) ?? null : null,
+      scheduledMatch: scheduledMatchById.get(row.id) ?? null,
     };
     const bucket = matchesByRoundId.get(row.roundId);
     if (bucket) {
@@ -1291,11 +1303,81 @@ export async function validateScheduledPhase(
   const occupiedPlacement = await executor
     .selectFrom("ScheduledPhase")
     .select(["id"])
+    .where("stageId", "=", stageId)
     .where("arenaId", "=", arenaId)
     .where("timeSlotId", "=", timeSlotId)
     .executeTakeFirst();
   if (occupiedPlacement && occupiedPlacement.id !== existingId) {
-    throw new HttpError(409, "This arena already has a phase in the selected time slot.");
+    throw new HttpError(409, "This stage already has a phase on the selected ring and time slot.");
+  }
+
+  if (existingId) {
+    const assignedMatches = await executor
+      .selectFrom("ScheduledMatch")
+      .select(["matchId", "order"])
+      .where("scheduledPhaseId", "=", existingId)
+      .execute();
+    if (assignedMatches.length > 0) {
+      const assignedMatchIds = assignedMatches.map((item) => item.matchId);
+      const incompatibleMatch = await executor
+        .selectFrom("Match")
+        .innerJoin("Round", "Round.id", "Match.roundId")
+        .select("Match.id")
+        .where("Match.id", "in", assignedMatchIds)
+        .where("Round.stageId", "!=", stageId)
+        .executeTakeFirst();
+      if (incompatibleMatch) {
+        throw new HttpError(409, "A scheduled phase with bracket matches cannot be moved to another stage.");
+      }
+
+      const duplicateOrder = await executor
+        .selectFrom("ScheduledMatch as ExistingMatch")
+        .innerJoin("ScheduledPhase as ExistingPhase", "ExistingPhase.id", "ExistingMatch.scheduledPhaseId")
+        .select("ExistingMatch.matchId")
+        .where("ExistingPhase.arenaId", "=", arenaId)
+        .where("ExistingPhase.timeSlotId", "=", timeSlotId)
+        .where("ExistingPhase.id", "!=", existingId)
+        .where("ExistingMatch.order", "in", assignedMatches.map((item) => item.order))
+        .executeTakeFirst();
+      if (duplicateOrder) {
+        throw new HttpError(409, "Moving this phase would duplicate a bout order on the selected ring and time slot.");
+      }
+    }
+  }
+}
+
+export async function validateScheduledMatch(
+  executor: DbExecutor,
+  matchId: string,
+  scheduledPhaseId: string,
+  order: number,
+): Promise<void> {
+  const match = await requireMatchRow(executor, matchId);
+  const round = requireValue(
+    await executor.selectFrom("Round").selectAll().where("id", "=", match.roundId).executeTakeFirst(),
+    `Round "${match.roundId}" not found.`,
+  );
+  const stage = await requireStageRow(executor, round.stageId);
+  if (stage.type === "POOL") {
+    throw new HttpError(409, "Pool matches are scheduled automatically from their round and arena.");
+  }
+
+  const phase = await requireScheduledPhaseRow(executor, scheduledPhaseId);
+  if (phase.stageId !== stage.id) {
+    throw new HttpError(400, "A match must be placed in a scheduled phase for its stage.");
+  }
+
+  const occupiedOrder = await executor
+    .selectFrom("ScheduledMatch as ExistingMatch")
+    .innerJoin("ScheduledPhase as ExistingPhase", "ExistingPhase.id", "ExistingMatch.scheduledPhaseId")
+    .select("ExistingMatch.matchId")
+    .where("ExistingPhase.arenaId", "=", phase.arenaId)
+    .where("ExistingPhase.timeSlotId", "=", phase.timeSlotId)
+    .where("ExistingMatch.order", "=", order)
+    .where("ExistingMatch.matchId", "!=", matchId)
+    .executeTakeFirst();
+  if (occupiedOrder) {
+    throw new HttpError(409, "This ring and time slot already has a bout at that order.");
   }
 }
 

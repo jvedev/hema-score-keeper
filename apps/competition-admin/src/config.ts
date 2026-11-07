@@ -4,15 +4,15 @@ export function apiBaseUrl(configured: string | undefined = import.meta.env.VITE
 }
 
 /**
- * Where the score-keeper app lives: ring links point at its `/ring/<token>` page. The score-keeper builds without a
- * Vite `base`, so that page is at the root of its site. Set VITE_SCORE_KEEPER_URL when it is not served from this site.
+ * Where the score-keeper app lives: ring links point at its `/ring/<token>` page. Set VITE_SCORE_KEEPER_URL
+ * when it is not served from this site's `/score-keeper/` path.
  */
 export function scoreKeeperAppUrl(
   configured: string | undefined = import.meta.env.VITE_SCORE_KEEPER_URL,
   dev: boolean = import.meta.env.DEV,
   origin: string = window.location.origin,
 ): string {
-  const url = configured?.trim() || (dev ? "http://localhost:5180" : origin);
+  const url = configured?.trim() || (dev ? "http://localhost:5180/score-keeper" : `${origin}/score-keeper`);
   return url.replace(/\/+$/, "");
 }
 

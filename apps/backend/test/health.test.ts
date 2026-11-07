@@ -9,6 +9,17 @@ describe("test harness", () => {
     expect(response.json()).toEqual({ ok: true });
   });
 
+  it("lists the hosted apps from the root page", async () => {
+    const { app } = await createTestContext();
+    const response = await app.inject({ method: "GET", url: "/" });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain('href="/hema-score-keeper/competition/"');
+    expect(response.body).toContain('href="/score-keeper/"');
+    expect(response.body).toContain('href="/competition-admin/"');
+    expect(response.body).toContain('href="/event-admin/"');
+    expect(response.body).toContain('href="/tournament-admin/"');
+  });
+
   it("gives every context its own database", async () => {
     const first = await createTestContext();
     const second = await createTestContext();

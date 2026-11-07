@@ -1,0 +1,73 @@
+.event-admin-login {
+  box-sizing: border-box;
+  display: grid;
+  gap: 1rem;
+  margin: 8vh auto;
+  max-width: 28rem;
+  padding: 2rem;
+  color: #e8edf5;
+  background: #18212d;
+  border: 1px solid #344256;
+  border-radius: 0.8rem;
+  font: 1rem/1.5 system-ui, sans-serif;
+}
+
+.event-admin-login h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.event-admin-login label {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.event-admin-login input {
+  box-sizing: border-box;
+  min-height: 2.8rem;
+  padding: 0.6rem;
+  color: inherit;
+  background: #101721;
+  border: 1px solid #52647a;
+  border-radius: 0.35rem;
+  font: inherit;
+}
+
+.event-admin-login button,
+.event-admin-sign-out {
+  min-height: 2.5rem;
+  padding: 0.5rem 0.9rem;
+  color: #fff;
+  background: #2867bd;
+  border: 0;
+  border-radius: 0.35rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.event-admin-login button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.event-admin-login-error {
+  min-height: 1.5em;
+  margin: 0;
+  color: #ff8a8a;
+}
+
+.event-admin-session-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  color: #e8edf5;
+  background: #18212d;
+  font: 0.9rem/1.4 system-ui, sans-serif;
+}
+
+.event-admin-sign-out {
+  min-height: 2rem;
+  padding: 0.25rem 0.7rem;
+}

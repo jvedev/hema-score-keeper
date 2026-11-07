@@ -122,6 +122,12 @@ export interface ApiMatch {
   scoreA: number | null;
   scoreB: number | null;
   ruleset: ApiRuleset | null;
+  scheduledMatch: ApiScheduledMatch | null;
+}
+
+export interface ApiScheduledMatch {
+  scheduledPhaseId: string;
+  order: number;
 }
 
 export interface ApiRound {

@@ -175,6 +175,88 @@ describe("event-view", () => {
     await waitForText(element, "Actieve fase: Elimination");
   });
 
+  it("saves an explicit bracket phase and ring order", async () => {
+    const mock = installEventViewMock();
+    const tournament = mock.event.tournaments[0]!;
+    const stage = tournament.stages.find((candidate) => candidate.id === "stage-2")!;
+    const match = {
+      id: "match-1",
+      roundId: "round-1",
+      arenaId: null,
+      entryAId: null,
+      entryBId: null,
+      winnerEntryId: null,
+      scoreA: null,
+      scoreB: null,
+      ruleset: null,
+      scheduledMatch: null,
+    };
+    stage.rounds = [{ id: "round-1", stageId: stage.id, roundNumber: 0, matches: [match] }];
+    const arena = {
+      id: "arena-1",
+      eventId: mock.event.id,
+      name: "Arena A",
+      order: 0,
+      leftColor: "#21c15b",
+      rightColor: "#2f7dfa",
+    };
+    mock.event.arenas = [arena];
+    mock.event.schedule = {
+      id: "schedule-1",
+      eventId: mock.event.id,
+      startTimeMinutes: 540,
+      currentTimeSlotId: null,
+      timeSlots: [{
+        id: "slot-1",
+        scheduleId: "schedule-1",
+        order: 0,
+        durationMinutes: 60,
+        label: "Finals",
+        color: null,
+        isBreak: false,
+        scheduledPhases: [{
+          id: "phase-1",
+          stageId: stage.id,
+          arenaId: arena.id,
+          timeSlotId: "slot-1",
+          stage: {
+            ...stage,
+            tournament: {
+              id: tournament.id,
+              eventId: tournament.eventId,
+              name: tournament.name,
+              color: tournament.color,
+            },
+          },
+          arena,
+          assignments: [],
+        }],
+      }],
+    };
+
+    await import("./event-view");
+    const element = document.createElement("event-view");
+    document.body.appendChild(element);
+    await flush();
+
+    const stageCard = await waitForElement<HTMLElement>(element, 'div[data-action="select-stage"][data-id="stage-2"]');
+    stageCard.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    await flush();
+    const matchesTab = await waitForElement<HTMLButtonElement>(element, 'button[data-action="set-stage-tab"][data-tab="matches"]');
+    matchesTab.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    await flush();
+
+    const form = await waitForElement<HTMLFormElement>(element, 'form[data-action="match-schedule"]');
+    const phaseSelect = form.querySelector<HTMLSelectElement>('select[name="scheduledPhaseId"]')!;
+    const orderInput = form.querySelector<HTMLInputElement>('input[name="order"]')!;
+    phaseSelect.value = "phase-1";
+    orderInput.value = "3";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+
+    await waitForCondition(() => mock.scheduledMatches.length === 1);
+    expect(mock.scheduledMatches).toEqual([{ id: "match-1", scheduledPhaseId: "phase-1", order: 3 }]);
+  });
+
   it("keeps judge skills after updating and removes duplicate judge entries", async () => {
     const mock = installEventViewMock();
     mock.entries.push(
@@ -218,6 +300,7 @@ function installEventViewMock() {
   const eventId = "event-1";
   const tournamentId = "tournament-1";
   const event = buildEvent();
+  const scheduledMatches: Array<{ id: string; scheduledPhaseId: string; order: number }> = [];
 
   globalThis.fetch = async (input, init) => {
     const request = input instanceof Request ? input : new Request(input, init);
@@ -229,6 +312,24 @@ function installEventViewMock() {
 
     if (request.method === "GET" && pathname.includes("/users")) {
       return jsonResponse(users);
+    }
+
+    const matchSchedule = pathname.match(/^\/api\/v1\/matches\/([^/]+)\/schedule$/);
+    if (matchSchedule && request.method === "PUT") {
+      const body = await request.json() as { scheduledPhaseId: string; order: number };
+      scheduledMatches.push({ id: matchSchedule[1]!, ...body });
+      return jsonResponse({
+        id: matchSchedule[1],
+        roundId: "round-1",
+        arenaId: null,
+        entryAId: null,
+        entryBId: null,
+        winnerEntryId: null,
+        scoreA: null,
+        scoreB: null,
+        ruleset: null,
+        scheduledMatch: { scheduledPhaseId: body.scheduledPhaseId, order: body.order },
+      });
     }
 
     const userMatch = pathname.match(/^\/api\/v1\/users\/([^/]+)$/);
@@ -384,6 +485,7 @@ function installEventViewMock() {
     event,
     users,
     entries,
+    scheduledMatches,
     restore() {
       globalThis.fetch = originalFetch;
       window.fetch = originalWindowFetch;

@@ -1,6 +1,8 @@
 import { defineConfig } from "vite";
+import { appBase } from "../../deployment/vite-app-base.mjs";
 
 export default defineConfig({
+  base: appBase("score-keeper"),
   optimizeDeps: {
     exclude: ["@hema/ui"],
   },

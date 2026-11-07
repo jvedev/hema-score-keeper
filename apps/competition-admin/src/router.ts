@@ -10,8 +10,11 @@ export type Route =
   | { name: "tournament"; tournamentId: string }
   | { name: "objection"; boutId: string };
 
+export const APP_BASE = normalizeBase(import.meta.env.BASE_URL ?? "/");
+
 export function parseRoute(pathname: string): Route {
-  const parts = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  const relativePath = stripBase(pathname, APP_BASE);
+  const parts = (relativePath ?? "").split("/").filter(Boolean).map(decodeURIComponent);
   const [first, id, second, third] = parts;
   if (first === "needs-you" && parts.length === 1) {
     return { name: "needs-you" };
@@ -49,28 +52,40 @@ export function parseRoute(pathname: string): Route {
 
 export function href(route: Route): string {
   const e = encodeURIComponent;
+  let path: string;
   switch (route.name) {
     case "start":
-      return "/";
+      path = "";
+      break;
     case "needs-you":
-      return "/needs-you";
+      path = "needs-you";
+      break;
     case "competitions":
-      return "/competitions";
+      path = "competitions";
+      break;
     case "competition":
-      return `/competitions/${e(route.competitionId)}`;
+      path = `competitions/${e(route.competitionId)}`;
+      break;
     case "fighter":
-      return `/competitions/${e(route.competitionId)}/fighters/${e(route.participantId)}`;
+      path = `competitions/${e(route.competitionId)}/fighters/${e(route.participantId)}`;
+      break;
     case "bout":
-      return `/competitions/${e(route.competitionId)}/bouts/${e(route.boutId)}`;
+      path = `competitions/${e(route.competitionId)}/bouts/${e(route.boutId)}`;
+      break;
     case "settings":
-      return `/competitions/${e(route.competitionId)}/settings`;
+      path = `competitions/${e(route.competitionId)}/settings`;
+      break;
     case "tournaments":
-      return "/tournaments";
+      path = "tournaments";
+      break;
     case "tournament":
-      return `/tournaments/${e(route.tournamentId)}`;
+      path = `tournaments/${e(route.tournamentId)}`;
+      break;
     case "objection":
-      return `/objections/${e(route.boutId)}`;
+      path = `objections/${e(route.boutId)}`;
+      break;
   }
+  return APP_BASE + path;
 }
 
 /** Pushes (or replaces) the route in the address bar and tells the app. */
@@ -82,4 +97,15 @@ export function navigate(route: Route, replace = false): void {
     window.history.pushState({}, "", target);
   }
   window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
+function normalizeBase(base: string): string {
+  const withLeadingSlash = base.startsWith("/") ? base : `/${base}`;
+  return withLeadingSlash.endsWith("/") ? withLeadingSlash : `${withLeadingSlash}/`;
+}
+
+function stripBase(pathname: string, base: string): string | null {
+  if (base === "/") return pathname.replace(/^\/+/, "");
+  if (pathname === base.slice(0, -1)) return "";
+  return pathname.startsWith(base) ? pathname.slice(base.length) : null;
 }

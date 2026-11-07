@@ -4,11 +4,15 @@ import {
   type ApiEntry,
   type ApiEvent,
   type ApiEventMutationResult,
+  type ApiMatch,
+  type ApiRound,
   type ApiRuleset,
   type ApiUser,
   type ApiSkill,
   type ApiStage,
   type ApiTournament,
+  type ApiTournamentAdmin,
+  type ApiTournamentAdminCandidate,
   type EntryKind,
   type StageOfficialRole,
 } from "@hema/event-admin-api";
@@ -16,7 +20,7 @@ import "./event-view-app.css";
 import "../pool-results/pool-results.js";
 
 type EventTab = "tournaments" | "arenas" | "officials" | "rulesets";
-type TournamentTab = "entries" | "officials" | "stages";
+type TournamentTab = "entries" | "officials" | "stages" | "admins";
 type StageTab = "overview" | "arenas" | "officials" | "rounds" | "matches" | "pool-results";
 type EditorKind = "event" | "tournament" | "arena" | "entry" | "stage" | "stage-arena" | "stage-official";
 
@@ -63,6 +67,10 @@ interface AppState {
   loading: boolean;
   error: string | null;
   events: ApiEvent[];
+  tournamentAdmins: ApiTournamentAdmin[];
+  tournamentAdminCandidates: ApiTournamentAdminCandidate[];
+  tournamentAdminError: string | null;
+  tournamentAdminsLoading: boolean;
   selectedEventId: string | null;
   selectedTournamentId: string | null;
   selectedStageId: string | null;
@@ -90,6 +98,10 @@ const state: AppState = {
   loading: true,
   error: null,
   events: [],
+  tournamentAdmins: [],
+  tournamentAdminCandidates: [],
+  tournamentAdminError: null,
+  tournamentAdminsLoading: false,
   selectedEventId: null,
   selectedTournamentId: null,
   selectedStageId: null,
@@ -180,6 +192,9 @@ function onAppClick(event: MouseEvent): void {
     case "delete-entry":
       void deleteEntry(target.dataset.id);
       return;
+    case "remove-tournament-admin":
+      void removeTournamentAdmin(target.dataset.userId);
+      return;
     case "delete-event":
       void deleteEvent(target.dataset.id);
       return;
@@ -242,20 +257,38 @@ function onAppChange(event: Event): void {
       render();
     }
   }
+
+  const matchScheduleForm = target.closest<HTMLFormElement>("[data-action=\"match-schedule\"]");
+  if (matchScheduleForm && target instanceof HTMLSelectElement && target.name === "scheduledPhaseId" && target.value) {
+    const orderInput = matchScheduleForm.querySelector<HTMLInputElement>('input[name="order"]');
+    const nextOrder = target.selectedOptions[0]?.dataset.nextOrder;
+    if (orderInput && nextOrder) {
+      orderInput.value = nextOrder;
+    }
+  }
 }
 
 function onAppSubmit(event: SubmitEvent): void {
   const origin = event.composedPath()[0];
   const form = origin instanceof HTMLFormElement ? origin : null;
-  if (!form || (form.dataset.action !== "editor" && form.dataset.action !== "volunteer-update")) {
+  if (!form || (
+    form.dataset.action !== "editor"
+    && form.dataset.action !== "volunteer-update"
+    && form.dataset.action !== "tournament-admin-add"
+    && form.dataset.action !== "match-schedule"
+  )) {
     return;
   }
 
   event.preventDefault();
   if (form.dataset.action === "editor") {
     void submitEditor(form);
-  } else {
+  } else if (form.dataset.action === "volunteer-update") {
     void submitVolunteerUpdate(form);
+  } else if (form.dataset.action === "match-schedule") {
+    void submitMatchSchedule(form);
+  } else {
+    void submitTournamentAdminAdd(form);
   }
 }
 
@@ -696,6 +729,7 @@ function renderShell(): string {
               { value: "entries", label: "Deelnemers" },
               { value: "officials", label: "Vrijwilligers" },
               { value: "stages", label: "Stages" },
+              { value: "admins", label: "Admins" },
             ],
           )}
           <div class="panel-body">
@@ -992,6 +1026,8 @@ function renderTournamentCreateAction(): string {
       return `${renderVolunteerViewButton("tournament")}${renderCreateButton("entry", "Nieuwe vrijwilliger", "VOLUNTEER")}`;
     case "stages":
       return renderCreateButton("stage", "Nieuwe stage");
+    case "admins":
+      return "";
   }
 }
 
@@ -1020,6 +1056,8 @@ function renderTournamentTab(event: ApiEvent, tournament: ApiTournament): string
       return renderEntryList(tournament.entries.filter((entry) => entry.kind !== "VOLUNTEER"));
     case "officials":
       return renderTournamentOfficials(tournament);
+    case "admins":
+      return renderTournamentAdmins();
     case "stages":
       return `
         <div class="stage-workspace">
@@ -1071,7 +1109,7 @@ function renderStageTab(event: ApiEvent, tournament: ApiTournament, stage: ApiSt
     case "rounds":
       return renderRounds(stage);
     case "matches":
-      return renderMatches(tournament, stage);
+      return renderMatches(event, tournament, stage);
     case "pool-results":
       return renderPoolResults(event, tournament, stage);
   }
@@ -1285,6 +1323,46 @@ function renderTournamentOfficials(tournament: ApiTournament): string {
   `;
 }
 
+function renderTournamentAdmins(): string {
+  if (state.tournamentAdminsLoading) {
+    return renderEmptyCard("Toernooi-admins laden...");
+  }
+  if (state.tournamentAdminError) {
+    return renderEmptyCard(state.tournamentAdminError);
+  }
+  const admins = state.tournamentAdmins
+    .map((admin) => `
+      <div class="info-card list-item">
+        <div>
+          <div class="info-card-title">${escapeHtml(admin.user.name)}</div>
+          <div class="info-card-subtitle">${escapeHtml(admin.user.username)}</div>
+        </div>
+        <button type="button" class="button secondary danger-button" data-action="remove-tournament-admin" data-user-id="${escapeHtml(admin.userId)}" aria-label="Verwijder ${escapeHtml(admin.user.username)} als toernooi-admin">Verwijderen</button>
+      </div>
+    `)
+    .join("");
+  const currentIds = new Set(state.tournamentAdmins.map((admin) => admin.userId));
+  const candidates = state.tournamentAdminCandidates.filter((candidate) => !currentIds.has(candidate.id));
+  return `
+    <section class="list">
+      ${admins || renderEmptyCard("Er zijn nog geen toernooi-admins toegewezen.")}
+    </section>
+    <form class="editor-form" data-action="tournament-admin-add">
+      <label class="field">
+        <span>Admin toevoegen</span>
+        <select class="text-input" name="userId" required ${candidates.length === 0 ? "disabled" : ""}>
+          <option value="">Selecteer een account</option>
+          ${candidates.map((candidate) => `<option value="${escapeHtml(candidate.id)}">${escapeHtml(candidate.username)}</option>`).join("")}
+        </select>
+      </label>
+      <div class="field-actions">
+        <button type="submit" class="button" ${candidates.length === 0 ? "disabled" : ""}>Toevoegen</button>
+      </div>
+      ${candidates.length === 0 ? `<p class="panel-meta">Geen andere accounts beschikbaar om toe te voegen.</p>` : ""}
+    </form>
+  `;
+}
+
 function renderStageList(event: ApiEvent, tournament: ApiTournament, selectedStage: ApiStage | undefined): string {
   if (tournament.stages.length === 0) {
     return renderEmptyCard("Geen stages in dit toernooi.");
@@ -1434,20 +1512,64 @@ function renderRounds(stage: ApiStage): string {
   `;
 }
 
-function renderMatches(tournament: ApiTournament, stage: ApiStage): string {
+function renderMatches(event: ApiEvent, tournament: ApiTournament, stage: ApiStage): string {
   const matches = stage.rounds.flatMap((round) => round.matches.map((match) => ({ round, match })));
   if (matches.length === 0) {
     return renderEmptyCard("Geen matches gevonden.");
   }
+  if (stage.type === "POOL") {
+    return `
+      <div class="info-card">
+        <div class="info-card-title">Automatische poolplanning</div>
+        <div class="info-card-subtitle">Poolbouts volgen de gegenereerde ronde en arena. Alleen bracket-bouts worden hier handmatig ingepland.</div>
+      </div>
+      ${renderMatchList(tournament, stage, matches)}
+    `;
+  }
+
+  const allPhaseOptions = event.schedule?.timeSlots.flatMap((timeSlot) =>
+    timeSlot.scheduledPhases.map((phase) => ({
+        phase,
+        timeSlotId: timeSlot.id,
+        label: `${timeSlot.label} · ${phase.arena.name}`,
+      })),
+  ) ?? [];
+  const phaseOptions = allPhaseOptions.filter(({ phase }) => phase.stageId === stage.id);
+  const phaseIdsByRingAndSlot = new Map<string, Set<string>>();
+  for (const { phase, timeSlotId } of allPhaseOptions) {
+    const key = `${phase.arenaId}:${timeSlotId}`;
+    const ids = phaseIdsByRingAndSlot.get(key) ?? new Set<string>();
+    ids.add(phase.id);
+    phaseIdsByRingAndSlot.set(key, ids);
+  }
+  const nextOrderFor = (phaseId: string): number => {
+    const selected = phaseOptions.find(({ phase }) => phase.id === phaseId);
+    if (!selected) return 1;
+    const sameRingSlotIds = phaseIdsByRingAndSlot.get(`${selected.phase.arenaId}:${selected.timeSlotId}`) ?? new Set();
+    const orders = event.tournaments
+      .flatMap((item) => item.stages)
+      .flatMap((item) => item.rounds)
+      .flatMap((round) => round.matches)
+      .flatMap((match) => match.scheduledMatch && sameRingSlotIds.has(match.scheduledMatch.scheduledPhaseId)
+        ? [match.scheduledMatch.order]
+        : []);
+    return Math.max(0, ...orders) + 1;
+  };
 
   return `
+    <div class="info-card">
+      <div class="info-card-title">Bracketplanning</div>
+      <div class="info-card-subtitle">Plaats elke bout in een geplande fase en geef de volgorde op de ring binnen het tijdslot aan. De volgorde wordt gedeeld met andere fases op dezelfde ring en in hetzelfde tijdslot.</div>
+    </div>
+    ${phaseOptions.length === 0 ? renderEmptyCard("Maak voor deze stage eerst een geplande fase aan via Planning.") : ""}
     <div class="list">
       ${matches
         .map(({ round, match }) => {
           const entryA = findEntryById(tournament, match.entryAId);
           const entryB = findEntryById(tournament, match.entryBId);
           const winner = findEntryById(tournament, match.winnerEntryId);
-          const arena = findArena(stage, match.arenaId);
+          const scheduledPhase = phaseOptions.find(({ phase }) => phase.id === match.scheduledMatch?.scheduledPhaseId);
+          const arena = scheduledPhase?.phase.arena ?? findArena(stage, match.arenaId);
           return `
             <div class="info-card">
               <div class="info-card-title">Ronde ${round.roundNumber + 1}</div>
@@ -1460,7 +1582,30 @@ function renderMatches(tournament: ApiTournament, stage: ApiStage): string {
                 <span class="badge badge-muted">${escapeHtml(arena?.name ?? "Geen arena")}</span>
                 <span class="badge badge-muted">${match.scoreA ?? "?"}-${match.scoreB ?? "?"}</span>
                 <span class="badge badge-muted">${escapeHtml(entryName(winner) ?? "Geen winnaar")}</span>
+                ${scheduledPhase && match.scheduledMatch
+                  ? `<span class="badge badge-muted">${escapeHtml(scheduledPhase.label)} · volgorde ${match.scheduledMatch.order}</span>`
+                  : ""}
               </div>
+              <form class="editor-form" data-action="match-schedule">
+                <input type="hidden" name="matchId" value="${escapeHtml(match.id)}" />
+                <label class="field">
+                  <span>Geplande fase</span>
+                  <select class="text-input" name="scheduledPhaseId">
+                    <option value="">Niet ingepland</option>
+                    ${phaseOptions.map(({ phase, label }) => `
+                      <option value="${escapeHtml(phase.id)}" data-next-order="${nextOrderFor(phase.id)}" ${match.scheduledMatch?.scheduledPhaseId === phase.id ? "selected" : ""}>
+                        ${escapeHtml(label)}
+                      </option>
+                    `).join("")}
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Volgorde op ring binnen tijdslot</span>
+                  <input class="text-input" name="order" type="number" min="1" step="1" required
+                    value="${match.scheduledMatch?.order ?? nextOrderFor(phaseOptions[0]?.phase.id ?? "")}" />
+                </label>
+                <button type="submit" class="button" ${phaseOptions.length === 0 ? "disabled" : ""}>Planning opslaan</button>
+              </form>
             </div>
           `;
         })
@@ -1469,6 +1614,37 @@ function renderMatches(tournament: ApiTournament, stage: ApiStage): string {
   `;
 }
 
+function renderMatchList(
+  tournament: ApiTournament,
+  stage: ApiStage,
+  matches: Array<{ round: ApiRound; match: ApiMatch }>,
+): string {
+  return `
+    <div class="list">
+      ${matches.map(({ round, match }) => {
+        const entryA = findEntryById(tournament, match.entryAId);
+        const entryB = findEntryById(tournament, match.entryBId);
+        const winner = findEntryById(tournament, match.winnerEntryId);
+        const arena = findArena(stage, match.arenaId);
+        return `
+          <div class="info-card">
+            <div class="info-card-title">Ronde ${round.roundNumber + 1}</div>
+            <div class="info-card-subtitle">
+              ${escapeHtml(entryName(entryA) ?? "Onbekend")}
+              vs
+              ${escapeHtml(entryName(entryB) ?? "Onbekend")}
+            </div>
+            <div class="badge-row">
+              <span class="badge badge-muted">${escapeHtml(arena?.name ?? "Geen arena")}</span>
+              <span class="badge badge-muted">${match.scoreA ?? "?"}-${match.scoreB ?? "?"}</span>
+              <span class="badge badge-muted">${escapeHtml(entryName(winner) ?? "Geen winnaar")}</span>
+            </div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
 function renderTabBar(kind: "event" | "tournament" | "stage", value: string, tabs: Array<{ value: string; label: string }>): string {
   return `
     <nav class="tabs" style="--tab-count: ${tabs.length};" aria-label="${escapeHtml(kind)} tabs">
@@ -1502,7 +1678,12 @@ function selectEvent(id?: string): void {
   state.selectedEventId = id;
   state.selectedTournamentId = null;
   state.selectedStageId = null;
+  state.tournamentAdmins = [];
+  state.tournamentAdminCandidates = [];
+  state.tournamentAdminError = null;
+  state.tournamentAdminsLoading = false;
   render();
+  if (state.tournamentTab === "admins") void loadTournamentAdmins();
 }
 
 function openEditor(editor: EditorState): void {
@@ -1668,6 +1849,7 @@ function selectTournament(id?: string): void {
   state.selectedTournamentId = id;
   state.selectedStageId = null;
   render();
+  if (state.tournamentTab === "admins") void loadTournamentAdmins();
 }
 
 function selectStage(id?: string): void {
@@ -1708,6 +1890,89 @@ function setEventTab(tab: EventTab): void {
 
 function setTournamentTab(tab: TournamentTab): void {
   state.tournamentTab = tab;
+  state.tournamentAdminError = null;
+  render();
+  if (tab === "admins") void loadTournamentAdmins();
+}
+
+async function loadTournamentAdmins(): Promise<void> {
+  const tournament = currentTournament(currentEvent());
+  if (!tournament) return;
+  state.tournamentAdminsLoading = true;
+  state.tournamentAdminError = null;
+  render();
+  try {
+    const [admins, candidates] = await Promise.all([
+      api.tournamentAdmins(tournament.id),
+      api.tournamentAdminCandidates(tournament.id),
+    ]);
+    if (currentTournament(currentEvent())?.id !== tournament.id) return;
+    state.tournamentAdmins = admins;
+    state.tournamentAdminCandidates = candidates;
+  } catch (error) {
+    if (currentTournament(currentEvent())?.id !== tournament.id) return;
+    state.tournamentAdminError = toErrorMessage(error);
+    state.tournamentAdmins = [];
+    state.tournamentAdminCandidates = [];
+  } finally {
+    if (currentTournament(currentEvent())?.id === tournament.id) {
+      state.tournamentAdminsLoading = false;
+      render();
+    }
+  }
+}
+
+async function submitTournamentAdminAdd(form: HTMLFormElement): Promise<void> {
+  const tournament = currentTournament(currentEvent());
+  if (!tournament) return;
+  const userId = requireFormString(new FormData(form).get("userId"), "Account");
+  try {
+    state.tournamentAdmins = await api.addTournamentAdmin(tournament.id, userId);
+    state.tournamentAdminError = null;
+  } catch (error) {
+    state.tournamentAdminError = toErrorMessage(error);
+  }
+  render();
+}
+
+async function submitMatchSchedule(form: HTMLFormElement): Promise<void> {
+  const formData = new FormData(form);
+  const matchId = requireFormString(formData.get("matchId"), "Match");
+  const scheduledPhaseId = optionalFormString(formData.get("scheduledPhaseId"));
+  const orderValue = formData.get("order");
+  state.loading = true;
+  state.error = null;
+  render();
+
+  try {
+    if (scheduledPhaseId) {
+      const order = requireFormNumber(orderValue, "Volgorde");
+      if (order < 1) throw new Error("Volgorde moet minimaal 1 zijn.");
+      await api.scheduleMatch(matchId, {
+        scheduledPhaseId,
+        order,
+      });
+    } else {
+      await api.unscheduleMatch(matchId);
+    }
+    await bootstrap();
+  } catch (error) {
+    state.loading = false;
+    state.error = toErrorMessage(error);
+    render();
+  }
+}
+
+async function removeTournamentAdmin(userId?: string): Promise<void> {
+  const tournament = currentTournament(currentEvent());
+  if (!tournament || !userId) return;
+  try {
+    await api.removeTournamentAdmin(tournament.id, userId);
+    state.tournamentAdmins = await api.tournamentAdmins(tournament.id);
+    state.tournamentAdminError = null;
+  } catch (error) {
+    state.tournamentAdminError = toErrorMessage(error);
+  }
   render();
 }
 
@@ -2244,7 +2509,8 @@ function currentEvent(): ApiEvent | undefined {
   return state.events.find((event) => event.id === state.selectedEventId) ?? state.events[0];
 }
 
-function currentTournament(event: ApiEvent): ApiTournament | undefined {
+function currentTournament(event: ApiEvent | undefined): ApiTournament | undefined {
+  if (!event) return undefined;
   return event.tournaments.find((tournament) => tournament.id === state.selectedTournamentId) ?? event.tournaments[0];
 }
 

@@ -13,6 +13,18 @@ describe("event-planner-view", () => {
     document.body.replaceChildren();
   });
 
+  it("shows multiple stage phases for the same ring and time slot", async () => {
+    installPlannerFetchMock(true);
+    window.history.replaceState({}, "", "/planning?eventId=event-1");
+    const element = document.createElement("event-planner-view");
+    document.body.appendChild(element);
+
+    await expect.poll(() => element.shadowRoot?.querySelector(".slot-label")?.textContent).toBe("Instructie");
+    expect(element.shadowRoot?.querySelectorAll(
+      '.schedule-cell[data-arena-id="arena-1"][data-time-slot-id="slot-1"] .phase-card',
+    )).toHaveLength(2);
+  });
+
   it("shows volunteer skills and wishes on hover", async () => {
     const { eventsMock, scheduleMock } = installPlannerFetchMock();
 
@@ -172,7 +184,7 @@ describe("event-planner-view", () => {
   });
 });
 
-function installPlannerFetchMock() {
+function installPlannerFetchMock(includeSharedRingSlotPhases = false) {
   const eventsMock = installListPlannerEventsMock();
   const listEventsFetch = globalThis.fetch;
   eventsMock.restore();
@@ -661,6 +673,14 @@ function installPlannerFetchMock() {
           },
         ],
       });
+      if (includeSharedRingSlotPhases) {
+        const secondPhase = data.schedule.timeSlots[0]?.scheduledPhases.find((phase: any) => phase.id === "phase-2");
+        const arena = data.event.arenas.find((item: any) => item.id === "arena-1");
+        if (secondPhase && arena) {
+          secondPhase.arenaId = arena.id;
+          secondPhase.arena = arena;
+        }
+      }
       scheduleState = data;
       return new Response(JSON.stringify(data), {
         status: response.status,

@@ -1,3 +1,5 @@
+import { ApiSession, type AuthResponse, type AuthUser, type Session, SessionExpiredError } from "@hema/api-session";
+
 export type StageType = "POOL" | "ELIMINATION" | "SEMI_FINAL" | "FINAL";
 export type EntryKind = "FIGHTER" | "VOLUNTEER" | "BOTH";
 export type StageOfficialRole = "JUDGE" | "JURY" | "TABLE";
@@ -44,6 +46,27 @@ export interface ApiUser {
   otherVolunteer: boolean;
   skills?: ApiSkill[];
 }
+
+export interface EventAdminSessionUser {
+  id: string;
+  name: string;
+  language: "en" | "nl";
+  role: "USER" | "COMPETITION_ADMIN" | "SYSTEM_ADMIN";
+}
+
+export type EventAdminSession = Session<EventAdminSessionUser>;
+
+const SESSION_KEY = "hema-event-admin.session";
+const sessionsByBaseUrl = new Map<string, ApiSession<EventAdminSessionUser>>();
+const fallbackStorage = new Map<string, string>();
+const memoryStorage: Storage = {
+  get length() { return fallbackStorage.size; },
+  clear: () => fallbackStorage.clear(),
+  getItem: (key) => fallbackStorage.get(key) ?? null,
+  key: (index) => [...fallbackStorage.keys()][index] ?? null,
+  removeItem: (key) => fallbackStorage.delete(key),
+  setItem: (key, value) => fallbackStorage.set(key, String(value)),
+};
 
 export interface ApiSkill {
   id: string;
@@ -94,6 +117,12 @@ export interface ApiMatch {
   scoreA: number | null;
   scoreB: number | null;
   ruleset: ApiRuleset | null;
+  scheduledMatch: ApiScheduledMatch | null;
+}
+
+export interface ApiScheduledMatch {
+  scheduledPhaseId: string;
+  order: number;
 }
 
 export interface ApiMatchExchangeInput {
@@ -188,6 +217,19 @@ export interface ApiTournament {
   stages: ApiStage[];
 }
 
+export interface ApiTournamentAdmin {
+  userId: string;
+  addedByUserId: string | null;
+  createdAt: string;
+  user: { id: string; name: string; username: string };
+}
+
+export interface ApiTournamentAdminCandidate {
+  id: string;
+  name: string;
+  username: string;
+}
+
 export interface ApiEvent {
   id: string;
   eventName: string;
@@ -212,6 +254,9 @@ export interface ApiRulesetDetail extends ApiRuleset {
 }
 
 export interface ApiClient {
+  currentSession(): EventAdminSession | null;
+  login(username: string, password: string): Promise<EventAdminSession>;
+  logout(): Promise<void>;
   listUsers(): Promise<ApiUser[]>;
   createUser(body: { username: string }): Promise<ApiUser>;
   updateUser(
@@ -270,6 +315,11 @@ export interface ApiClient {
     body: { stageId?: string; arenaId?: string; timeSlotId?: string },
   ): Promise<ApiScheduledPhase>;
   deleteScheduledPhase(id: string): Promise<void>;
+  scheduleMatch(
+    id: string,
+    body: { scheduledPhaseId: string; order: number },
+  ): Promise<ApiMatch>;
+  unscheduleMatch(id: string): Promise<void>;
   createScheduledAssignment(
     scheduledPhaseId: string,
     body: { userId: string; role: ScheduleRole },
@@ -294,6 +344,10 @@ export interface ApiClient {
   listTournaments(): Promise<ApiTournament[]>;
   getTournament(id: string): Promise<ApiTournament>;
   deleteTournament(id: string): Promise<void>;
+  tournamentAdmins(id: string): Promise<ApiTournamentAdmin[]>;
+  tournamentAdminCandidates(id: string): Promise<ApiTournamentAdminCandidate[]>;
+  addTournamentAdmin(id: string, userId: string): Promise<ApiTournamentAdmin[]>;
+  removeTournamentAdmin(id: string, userId: string): Promise<void>;
   createArena(body: { eventId: string; name: string; order?: number; leftColor?: string; rightColor?: string }): Promise<ApiArena>;
   updateArena(
     id: string,
@@ -360,7 +414,28 @@ export interface ApiClient {
 const defaultBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
 export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
+  const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
+  let session = sessionsByBaseUrl.get(normalizedBaseUrl);
+  if (!session) {
+    session = new ApiSession<EventAdminSessionUser>({
+      baseUrl: normalizedBaseUrl,
+      storage: typeof localStorage === "undefined" ? memoryStorage : localStorage,
+      storageKey: SESSION_KEY,
+      toUser: (user: AuthUser) => ({
+        id: user.id,
+        name: user.name,
+        language: user.language === "nl" ? "nl" : "en",
+        role: user.role === "SYSTEM_ADMIN" || user.role === "COMPETITION_ADMIN" ? user.role : "USER",
+      }),
+    });
+    sessionsByBaseUrl.set(normalizedBaseUrl, session);
+  }
+  const apiSession = session;
   return {
+    currentSession: () => apiSession.current(),
+    login: async (username, password) =>
+      apiSession.store(await apiSession.send<AuthResponse>("POST", "/auth/login", { username, password, rememberMe: true }, false)),
+    logout: () => apiSession.logout(),
     listUsers: () => requestJson<ApiUser[]>(baseUrl, "/users"),
     createUser: (body) => requestJson<ApiUser>(baseUrl, "/users", { method: "POST", body }),
     updateUser: (id, body) => requestJson<ApiUser>(baseUrl, `/users/${id}`, { method: "PATCH", body }),
@@ -412,6 +487,10 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
       }),
     deleteScheduledPhase: (id) =>
       requestJson<void>(baseUrl, `/scheduled-phases/${id}`, { method: "DELETE" }),
+    scheduleMatch: (id, body) =>
+      requestJson<ApiMatch>(baseUrl, `/matches/${id}/schedule`, { method: "PUT", body }),
+    unscheduleMatch: (id) =>
+      requestJson<void>(baseUrl, `/matches/${id}/schedule`, { method: "DELETE" }),
     createScheduledAssignment: (scheduledPhaseId, body) =>
       requestJson<ApiScheduledAssignment>(baseUrl, `/scheduled-phases/${scheduledPhaseId}/assignments`, {
         method: "POST",
@@ -425,6 +504,17 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
     listTournaments: () => requestJson<ApiTournament[]>(baseUrl, "/tournaments"),
     getTournament: (id) => requestJson<ApiTournament>(baseUrl, `/tournaments/${id}`),
     deleteTournament: (id) => requestJson<void>(baseUrl, `/tournaments/${id}`, { method: "DELETE" }),
+    tournamentAdmins: async (id) =>
+      (await requestJson<{ admins: ApiTournamentAdmin[] }>(baseUrl, `/tournaments/${id}/admins`)).admins,
+    tournamentAdminCandidates: async (id) =>
+      (await requestJson<{ candidates: ApiTournamentAdminCandidate[] }>(baseUrl, `/tournaments/${id}/admin-candidates`)).candidates,
+    addTournamentAdmin: async (id, userId) =>
+      (await requestJson<{ admins: ApiTournamentAdmin[] }>(baseUrl, `/tournaments/${id}/admins`, {
+        method: "POST",
+        body: { userId },
+      })).admins,
+    removeTournamentAdmin: (id, userId) =>
+      requestJson<void>(baseUrl, `/tournaments/${id}/admins/${encodeURIComponent(userId)}`, { method: "DELETE" }),
     createArena: (body) => requestJson<ApiArena>(baseUrl, "/arenas", { method: "POST", body }),
     updateArena: (id, body) => requestJson<ApiArena>(baseUrl, `/arenas/${id}`, { method: "PATCH", body }),
     listArenas: () => requestJson<ApiArena[]>(baseUrl, "/arenas"),
@@ -459,6 +549,18 @@ async function requestJson<T>(
   path: string,
   options?: { method?: string; body?: unknown },
 ): Promise<T> {
+  const session = sessionsByBaseUrl.get(baseUrl.replace(/\/$/, ""));
+  if (session) {
+    try {
+      return await session.send<T>(options?.method ?? "GET", path, options?.body);
+    } catch (error) {
+      if (error instanceof SessionExpiredError && typeof window !== "undefined") {
+        window.dispatchEvent(new Event("event-admin-session-expired"));
+      }
+      throw error;
+    }
+  }
+
   const requestInit: RequestInit = {
     method: options?.method ?? "GET",
     headers: {

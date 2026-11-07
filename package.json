@@ -19,6 +19,8 @@
     "competition-admin:build": "npm run build --workspace @hema/competition-admin",
     "competition-admin:typecheck": "npm run typecheck --workspace @hema/competition-admin",
     "build": "npm run build --workspaces --if-present",
+    "build:deployment": "node scripts/build-deployment.mjs",
+    "package:windows": "node scripts/package-windows.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "storybook": "npm run storybook --workspace @hema/ui",
@@ -35,4 +37,3 @@
     "@types/node": "^26.1.2"
   }
 }
-

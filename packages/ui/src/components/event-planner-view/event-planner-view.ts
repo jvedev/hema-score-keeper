@@ -639,10 +639,10 @@ export class EventPlannerView extends BaseComponent {
   }
 
   private renderScheduleCell(arenaId: string, slot: ApiScheduleTimeSlot): string {
-    const placement = slot.scheduledPhases.find((candidate) => candidate.arenaId === arenaId);
+    const placements = slot.scheduledPhases.filter((candidate) => candidate.arenaId === arenaId);
     return `
       <div class="schedule-cell${slot.isBreak ? " break-cell" : ""}" data-arena-id="${escapeHtml(arenaId)}" data-time-slot-id="${escapeHtml(slot.id)}" data-break="${slot.isBreak}">
-        ${placement ? `
+        ${placements.length > 0 ? placements.map((placement) => `
           <article class="phase-card" draggable="${this.#mode === "stages"}" data-placement-id="${escapeHtml(placement.id)}" style="--tournament-color: ${escapeHtml(placement.stage.tournament.color)}">
             <span>${escapeHtml(placement.stage.tournament.name)}</span>
             <strong>${escapeHtml(placement.stage.name ?? stageLabel(placement.stage.type))}</strong>
@@ -655,7 +655,7 @@ export class EventPlannerView extends BaseComponent {
                 ? this.renderAssignmentDropzones(placement, "fighters")
                 : ""}
           </article>
-        ` : slot.isBreak ? "<span>Break</span>" : "<span class=\"drop-hint\">Drag a stage here</span>"}
+        `).join("") : slot.isBreak ? "<span>Break</span>" : "<span class=\"drop-hint\">Drag a stage here</span>"}
       </div>
     `;
   }

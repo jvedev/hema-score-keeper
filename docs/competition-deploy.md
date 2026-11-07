@@ -1,9 +1,126 @@
 # Competition deploy
 
-The participant app (`apps/competition`) is a static site on GitHub Pages at
-`<origin>/hema-score-keeper/competition/`. It has no server of its own: it talks to the
-backend API (`apps/backend`). Google Sheets, Apps Script and Google sign-in are no longer
-used (phase 7).
+The five web apps and backend can run from one codebase in two ways: a Windows LAN package
+for events, or a Node.js site on Alwaysdata. The production build uses the same fixed app
+paths and same-origin API (`/api/v1`) in both places. The participant app can also be hosted
+separately on GitHub Pages as described below.
+
+## One-origin deployment: Windows LAN or Alwaysdata
+
+| App | Path |
+| --- | --- |
+| Competition / fighter app | `/hema-score-keeper/competition/` |
+| Competition administration | `/competition-admin/` |
+| Score keeper and scoreboard | `/score-keeper/` |
+| Event administration | `/event-admin/` |
+| Tournament administration | `/tournament-admin/` |
+| Backend API | `/api/v1/` |
+
+Build all production apps and verify their roots, assets and deep links with
+`npm run build:deployment`. The score-keeper mock API is disabled for this build.
+
+### Windows venue package
+
+On Windows x64, with Node.js >=22, npm and the .NET 10 SDK installed, run:
+
+```text
+npm run package:windows
+```
+
+The command builds the apps, packages a matching Windows Node runtime and native SQLite
+dependencies, builds the self-contained launcher, and smoke-tests the packaged server. The
+result is a versioned folder under `artifacts/windows/`; distribute or copy the complete
+folder, not just the executable. Start `HemaScoreKeeper.Launcher.exe`. It serves all five
+apps and the API on port 3001, opens the local root page, and prints LAN addresses for phones
+on the same Wi-Fi. Set `HEMASCORE_PORT` before launch to use another port.
+
+Allow inbound TCP on that port only for the Windows **Private** network profile if prompted
+or if phones cannot connect. Do not configure public router port forwarding. This is HTTP on
+the LAN: ordinary app/API use works, but service workers, installable PWA behavior and Web
+Push requiring a secure context are not available. Real-phone and push acceptance tests
+remain deferred.
+
+Persistent files and generated `AUTH_SECRET` are stored in
+`%LOCALAPPDATA%\HemaScoreKeeper`, separately from the versioned app package. Back up this
+directory; do not remove it when updating the package. The launcher writes `server.log`
+there. The bundled `README.txt` gives the command to create the first system administrator;
+the password is requested interactively and is not included in the command line.
+Set `HEMASCORE_DATA_DIR` before launch to use a different persistent data directory; keep the
+same value between starts and backups.
+
+The package has passed automated checks for app roots, deep links, API availability, and
+preserving a disposable database and generated secret across a launcher restart. For the
+manual desktop check, use a throwaway data directory (do not point this test at tournament
+data). Open **Command Prompt** (`cmd.exe`), change directory to the package folder, and run:
+
+```text
+set "HEMASCORE_DATA_DIR=%TEMP%\HemaScoreKeeper-desktop-check"
+HemaScoreKeeper.Launcher.exe
+```
+
+In a second Command Prompt window, change to the same package folder and create the test admin:
+
+```text
+set "HEMASCORE_DATA_DIR=%TEMP%\HemaScoreKeeper-desktop-check"
+CreateAdmin.cmd --username desktop-test --name "Desktop Test"
+```
+
+The command prompts for a password. Then open `http://127.0.0.1:3001/` on the PC, sign in
+to the admin app, and verify that the apps load and the API is reachable. Close the launcher
+with Ctrl+C when finished. LAN phone testing remains deferred until the planned final
+device-testing phase.
+
+### Alwaysdata
+
+Use an Alwaysdata Node.js site (or User Program) with Node.js >=22 and a persistent writable
+data directory. Deploy the repository to the account, then from its repository root:
+
+```text
+npm ci
+npm run build:deployment
+npm prune --omit=dev
+```
+
+Configure the site's start command as `npm run start --workspace @hema/backend` with the
+repository root as its working directory. The server binds to Alwaysdata's provided `IP`
+(or `HOST`) and `PORT`. Configure these environment variables in the site's environment,
+not in committed files:
+
+```text
+APP_DATA_DIR=/home/<account>/data/hema-score-keeper
+DATABASE_URL=file:./dev.db
+LIVE_DATA_DIR=/home/<account>/data/hema-score-keeper/live
+AUTH_SECRET=<long-random-secret>
+```
+
+Create the data directory first and ensure the site user can write to it. Keep the same
+`APP_DATA_DIR`, `DATABASE_URL`, and `LIVE_DATA_DIR` across deployments so the SQLite database
+and live workbook files survive release replacement. Set a stable random `AUTH_SECRET`
+before the first use; changing it signs users out. Optional Google Sheets credentials and
+Web Push VAPID values are described in the environment example, but are not required for
+local scoring.
+
+Run the first administrator command from the repository root, with the same environment
+variables as the server:
+
+```text
+npm run create-admin --workspace @hema/backend -- --username <username> --name "<Full name>"
+```
+
+It asks for a password interactively. Confirm that the actual Alwaysdata account supports
+Node >=22, installs the native `better-sqlite3` dependency, and permits the existing
+background workers within its resource limits. Those account-specific checks cannot be
+verified from this repository. Open the site's HTTPS root page to reach all five apps.
+
+The Windows package is built on Windows because `better-sqlite3` contains native code;
+Alwaysdata installs Linux-native dependencies on its own platform. Source, app paths, and
+application behavior are otherwise shared.
+
+## GitHub Pages: participant app only
+
+The participant app (`apps/competition`) is also published as a static site at
+`<origin>/hema-score-keeper/competition/`. It has no server of its own and needs a separately
+hosted backend API. Google Sheets, Apps Script and Google sign-in are no longer used (phase 7).
 
 ## GitHub Pages
 
@@ -68,15 +185,12 @@ API address is `VITE_COMPETITION_API_URL` (default `/api/v1`). Both are listed i
 ## Admin app: ring links (Tournaments screen)
 
 The Tournaments screen builds each ring link as `<score-keeper app>/ring/<token>` (with a QR
-code). It finds the score-keeper app through `VITE_SCORE_KEEPER_URL` (no trailing slash, e.g.
-`https://keep.example.org`). The score-keeper builds without a Vite `base`, so its ring page
-is at the root of its site (`/ring/<token>`), and the host must serve `index.html` for that
-path.
-
-**Production must set `VITE_SCORE_KEEPER_URL` at build time.** The score-keeper is hosted
-apart from the admin app, so the admin app's own origin (the fallback in a build) gives wrong
-links. In dev it defaults to `http://localhost:5180`, where `.claude/launch.json` runs the
-score-keeper. It is listed in `apps/competition-admin/.env.example`.
+code). It finds The score-keeper app through `VITE_SCORE_KEEPER_URL` (no trailing slash, e.g.
+`https://<site>/score-keeper`). Its ring page is under `/score-keeper/ring/<token>`. When all
+apps share one origin, the configured same-origin path works for local Windows and
+Alwaysdata. If the score-keeper is hosted separately, set the full URL at build time. In dev
+it defaults to `http://localhost:5180`, where `.claude/launch.json` runs the score-keeper.
+It is listed in `apps/competition-admin/.env.example`.
 
 ## On-deck push notifications
 

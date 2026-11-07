@@ -1,8 +1,8 @@
 import { defineConfig } from "vite";
+import { appBase } from "../../deployment/vite-app-base.mjs";
 
 export default defineConfig({
-  // Published at <origin>/hema-score-keeper/competition/; invite links are <base>join/<code>.
-  base: "/hema-score-keeper/competition/",
+  base: appBase("competition"),
   optimizeDeps: {
     exclude: ["@hema/ui"],
   },

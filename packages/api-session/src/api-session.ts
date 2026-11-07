@@ -161,6 +161,9 @@ export class ApiSession<User> {
       const payload = (typeof parsed === "object" && parsed !== null ? parsed : {}) as { error?: string; details?: unknown };
       throw new ApiError(payload.error ?? response.statusText, response.status, payload.details, payload);
     }
+    if (response.status === 204) {
+      return undefined as T;
+    }
     return (options.responseType === "blob" ? await response.blob() : await response.json()) as T;
   }
 

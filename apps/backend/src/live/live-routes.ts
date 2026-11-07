@@ -17,6 +17,7 @@ import { enqueueSync } from "./live-store.js";
 import { activeKeeperOf, publicRing } from "./ring-keeper.js";
 import { withTournamentLock } from "./tournament-lock.js";
 import { registerPushRoutes } from "./push-notifications.js";
+import { isEventTournamentAdmin } from "../tournaments/access.js";
 
 const IMPORT_BODY_LIMIT = 20 * 1024 * 1024;
 
@@ -539,10 +540,16 @@ function fighterNameKey(value: string): string {
 export async function requireTournamentAdmin(database: Kysely<BackendDatabase>, tournamentId: string, user: AccessUser): Promise<void> {
   const tournament = await database
     .selectFrom("LiveTournament")
-    .select("createdByUserId")
+    .select(["createdByUserId", "mode", "sourceTournamentId"])
     .where("id", "=", tournamentId)
     .executeTakeFirst();
   if (!tournament) throw new HttpError(404, "Tournament not found.");
+  if (tournament.mode === "DATABASE" && tournament.sourceTournamentId !== null) {
+    if (!(await isEventTournamentAdmin(database, tournament.sourceTournamentId, user))) {
+      throw new HttpError(403, "Tournament admin access required.");
+    }
+    return;
+  }
   if (user.role !== "SYSTEM_ADMIN" && tournament.createdByUserId !== user.id) {
     throw new HttpError(403, "Only the creator of the tournament or a system admin can do this.");
   }

@@ -5,7 +5,8 @@ type NativeDatabase = InstanceType<typeof BetterSqlite3>;
 
 interface SchemaMigration {
   name: string;
-  apply(database: NativeDatabase): void;
+  foreignKeysOff?: boolean;
+  apply(database: NativeDatabase): boolean | void;
 }
 
 const LIFECYCLE_STATUSES = ["DRAFT", "REGISTRATION_OPEN", "RUNNING", "CLOSED", "ARCHIVED"];
@@ -411,6 +412,82 @@ const MIGRATIONS: readonly SchemaMigration[] = [
       database.exec("UPDATE LiveTournamentFighter SET ambiguous = 1");
     },
   },
+  {
+    name: "2026-11-06-database-mode-tournament-scoring",
+    foreignKeysOff: true,
+    apply(database) {
+      if (!hasTable(database, "Tournament")) {
+        return false;
+      }
+      database.exec(`
+        CREATE TABLE LiveTournament_new (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          mode TEXT NOT NULL CHECK (mode IN ('SHEET', 'DATABASE')),
+          layoutVersion TEXT NOT NULL,
+          googleSpreadsheetId TEXT,
+          createdByUserId TEXT NOT NULL REFERENCES User(id),
+          createdAt TEXT NOT NULL,
+          ruleset TEXT
+        );
+        INSERT INTO LiveTournament_new (
+          id, name, mode, layoutVersion, googleSpreadsheetId, createdByUserId, createdAt, ruleset
+        )
+        SELECT
+          id, name, mode, layoutVersion, googleSpreadsheetId, createdByUserId, createdAt, ruleset
+        FROM LiveTournament;
+        DROP TABLE LiveTournament;
+        ALTER TABLE LiveTournament_new RENAME TO LiveTournament;
+      `);
+      addColumn(database, "Tournament", "createdByUserId", "TEXT REFERENCES User(id) ON DELETE SET NULL");
+      addColumn(database, "LiveTournament", "sourceTournamentId", "TEXT REFERENCES Tournament(id) ON DELETE CASCADE");
+      addColumn(database, "LiveRing", "sourceArenaId", "TEXT REFERENCES Arena(id) ON DELETE SET NULL");
+      addColumn(database, "LiveBout", "sourceMatchId", "TEXT REFERENCES Match(id) ON DELETE RESTRICT");
+      addColumn(database, "LiveBout", "scheduledPhaseId", "TEXT REFERENCES ScheduledPhase(id) ON DELETE SET NULL");
+      database.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_liveTournament_source
+          ON LiveTournament(sourceTournamentId) WHERE sourceTournamentId IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_liveRing_sourceArena
+          ON LiveRing(tournamentId, sourceArenaId) WHERE sourceArenaId IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_liveBout_sourceMatch
+          ON LiveBout(sourceMatchId) WHERE sourceMatchId IS NOT NULL;
+        CREATE TABLE IF NOT EXISTS TournamentAdmin (
+          tournamentId TEXT NOT NULL REFERENCES Tournament(id) ON DELETE CASCADE,
+          userId TEXT NOT NULL REFERENCES User(id) ON DELETE CASCADE,
+          addedByUserId TEXT REFERENCES User(id) ON DELETE SET NULL,
+          createdAt TEXT NOT NULL,
+          PRIMARY KEY (tournamentId, userId)
+        );
+        CREATE INDEX IF NOT EXISTS idx_tournamentAdmin_user
+          ON TournamentAdmin(userId);
+        CREATE TABLE IF NOT EXISTS ScheduledMatch (
+          matchId TEXT PRIMARY KEY REFERENCES Match(id) ON DELETE CASCADE,
+          scheduledPhaseId TEXT NOT NULL REFERENCES ScheduledPhase(id) ON DELETE CASCADE,
+          "order" INTEGER NOT NULL CHECK ("order" > 0)
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_scheduledMatch_phase_order
+          ON ScheduledMatch(scheduledPhaseId, "order");
+        CREATE INDEX IF NOT EXISTS idx_scheduledMatch_phase
+          ON ScheduledMatch(scheduledPhaseId);
+        CREATE TABLE IF NOT EXISTS LiveBoutRevision (
+          id TEXT PRIMARY KEY,
+          boutId TEXT NOT NULL REFERENCES LiveBout(id) ON DELETE CASCADE,
+          revision INTEGER NOT NULL CHECK (revision > 0),
+          boutStateJson TEXT NOT NULL,
+          exchangesJson TEXT NOT NULL,
+          replacedAt TEXT NOT NULL,
+          replacedByUserId TEXT NOT NULL REFERENCES User(id),
+          UNIQUE (boutId, revision)
+        );
+      `);
+    },
+  },
+  {
+    name: "2026-11-07-shared-ring-slot-phases",
+    apply(database) {
+      database.exec('DROP INDEX IF EXISTS "ScheduledPhase_arenaId_timeSlotId_key"');
+    },
+  },
 ];
 
 export function applySchemaMigrations(database: NativeDatabase): void {
@@ -429,11 +506,37 @@ export function applySchemaMigrations(database: NativeDatabase): void {
     if (applied.has(migration.name)) {
       continue;
     }
-    database.transaction(() => {
-      migration.apply(database);
-      record.run(migration.name, new Date().toISOString());
-    })();
+    if (migration.foreignKeysOff) {
+      database.pragma("foreign_keys = OFF");
+      try {
+        database.transaction(() => {
+          if (migration.apply(database) === false) {
+            return;
+          }
+          const violations = database.pragma("foreign_key_check") as Array<{ table: string; rowid: number }>;
+          if (violations.length > 0) {
+            throw new Error(`Migration "${migration.name}" would leave foreign-key violations.`);
+          }
+          record.run(migration.name, new Date().toISOString());
+        })();
+      } finally {
+        database.pragma("foreign_keys = ON");
+      }
+    } else {
+      database.transaction(() => {
+        if (migration.apply(database) === false) {
+          return;
+        }
+        record.run(migration.name, new Date().toISOString());
+      })();
+    }
   }
+}
+
+function hasTable(database: NativeDatabase, table: string): boolean {
+  return database
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(table) !== undefined;
 }
 
 function addColumn(database: NativeDatabase, table: string, column: string, definition: string): void {

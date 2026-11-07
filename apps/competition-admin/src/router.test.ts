@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { href, parseRoute, type Route } from "./router";
+import { APP_BASE, href, parseRoute, type Route } from "./router";
 
 const cases: Array<[string, Route]> = [
   ["/needs-you", { name: "needs-you" }],
@@ -15,24 +15,24 @@ const cases: Array<[string, Route]> = [
 
 describe("router", () => {
   it.each(cases)("parses %s", (path, route) => {
-    expect(parseRoute(path)).toEqual(route);
+    expect(parseRoute(`${APP_BASE}${path.replace(/^\/+/, "")}`)).toEqual(route);
   });
 
   it.each(cases)("writes %s back", (path, route) => {
-    expect(href(route)).toBe(path);
+    expect(href(route)).toBe(`${APP_BASE}${path.replace(/^\/+/, "")}`);
   });
 
   it("ignores a trailing slash", () => {
-    expect(parseRoute("/competitions/c1/")).toEqual({ name: "competition", competitionId: "c1" });
+    expect(parseRoute(`${APP_BASE}competitions/c1/`)).toEqual({ name: "competition", competitionId: "c1" });
   });
 
   it("encodes ids", () => {
-    expect(href({ name: "competition", competitionId: "a b/c" })).toBe("/competitions/a%20b%2Fc");
-    expect(parseRoute("/competitions/a%20b%2Fc")).toEqual({ name: "competition", competitionId: "a b/c" });
+    expect(href({ name: "competition", competitionId: "a b/c" })).toBe(`${APP_BASE}competitions/a%20b%2Fc`);
+    expect(parseRoute(`${APP_BASE}competitions/a%20b%2Fc`)).toEqual({ name: "competition", competitionId: "a b/c" });
   });
 
   it("sends anything unknown to the start", () => {
-    expect(parseRoute("/nonsense/here")).toEqual({ name: "start" });
-    expect(parseRoute("/")).toEqual({ name: "start" });
+    expect(parseRoute(`${APP_BASE}nonsense/here`)).toEqual({ name: "start" });
+    expect(parseRoute(APP_BASE)).toEqual({ name: "start" });
   });
 });

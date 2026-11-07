@@ -1,5 +1,6 @@
 import path from "node:path";
-import { APP_ROOT } from "./app-root.js";
+import { mkdirSync } from "node:fs";
+import { appDataDir } from "./app-root.js";
 import BetterSqlite3 from "better-sqlite3";
 import { Kysely, SqliteDialect, type Generated, type Transaction } from "kysely";
 import type { EntryKind, ScheduleRole, StageOfficialRole, StageType } from "./api-types.js";
@@ -93,11 +94,19 @@ interface ScheduleTimeSlotTable {
 interface TournamentTable {
   id: string;
   eventId: string;
+  createdByUserId: Generated<string | null>;
   name: string;
   rulesetId: string | null;
   currentStageId: string | null;
   order: number;
   color: string;
+}
+
+interface TournamentAdminTable {
+  tournamentId: string;
+  userId: string;
+  addedByUserId: string | null;
+  createdAt: string;
 }
 
 interface EntryTable {
@@ -173,6 +182,12 @@ interface MatchTable {
   scoreA: number | null;
   scoreB: number | null;
   rulesetId: string | null;
+}
+
+interface ScheduledMatchTable {
+  matchId: string;
+  scheduledPhaseId: string;
+  order: number;
 }
 
 interface ExchangeTable {
@@ -304,7 +319,8 @@ export type LiveTarget = "LOCAL" | "GOOGLE";
 interface LiveTournamentTable {
   id: string;
   name: string;
-  mode: "SHEET";
+  mode: "SHEET" | "DATABASE";
+  sourceTournamentId: Generated<string | null>;
   layoutVersion: string;
   googleSpreadsheetId: string | null;
   createdByUserId: string;
@@ -316,6 +332,7 @@ interface LiveTournamentTable {
 interface LiveRingTable {
   id: string;
   tournamentId: string;
+  sourceArenaId: Generated<string | null>;
   name: string;
   order: number;
   /** Secret part of the ring link (24 random bytes, base64url). Set when the ring is created. */
@@ -334,6 +351,8 @@ interface LiveRingTable {
 interface LiveBoutTable {
   id: string;
   tournamentId: string;
+  sourceMatchId: Generated<string | null>;
+  scheduledPhaseId: Generated<string | null>;
   ringId: string;
   order: number;
   label: string;
@@ -360,6 +379,16 @@ interface LiveBoutTable {
   periodStartedAt: string | null;
   warningsLeft: Generated<number>;
   warningsRight: Generated<number>;
+}
+
+interface LiveBoutRevisionTable {
+  id: string;
+  boutId: string;
+  revision: number;
+  boutStateJson: string;
+  exchangesJson: string;
+  replacedAt: string;
+  replacedByUserId: string;
 }
 
 interface LiveTournamentFighterTable {
@@ -446,6 +475,7 @@ export interface BackendDatabase {
   EventSchedule: EventScheduleTable;
   ScheduleTimeSlot: ScheduleTimeSlotTable;
   Tournament: TournamentTable;
+  TournamentAdmin: TournamentAdminTable;
   Entry: EntryTable;
   Arena: ArenaTable;
   Stage: StageTable;
@@ -455,6 +485,7 @@ export interface BackendDatabase {
   StageOfficial: StageOfficialTable;
   Round: RoundTable;
   Match: MatchTable;
+  ScheduledMatch: ScheduledMatchTable;
   Ruleset: {
     id: string;
     eventId: string;
@@ -477,6 +508,7 @@ export interface BackendDatabase {
   LiveTournamentFighter: LiveTournamentFighterTable;
   LiveRing: LiveRingTable;
   LiveBout: LiveBoutTable;
+  LiveBoutRevision: LiveBoutRevisionTable;
   LiveExchange: LiveExchangeTable;
   LiveSyncJob: LiveSyncJobTable;
   LiveSyncState: LiveSyncStateTable;
@@ -486,12 +518,15 @@ export interface BackendDatabase {
 
 export type DbExecutor = Kysely<BackendDatabase> | Transaction<BackendDatabase>;
 
-export function resolveDatabasePath(databaseUrl = process.env.DATABASE_URL ?? "file:./dev.db"): string {
+export function resolveDatabasePath(
+  databaseUrl = process.env.DATABASE_URL ?? "file:./dev.db",
+  env: NodeJS.ProcessEnv = process.env,
+): string {
   if (!databaseUrl.startsWith("file:")) {
     return databaseUrl;
   }
 
-  const databaseDir = path.join(APP_ROOT, "data");
+  const databaseDir = appDataDir(env);
   const filePath = databaseUrl.slice("file:".length);
 
   if (filePath === ":memory:") {
@@ -502,7 +537,15 @@ export function resolveDatabasePath(databaseUrl = process.env.DATABASE_URL ?? "f
 }
 
 export function createDatabase(databaseUrl = process.env.DATABASE_URL ?? "file:./dev.db"): Kysely<BackendDatabase> {
-  const native = new BetterSqlite3(resolveDatabasePath(databaseUrl));
+  const databasePath = resolveDatabasePath(databaseUrl);
+  if (databasePath !== ":memory:") {
+    mkdirSync(path.dirname(databasePath), { recursive: true });
+  }
+  const native = new BetterSqlite3(databasePath);
+  return initializeDatabase(native);
+}
+
+export function initializeDatabase(native: BetterSqlite3.Database): Kysely<BackendDatabase> {
   native.pragma("foreign_keys = ON");
   initializeCompetitionDatabase(native);
   applySchemaMigrations(native);

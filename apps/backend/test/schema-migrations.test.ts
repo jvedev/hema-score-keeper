@@ -82,7 +82,28 @@ describe("applySchemaMigrations", () => {
     expect(() => applySchemaMigrations(database)).not.toThrow();
     expect(adminRows()).toHaveLength(admins);
     expect(database.prepare("SELECT COUNT(*) AS count FROM SchemaMigration").get()).toEqual({ count: applied });
-    expect(applied).toBe(21);
+    expect(applied).toBe(22);
+  });
+
+  it("allows multiple stage phases on the same ring and time slot", () => {
+    database.exec(`
+      CREATE TABLE ScheduledPhase (
+        id TEXT PRIMARY KEY,
+        stageId TEXT NOT NULL,
+        arenaId TEXT NOT NULL,
+        timeSlotId TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX ScheduledPhase_arenaId_timeSlotId_key
+        ON ScheduledPhase(arenaId, timeSlotId);
+    `);
+
+    applySchemaMigrations(database);
+
+    const index = database
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'ScheduledPhase_arenaId_timeSlotId_key'")
+      .get();
+    expect(index).toBeUndefined();
+    expect(() => database.prepare("INSERT INTO ScheduledPhase VALUES ('phase-1', 'stage-1', 'ring-1', 'slot-1'), ('phase-2', 'stage-2', 'ring-1', 'slot-1')").run()).not.toThrow();
   });
 });
 

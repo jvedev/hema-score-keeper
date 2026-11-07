@@ -124,6 +124,7 @@ let eventsLoadPromise: Promise<void> | undefined;
 let eventsLoaded = false;
 const completedMatchIds = new Set<string>();
 let googleSheetsSelection: GoogleSheetsSelection = {};
+const APP_BASE = normalizeBase(import.meta.env.BASE_URL ?? "/");
 /** Which mode the fight screen belongs to: event fights save to the event, competition bouts to /bouts, ring bouts go live. */
 let fightMode: "event" | "competition" | "ring" = "event";
 
@@ -1069,11 +1070,7 @@ function syncLauncherUrl(replaceUrl = false): void {
   url.searchParams.delete("arenaId");
   url.searchParams.delete("matchId");
   const nextUrl = `${url.pathname}${url.search}${url.hash}`;
-  if (replaceUrl) {
-    window.history.replaceState({}, "", nextUrl);
-  } else {
-    window.history.pushState({}, "", nextUrl);
-  }
+  writeAppUrl(nextUrl, replaceUrl);
 }
 
 function syncEventUrl(replaceUrl = false): void {
@@ -1091,11 +1088,7 @@ function syncEventUrl(replaceUrl = false): void {
   }
   url.searchParams.delete("matchId");
   const nextUrl = `${url.pathname}${url.search}${url.hash}`;
-  if (replaceUrl) {
-    window.history.replaceState({}, "", nextUrl);
-  } else {
-    window.history.pushState({}, "", nextUrl);
-  }
+  writeAppUrl(nextUrl, replaceUrl);
 }
 
 function syncStandaloneUrl(replaceUrl = false): void {
@@ -1116,11 +1109,7 @@ function syncGoogleSheetsUrl(replaceUrl = false): void {
     url.searchParams.delete("destId");
   }
   const nextUrl = `${url.pathname}${url.search}${url.hash}`;
-  if (replaceUrl) {
-    window.history.replaceState({}, "", nextUrl);
-  } else {
-    window.history.pushState({}, "", nextUrl);
-  }
+  writeAppUrl(nextUrl, replaceUrl);
 }
 
 function applyGoogleSheetsLocationSelection(): void {
@@ -1195,11 +1184,7 @@ function syncModeUrl(pathname: string, replaceUrl: boolean): void {
   url.searchParams.delete("arenaId");
   url.searchParams.delete("matchId");
   const nextUrl = `${url.pathname}${url.search}${url.hash}`;
-  if (replaceUrl) {
-    window.history.replaceState({}, "", nextUrl);
-  } else {
-    window.history.pushState({}, "", nextUrl);
-  }
+  writeAppUrl(nextUrl, replaceUrl);
 }
 
 function syncFightUrl(matchId: string, replaceUrl: boolean): void {
@@ -1217,11 +1202,7 @@ function syncFightUrl(matchId: string, replaceUrl: boolean): void {
   }
   url.searchParams.set("matchId", matchId);
   const nextUrl = `${url.pathname}${url.search}${url.hash}`;
-  if (replaceUrl) {
-    window.history.replaceState({}, "", nextUrl);
-  } else {
-    window.history.pushState({}, "", nextUrl);
-  }
+  writeAppUrl(nextUrl, replaceUrl);
 }
 
 function applyLocationSelection(): void {
@@ -1406,5 +1387,30 @@ function showFightScreen(): void {
 }
 
 function normalizePath(pathname: string): string {
-  return pathname.replace(/\/+$/, "") || "/";
+  const normalized = pathname.replace(/\/+$/, "") || "/";
+  if (APP_BASE === "/") return normalized;
+  if (normalized === APP_BASE.slice(0, -1)) return "/";
+  if (normalized.startsWith(APP_BASE)) {
+    return `/${normalized.slice(APP_BASE.length)}`.replace(/\/+$/, "") || "/";
+  }
+  return normalized;
+}
+
+function writeAppUrl(pathAndQuery: string, replaceUrl: boolean): void {
+  const url = new URL(pathAndQuery, window.location.origin);
+  const pathname = url.pathname;
+  url.pathname = APP_BASE === "/" || pathname.startsWith(APP_BASE)
+    ? pathname
+    : `${APP_BASE}${pathname.replace(/^\/+/, "")}`;
+  const target = `${url.pathname}${url.search}${url.hash}`;
+  if (replaceUrl) {
+    window.history.replaceState({}, "", target);
+  } else {
+    window.history.pushState({}, "", target);
+  }
+}
+
+function normalizeBase(base: string): string {
+  const withLeadingSlash = base.startsWith("/") ? base : `/${base}`;
+  return withLeadingSlash.endsWith("/") ? withLeadingSlash : `${withLeadingSlash}/`;
 }

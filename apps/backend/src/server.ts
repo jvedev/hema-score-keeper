@@ -13,19 +13,21 @@ import {
   verifyPassword,
 } from "./auth.js";
 import { requireAdminUser, requirePathParam, resolveAccessUser, type AccessUser } from "./access-user.js";
-import { registerBoutRoutes } from "./bouts/bout-routes.js";
+import { registerBoutRoutes, requireUser } from "./bouts/bout-routes.js";
 import { competitionBoutHistory, competitionStandings, standingsForViewer } from "./bouts/standings.js";
 import { registerBoutRoutes as registerLiveBoutRoutes } from "./live/bout-routes.js";
 import { registerLiveRoutes } from "./live/live-routes.js";
 import { registerRingRoutes } from "./live/ring-routes.js";
 import { startSyncWorker } from "./live/sync-worker.js";
 import { startPushWorker } from "./live/push-notifications.js";
+import { appPaths, productionAppMounts, registerStaticApps, type StaticAppMount } from "./static-apps.js";
 import { registerClubRoutes } from "./club-routes.js";
 import { registerPeopleRoutes } from "./people-routes.js";
 import { competitionAccessFilter, competitionAdminRole, requireCompetitionAccess } from "./competitions/access.js";
 import { registerCompetitionAdminRoutes } from "./competitions/admin-routes.js";
 import { registerParticipantRoutes } from "./competitions/participant-routes.js";
 import { withInviteCodeForAdmins } from "./competitions/signup-routes.js";
+import { requireEventTournamentAdmin } from "./tournaments/access.js";
 import { readSheetValues, writeSheetValues } from "./google-sheets.js";
 import {
   ensureJsonValue,
@@ -80,6 +82,7 @@ import {
   syncStageArtifacts,
   toEventMutationResult,
   validateScheduledPhase,
+  validateScheduledMatch,
   loadEvents,
   loadUsers,
 } from "./read-model.js";
@@ -109,6 +112,8 @@ function requireAccountRole(value: unknown, label: string): "USER" | "COMPETITIO
 export interface AppOptions {
   /** Clock used for time-based rules (objection window); tests inject a controllable one. */
   now?: () => Date;
+  /** Production SPA bundles to serve under their path prefixes. */
+  staticApps?: readonly StaticAppMount[];
 }
 
 declare module "fastify" {
@@ -155,11 +160,31 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
     reply.status(404).send({ error: "Not Found" });
   });
 
+  if (options.staticApps) {
+    registerStaticApps(app, options.staticApps);
+  }
+
   app.addHook("onClose", async () => {
     await database.destroy();
   });
 
   app.get("/health", async () => ({ ok: true }));
+
+  app.get("/", async (_request, reply) => {
+    const labels: Record<string, string> = {
+      competition: "Competition / fighter app",
+      "competition-admin": "Competition administration",
+      "score-keeper": "Score keeper and scoreboard",
+      "event-admin": "Event administration",
+      "tournament-admin": "Tournament administration",
+    };
+    const links = appPaths()
+      .map(({ id, base }) => `<li><a href="${base}">${labels[id] ?? id}</a></li>`)
+      .join("");
+    return reply.type("text/html; charset=utf-8").send(
+      `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>HEMA Score Keeper</title><h1>HEMA Score Keeper</h1><ul>${links}</ul></html>`,
+    );
+  });
 
   app.get("/api/v1/google-sheets/values", async (request) => {
     const query = ensureObject(request.query ?? {}, "Query");
@@ -1029,6 +1054,14 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   app.delete("/api/v1/scheduled-phases/:id", async (request, reply) => {
     const id = requirePathParam(request, "id");
     const existing = await requireScheduledPhaseRow(database, id);
+    const assignedMatch = await database
+      .selectFrom("ScheduledMatch")
+      .select("matchId")
+      .where("scheduledPhaseId", "=", id)
+      .executeTakeFirst();
+    if (assignedMatch) {
+      throw new HttpError(409, "Unassign bracket matches before deleting this scheduled phase.");
+    }
     await database.deleteFrom("ScheduledPhase").where("id", "=", id).execute();
     await syncStageArtifacts(database, [existing.stageId]);
     reply.status(204).send();
@@ -1108,6 +1141,7 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.post("/api/v1/tournaments", async (request) => {
+    const creator = await requireUser(request, database);
     const body = ensureObject(request.body, "Tournament");
     const eventId = requireString(body.eventId, "Event ID");
     await requireEventRow(database, eventId);
@@ -1129,11 +1163,18 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
       await trx.insertInto("Tournament").values({
         id: tournamentId,
         eventId,
+        createdByUserId: creator.id,
         name: requireString(body.name, "Tournament name"),
         rulesetId: rulesetId ?? null,
         currentStageId: null,
         order,
         color,
+      }).execute();
+      await trx.insertInto("TournamentAdmin").values({
+        tournamentId,
+        userId: creator.id,
+        addedByUserId: creator.id,
+        createdAt: app.now().toISOString(),
       }).execute();
 
       await trx.insertInto("Stage").values([
@@ -1192,11 +1233,97 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
     return requireTournamentApi(database, tournamentId);
   });
 
+  app.get("/api/v1/tournaments/:id/admins", async (request) => {
+    const user = await requireUser(request, database);
+    const tournamentId = requirePathParam(request, "id");
+    await requireEventTournamentAdmin(database, tournamentId, user);
+    return { admins: await listTournamentAdmins(database, tournamentId) };
+  });
+
+  app.get("/api/v1/tournaments/:id/admin-candidates", async (request) => {
+    const user = await requireUser(request, database);
+    const tournamentId = requirePathParam(request, "id");
+    await requireEventTournamentAdmin(database, tournamentId, user);
+    const candidates = await database
+      .selectFrom("User")
+      .select(["id", "name", "username"])
+      .where("status", "=", "ACTIVE")
+      .orderBy("username")
+      .execute();
+    return { candidates };
+  });
+
+  app.post("/api/v1/tournaments/:id/admins", async (request) => {
+    const user = await requireUser(request, database);
+    const tournamentId = requirePathParam(request, "id");
+    const body = ensureObject(request.body, "Tournament admin");
+    const targetUserId = requireString(body.userId, "User ID");
+    await database.transaction().execute(async (trx) => {
+      await requireTournamentRow(trx, tournamentId);
+      const adminCount = await trx
+        .selectFrom("TournamentAdmin")
+        .select((eb) => eb.fn.count<number>("userId").as("count"))
+        .where("tournamentId", "=", tournamentId)
+        .executeTakeFirst();
+      if ((adminCount?.count ?? 0) === 0 && user.role !== "SYSTEM_ADMIN") {
+        throw new HttpError(403, "Only a system admin may assign the first admin to an existing tournament.");
+      }
+      if ((adminCount?.count ?? 0) > 0) {
+        await requireEventTournamentAdmin(trx, tournamentId, user);
+      }
+      const targetUser = await requireUserRow(trx, targetUserId);
+      if (targetUser.status !== "ACTIVE") {
+        throw new HttpError(409, "An inactive account cannot be assigned as a tournament admin.");
+      }
+      await trx
+        .insertInto("TournamentAdmin")
+        .values({
+          tournamentId,
+          userId: targetUserId,
+          addedByUserId: user.id,
+          createdAt: app.now().toISOString(),
+        })
+        .onConflict((conflict) => conflict.columns(["tournamentId", "userId"]).doNothing())
+        .execute();
+    });
+    return { admins: await listTournamentAdmins(database, tournamentId) };
+  });
+
+  app.delete("/api/v1/tournaments/:id/admins/:userId", async (request, reply) => {
+    const user = await requireUser(request, database);
+    const tournamentId = requirePathParam(request, "id");
+    const targetUserId = requirePathParam(request, "userId");
+    await database.transaction().execute(async (trx) => {
+      await requireEventTournamentAdmin(trx, tournamentId, user);
+      const membership = await trx
+        .selectFrom("TournamentAdmin")
+        .select("userId")
+        .where("tournamentId", "=", tournamentId)
+        .where("userId", "=", targetUserId)
+        .executeTakeFirst();
+      if (!membership) throw new HttpError(404, "Tournament admin not found.");
+      const adminCount = await trx
+        .selectFrom("TournamentAdmin")
+        .select((eb) => eb.fn.count<number>("userId").as("count"))
+        .where("tournamentId", "=", tournamentId)
+        .executeTakeFirst();
+      if ((adminCount?.count ?? 0) <= 1) {
+        throw new HttpError(409, "A tournament must keep at least one assigned admin.");
+      }
+      await trx
+        .deleteFrom("TournamentAdmin")
+        .where("tournamentId", "=", tournamentId)
+        .where("userId", "=", targetUserId)
+        .execute();
+    });
+    reply.status(204).send();
+  });
+
   app.patch("/api/v1/tournaments/:id", async (request) => {
     const id = requirePathParam(request, "id");
     const currentTournament = await requireTournamentRow(database, id);
     const body = ensureObject(request.body, "Tournament");
-    const changes: Partial<BackendDatabase["Tournament"]> = {};
+    const changes: Updateable<BackendDatabase["Tournament"]> = {};
 
     if (body.eventId !== undefined) {
       const eventId = requireString(body.eventId, "Event ID");
@@ -1569,6 +1696,30 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
 
   app.get("/api/v1/matches", async () => listMatches(database));
 
+  app.put("/api/v1/matches/:id/schedule", async (request) => {
+    const matchId = requirePathParam(request, "id");
+    const body = ensureObject(request.body, "Match schedule");
+    const scheduledPhaseId = requireString(body.scheduledPhaseId, "Scheduled phase ID");
+    const order = requirePositiveInteger(body.order, "Match order");
+
+    await database.transaction().execute(async (trx) => {
+      await validateScheduledMatch(trx, matchId, scheduledPhaseId, order);
+      await trx
+        .insertInto("ScheduledMatch")
+        .values({ matchId, scheduledPhaseId, order })
+        .onConflict((conflict) => conflict.column("matchId").doUpdateSet({ scheduledPhaseId, order }))
+        .execute();
+    });
+    return requireMatchApi(database, matchId);
+  });
+
+  app.delete("/api/v1/matches/:id/schedule", async (request, reply) => {
+    const matchId = requirePathParam(request, "id");
+    await requireMatchRow(database, matchId);
+    await database.deleteFrom("ScheduledMatch").where("matchId", "=", matchId).execute();
+    reply.status(204).send();
+  });
+
   app.post("/api/v1/matches/:id/complete", async (request) => {
     const matchId = requirePathParam(request, "id");
     const match = await requireMatchRow(database, matchId);
@@ -1635,6 +1786,29 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   return app;
+}
+
+async function listTournamentAdmins(database: Kysely<BackendDatabase>, tournamentId: string) {
+  const rows = await database
+    .selectFrom("TournamentAdmin as Membership")
+    .innerJoin("User as Account", "Account.id", "Membership.userId")
+    .select([
+      "Membership.userId as userId",
+      "Membership.addedByUserId as addedByUserId",
+      "Membership.createdAt as createdAt",
+      "Account.name as name",
+      "Account.username as username",
+    ])
+    .where("Membership.tournamentId", "=", tournamentId)
+    .orderBy("Account.name")
+    .orderBy("Account.username")
+    .execute();
+  return rows.map(({ userId, addedByUserId, createdAt, name, username }) => ({
+    userId,
+    addedByUserId,
+    createdAt,
+    user: { id: userId, name, username },
+  }));
 }
 
 function parseExistingRulesetDefinition(definition: string | null | undefined): ApiRulesetDefinition {
@@ -1731,7 +1905,8 @@ async function start(): Promise<void> {
       "WARNING: AUTH_SECRET is not set; sign-in tokens use the built-in development secret. Set AUTH_SECRET to a long random value before using this server at a venue.",
     );
   }
-  const app = createApp();
+  const app = createApp(db, { staticApps: productionAppMounts() });
+  const host = process.env.IP?.trim() || process.env.HOST?.trim() || "0.0.0.0";
   const port = Number(process.env.PORT ?? 3001);
   if (process.env.NODE_ENV !== "test") {
     // Mirrors live bouts into the backup .xlsx (and the Google Sheet) in the background, off the request path.
@@ -1740,8 +1915,17 @@ async function start(): Promise<void> {
     const stopPush = startPushWorker(db);
     app.addHook("onClose", async () => stopPush());
   }
-  await app.listen({ port, host: "0.0.0.0" });
-  console.log(`HEMA backend listening on http://localhost:${port}`);
+  await app.listen({ port, host });
+  console.log(`HEMA backend listening on http://${host}:${port}`);
+  if (process.env.HEMASCORE_SHUTDOWN_ON_STDIN === "1") {
+    process.stdin.resume();
+    process.stdin.once("end", () => {
+      void app.close().catch((error: unknown) => {
+        console.error("Could not close the HEMA backend cleanly.", error);
+        process.exitCode = 1;
+      });
+    });
+  }
 }
 
 // Only listen when run directly (node dist/server.js), not when imported by tests.

@@ -22,12 +22,12 @@ describe("scoreKeeperAppUrl", () => {
     expect(scoreKeeperAppUrl(" https://keep.example.org/ ", false, "https://admin.example.org")).toBe("https://keep.example.org");
   });
 
-  it("falls back to the score keeper dev server in dev", () => {
-    expect(scoreKeeperAppUrl(undefined, true, "http://localhost:5175")).toBe("http://localhost:5180");
-    expect(scoreKeeperAppUrl("  ", true, "http://localhost:5175")).toBe("http://localhost:5180");
+  it("falls back to the score keeper dev app path", () => {
+    expect(scoreKeeperAppUrl(undefined, true, "http://localhost:5175")).toBe("http://localhost:5180/score-keeper");
+    expect(scoreKeeperAppUrl("  ", true, "http://localhost:5175")).toBe("http://localhost:5180/score-keeper");
   });
 
-  it("falls back to this site in a build: the score keeper has no base path, so /ring/<token> is at the origin", () => {
-    expect(scoreKeeperAppUrl(undefined, false, "https://admin.example.org")).toBe("https://admin.example.org");
+  it("falls back to this site's score keeper path in a build", () => {
+    expect(scoreKeeperAppUrl(undefined, false, "https://admin.example.org")).toBe("https://admin.example.org/score-keeper");
   });
 });

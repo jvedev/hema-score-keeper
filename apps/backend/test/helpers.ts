@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import BetterSqlite3 from "better-sqlite3";
 import {
   type Kysely,
   type KyselyPlugin,
@@ -10,7 +11,7 @@ import {
 } from "kysely";
 import type { AccountRole } from "../src/api-types.js";
 import { signAccessToken } from "../src/auth.js";
-import { createDatabase, type BackendDatabase } from "../src/db.js";
+import { initializeDatabase, type BackendDatabase } from "../src/db.js";
 import { createApp } from "../src/server.js";
 
 export interface TestContext {
@@ -56,7 +57,126 @@ export class YieldAfterEachQuery implements KyselyPlugin {
 }
 
 export async function createTestContext(options: { now?: () => Date; plugins?: KyselyPlugin[] } = {}): Promise<TestContext> {
-  let database = createDatabase("file::memory:");
+  const native = new BetterSqlite3(":memory:");
+  native.exec(`
+    CREATE TABLE Event (
+      id TEXT PRIMARY KEY,
+      eventName TEXT NOT NULL,
+      rulesetId TEXT,
+      allFightersAreVolunteers INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE Tournament (
+      id TEXT PRIMARY KEY,
+      eventId TEXT NOT NULL REFERENCES Event(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      rulesetId TEXT,
+      currentStageId TEXT,
+      "order" INTEGER NOT NULL DEFAULT 0,
+      color TEXT NOT NULL DEFAULT '#5B8CFF'
+    );
+    CREATE TABLE Ruleset (
+      id TEXT PRIMARY KEY,
+      eventId TEXT NOT NULL REFERENCES Event(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      version INTEGER NOT NULL DEFAULT 1,
+      minPoolSize INTEGER NOT NULL DEFAULT 4,
+      maxPoolSize INTEGER NOT NULL DEFAULT 6,
+      preferredPoolSize INTEGER NOT NULL DEFAULT 5,
+      timeBetweenMatchesMinutes INTEGER NOT NULL DEFAULT 2,
+      definition TEXT NOT NULL
+    );
+    CREATE TABLE Stage (
+      id TEXT PRIMARY KEY,
+      tournamentId TEXT NOT NULL REFERENCES Tournament(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      name TEXT,
+      rulesetId TEXT REFERENCES Ruleset(id) ON DELETE SET NULL,
+      minPoolSize INTEGER,
+      maxPoolSize INTEGER,
+      preferredPoolSize INTEGER,
+      eliminationParticipantCount INTEGER,
+      timeBetweenMatchesMinutes INTEGER NOT NULL DEFAULT 2
+    );
+    CREATE TABLE Arena (
+      id TEXT PRIMARY KEY,
+      eventId TEXT NOT NULL REFERENCES Event(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      "order" INTEGER NOT NULL DEFAULT 0,
+      leftColor TEXT NOT NULL DEFAULT '#21c15b',
+      rightColor TEXT NOT NULL DEFAULT '#2f7dfa'
+    );
+    CREATE TABLE Entry (
+      id TEXT PRIMARY KEY,
+      tournamentId TEXT NOT NULL REFERENCES Tournament(id) ON DELETE CASCADE,
+      userId TEXT NOT NULL REFERENCES User(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL DEFAULT 'FIGHTER',
+      seed INTEGER
+    );
+    CREATE TABLE StageArena (
+      id TEXT PRIMARY KEY,
+      stageId TEXT NOT NULL REFERENCES Stage(id) ON DELETE CASCADE,
+      arenaId TEXT NOT NULL REFERENCES Arena(id) ON DELETE CASCADE
+    );
+    CREATE TABLE StageOfficial (
+      id TEXT PRIMARY KEY,
+      stageId TEXT NOT NULL REFERENCES Stage(id) ON DELETE CASCADE,
+      entryId TEXT NOT NULL REFERENCES Entry(id) ON DELETE CASCADE,
+      role TEXT NOT NULL
+    );
+    CREATE TABLE Round (
+      id TEXT PRIMARY KEY,
+      stageId TEXT NOT NULL REFERENCES Stage(id) ON DELETE CASCADE,
+      roundNumber INTEGER NOT NULL
+    );
+    CREATE TABLE Match (
+      id TEXT PRIMARY KEY,
+      roundId TEXT NOT NULL REFERENCES Round(id) ON DELETE CASCADE,
+      arenaId TEXT REFERENCES Arena(id) ON DELETE SET NULL,
+      entryAId TEXT REFERENCES Entry(id) ON DELETE SET NULL,
+      entryBId TEXT REFERENCES Entry(id) ON DELETE SET NULL,
+      winnerEntryId TEXT REFERENCES Entry(id) ON DELETE SET NULL,
+      scoreA INTEGER,
+      scoreB INTEGER,
+      rulesetId TEXT REFERENCES Ruleset(id) ON DELETE SET NULL
+    );
+    CREATE TABLE Exchange (
+      id TEXT PRIMARY KEY,
+      matchId TEXT NOT NULL REFERENCES Match(id) ON DELETE CASCADE,
+      scoreA INTEGER,
+      scoreB INTEGER,
+      details TEXT
+    );
+    CREATE TABLE EventSchedule (
+      id TEXT PRIMARY KEY,
+      eventId TEXT NOT NULL REFERENCES Event(id) ON DELETE CASCADE,
+      startTimeMinutes INTEGER NOT NULL DEFAULT 540,
+      currentTimeSlotId TEXT
+    );
+    CREATE TABLE ScheduleTimeSlot (
+      id TEXT PRIMARY KEY,
+      scheduleId TEXT NOT NULL REFERENCES EventSchedule(id) ON DELETE CASCADE,
+      "order" INTEGER NOT NULL,
+      durationMinutes INTEGER NOT NULL,
+      label TEXT NOT NULL,
+      color TEXT,
+      isBreak INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE ScheduledPhase (
+      id TEXT PRIMARY KEY,
+      stageId TEXT NOT NULL REFERENCES Stage(id) ON DELETE CASCADE,
+      arenaId TEXT NOT NULL REFERENCES Arena(id) ON DELETE CASCADE,
+      timeSlotId TEXT NOT NULL REFERENCES ScheduleTimeSlot(id) ON DELETE CASCADE
+    );
+    CREATE UNIQUE INDEX ScheduledPhase_arenaId_timeSlotId_key
+      ON ScheduledPhase(arenaId, timeSlotId);
+    CREATE TABLE ScheduledAssignment (
+      id TEXT PRIMARY KEY,
+      scheduledPhaseId TEXT NOT NULL REFERENCES ScheduledPhase(id) ON DELETE CASCADE,
+      userId TEXT NOT NULL REFERENCES User(id) ON DELETE CASCADE,
+      role TEXT NOT NULL
+    );
+  `);
+  let database = initializeDatabase(native);
   for (const plugin of options.plugins ?? []) {
     database = database.withPlugin(plugin);
   }

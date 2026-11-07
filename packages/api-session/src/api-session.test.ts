@@ -45,7 +45,7 @@ beforeEach(() => {
     calls.push({ url, method: init.method ?? "GET", authorization: headers.get("Authorization"), body: init.body ? JSON.parse(String(init.body)) : undefined });
     const next = responses.shift() ?? { status: 200, body: {} };
     next.onCall?.();
-    return new Response(JSON.stringify(next.body), { status: next.status, headers: { "Content-Type": "application/json" } });
+    return new Response(next.status === 204 ? null : JSON.stringify(next.body), { status: next.status, headers: { "Content-Type": "application/json" } });
   });
   storage = new MemoryStorage();
   session = create();
@@ -70,6 +70,12 @@ describe("ApiSession", () => {
       { url: "/api/v1/things", method: "POST", authorization: "Bearer a1", body: { a: 1 } },
       { url: "/api/v1/open", method: "GET", authorization: null, body: undefined },
     ]);
+  });
+
+  it("returns undefined for a successful empty response", async () => {
+    signedIn();
+    responses.push({ status: 204, body: null });
+    await expect(session.send("DELETE", "/things/one")).resolves.toBeUndefined();
   });
 
   it("refreshes once on 401 and retries", async () => {

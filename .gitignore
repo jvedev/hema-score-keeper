@@ -20,3 +20,4 @@ test-results/
 .vitest-attachments/
 __screenshots__/
 /apps/backend/data/live/
+/artifacts/
