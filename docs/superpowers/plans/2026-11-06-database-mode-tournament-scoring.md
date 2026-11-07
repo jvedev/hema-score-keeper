@@ -211,12 +211,21 @@ resolved as recorded above.
 - Score-keeper ring details now label database versus spreadsheet mode using localized
   English and Dutch strings. The mode is carried through the ring state; existing mock
   Event-admin match data now includes the required schedule-link field.
+- Added an isolated journey test that creates the Event and tournament through backend
+  routes, creates a ring/slot/phase, activates database mode, claims the ring, scores and
+  finishes a bout, verifies the Event-admin result, then corrects it and verifies the
+  re-projected result and revision.
+- Added upgrade coverage that first runs on a competition-only database, confirms the
+  database-mode migration stays pending until Event-admin tables exist, then applies it to
+  an existing sheet tournament and verifies the mode and spreadsheet ID survive reruns.
+- Added `npm run test:database-mode:smoke` to rerun the journey and migration checks without
+  touching the local database or installing packages.
 - The user requested intermediate commits and pushes on `co-pilot`; the completed prior
   milestone was committed as `617ded9` and pushed to `origin/co-pilot`.
 - The activation/projection checkpoint was committed as `be965e1` and pushed to
   `origin/co-pilot`.
 - Ring authorization was committed and pushed as `f6e7d14`.
-- Full workspace suite passes: backend 38 files/368 tests; score-keeper 13 files/105 tests;
+- Full workspace suite passes: backend 39 files/370 tests; score-keeper 13 files/105 tests;
   shared UI 42 files/229 tests; all other workspace suites also pass. Workspace typechecks
   and production builds passed, including the final Event-admin UI changes. No packages were
   installed.
@@ -265,6 +274,11 @@ the corrected result.
 The implementation and automated verification are complete: the full workspace test suite,
 workspace typechecks, and production builds pass. The Event-admin correction UI and
 score-keeper mode-details checkpoint is committed and pushed as `7565f33` on `co-pilot`.
-Next, perform the fresh-local-database interactive acceptance check. Phone, Web Push and
-Alwaysdata-account checks remain deferred. Continue without PowerShell or package
-installation.
+The isolated end-to-end scoring journey and legacy migration upgrade tests now pass and can
+be rerun with `npm run test:database-mode:smoke`. When hands-on testing is possible, verify
+on the local app: sign in as tournament admin; create an Event/tournament, entries, ring and
+schedule; activate database mode; score and finish one bout from score-keeper; confirm the
+same score/winner in Event-admin; correct an exchange and confirm the revised result.
+Confirm the ring view says Database mode and the existing spreadsheet-mode flow still works.
+Phone, Web Push and Alwaysdata-account checks remain deferred. Continue without PowerShell or
+package installation.

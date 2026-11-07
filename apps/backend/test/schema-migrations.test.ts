@@ -85,6 +85,40 @@ describe("applySchemaMigrations", () => {
     expect(applied).toBe(24);
   });
 
+  it("waits for Event-admin tables before upgrading sheet data to database-mode schema", () => {
+    applySchemaMigrations(database);
+    const migrationName = "2026-11-06-database-mode-tournament-scoring";
+    expect(database.prepare("SELECT name FROM SchemaMigration WHERE name = ?").get(migrationName)).toBeUndefined();
+    expect(columns("LiveTournament")).not.toContain("sourceTournamentId");
+
+    insertUser("legacy-live-owner", "USER", null);
+    database.prepare(`
+      INSERT INTO LiveTournament (id, name, mode, layoutVersion, googleSpreadsheetId, createdByUserId, createdAt)
+      VALUES ('legacy-sheet', 'Legacy sheet', 'SHEET', 'v3', 'spreadsheet-1', 'legacy-live-owner', '2026-11-01T10:00:00.000Z')
+    `).run();
+    database.exec(`
+      CREATE TABLE Event (id TEXT PRIMARY KEY);
+      CREATE TABLE Tournament (id TEXT PRIMARY KEY);
+      CREATE TABLE Arena (id TEXT PRIMARY KEY);
+      CREATE TABLE Match (id TEXT PRIMARY KEY);
+      CREATE TABLE ScheduledPhase (id TEXT PRIMARY KEY);
+    `);
+
+    applySchemaMigrations(database);
+
+    expect(database.prepare("SELECT name FROM SchemaMigration WHERE name = ?").get(migrationName)).toEqual({ name: migrationName });
+    expect(columns("Tournament")).toContain("createdByUserId");
+    expect(columns("LiveTournament")).toContain("sourceTournamentId");
+    expect(database.prepare("SELECT mode, googleSpreadsheetId, sourceTournamentId FROM LiveTournament WHERE id = 'legacy-sheet'").get())
+      .toEqual({ mode: "SHEET", googleSpreadsheetId: "spreadsheet-1", sourceTournamentId: null });
+    const migrationCount = (database.prepare("SELECT COUNT(*) AS count FROM SchemaMigration").get() as { count: number }).count;
+
+    expect(() => applySchemaMigrations(database)).not.toThrow();
+    expect((database.prepare("SELECT COUNT(*) AS count FROM SchemaMigration").get() as { count: number }).count).toBe(migrationCount);
+    expect(database.prepare("SELECT mode, googleSpreadsheetId FROM LiveTournament WHERE id = 'legacy-sheet'").get())
+      .toEqual({ mode: "SHEET", googleSpreadsheetId: "spreadsheet-1" });
+  });
+
   it("allows multiple stage phases on the same ring and time slot", () => {
     database.exec(`
       CREATE TABLE ScheduledPhase (
