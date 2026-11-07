@@ -296,7 +296,8 @@ spreadsheet-tournament entry alongside the Event-admin component entry.
 
 ## Status / next
 
-Phase 1 was implemented on `co-pilot`. It adds an `EventAdmin` relation and guarded runtime
+Phase 1 was implemented, committed, and pushed to `origin/co-pilot` as `1366ee0`. It adds an
+`EventAdmin` relation and guarded runtime
 migration; requires authentication to create an Event and assigns its creator as first
 administrator; exposes admin list/candidate/add/remove APIs with guarded legacy bootstrap,
 active-account validation and last-admin protection; and applies Event-admin versus

@@ -88,10 +88,11 @@ stays in its existing workflow and the shared Event planner schedules database-m
 stages only. The existing Competition-admin spreadsheet-tournament entry remains permanently
 alongside the Event-admin entry. The user has also confirmed that an Event may contain multiple
 rating Competitions, while each Competition may be linked to only one Event. Phase 1 of the
-implementation plan is implemented and verified on `co-pilot`: Event creator/bootstrap
-ownership, membership APIs, Event-versus-Tournament permission checks, shared planner access,
-and focused authorization/migration tests. Backend tests (40 files/374 tests), workspace
-typechecks, backend build, and Event-admin production build pass; no packages were installed.
+implementation plan is implemented, verified, committed, and pushed on `co-pilot` as
+`1366ee0`: Event creator/bootstrap ownership, membership APIs, Event-versus-Tournament
+permission checks, shared planner access, and focused authorization/migration tests. Backend
+tests (40 files/374 tests), workspace typechecks, backend build, and Event-admin production
+build pass; no packages were installed.
 Parent-Event permissions for attached sheet-mode tournaments and Competitions, plus their
 relationship/detach behavior, remain in Phase 2 because they depend on those relationship
 fields; Phase 2 has not been approved or started. Preserve `.idea/php.xml` as an unrelated
