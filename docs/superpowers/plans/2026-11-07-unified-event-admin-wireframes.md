@@ -184,7 +184,8 @@ This is the existing sheet-mode `LiveTournament` workflow, kept as a distinct Ev
 component. It does not show database-mode live results or correction controls. Import errors,
 sync failures, stale data, and unavailable backups have explicit error/status states; they
 must not appear as successful empty data. Parent-Event administrators, the existing
-tournament creator, and `SYSTEM_ADMIN` can manage this component.
+tournament creator, and `SYSTEM_ADMIN` can manage this component. The existing
+Competition-admin spreadsheet-tournament entry remains available for the same record.
 
 ## 4. Competition workspace inside Event-admin
 

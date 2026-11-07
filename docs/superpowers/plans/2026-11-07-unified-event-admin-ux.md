@@ -236,6 +236,6 @@ phase boundary.
 - Competition cardinality, attachment/detachment data behavior, and Event-admin membership
   bootstrap are approved.
 - The spreadsheet-planner boundary is approved: the shared planner covers database-mode
-  Tournament stages only. Confirm the legacy sheet-workflow entry-point transition. Other UX
-  details such as officials terminology and localization behavior remain part of
-  implementation design.
+  Tournament stages only. The existing Competition-admin spreadsheet-tournament entry also
+  remains permanently alongside Event-admin. Other UX details such as officials terminology
+  and localization behavior remain part of implementation design.

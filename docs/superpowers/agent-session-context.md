@@ -83,10 +83,12 @@ creator becomes its first administrator; a `SYSTEM_ADMIN` assigns the first admi
 for existing unowned Events. The low-fi wireframes are approved. A proposed implementation
 plan is in
 [`plans/2026-11-07-unified-event-admin-implementation.md`](plans/2026-11-07-unified-event-admin-implementation.md);
-no code or schema changes have been made. Before implementation, resolve its one remaining
-decision: the legacy sheet-workflow entry-point transition. The user confirmed
-spreadsheet-mode ring/bout order stays in its existing workflow and the shared Event planner
-schedules database-mode Tournament stages only. The user has also confirmed that an Event may contain multiple rating
-Competitions, while each Competition may be linked to only one Event.
+no code or schema changes have been made. The user confirmed spreadsheet-mode ring/bout order
+stays in its existing workflow and the shared Event planner schedules database-mode Tournament
+stages only. The existing Competition-admin spreadsheet-tournament entry remains permanently
+alongside the Event-admin entry. The user has also confirmed that an Event may contain multiple
+rating Competitions, while each Competition may be linked to only one Event. The next step is
+for the user to review the implementation plan and approve Phase 1; no product implementation
+is authorized yet.
 
 This handoff was created on 2026-10-28. If the repository's plans or commit history have moved on, trust the newer repository evidence and update this file rather than following stale status here.

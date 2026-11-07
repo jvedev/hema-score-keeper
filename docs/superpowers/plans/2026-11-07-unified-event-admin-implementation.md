@@ -46,6 +46,8 @@ pre-implementation decisions below are approved.
   Competition administrators, and `SYSTEM_ADMIN`.
 - The existing `/competition-admin/` entry point remains available for standalone
   Competitions.
+- The existing Competition-admin spreadsheet-tournament entry remains permanently
+  available alongside the Event-admin component entry.
 - The development database may be restructured or development data discarded if needed, but
   only as an explicit, reviewed implementation decision.
 - No npm packages may be installed without the user's permission. Use `cmd.exe`, Bash,
@@ -250,9 +252,9 @@ Scope:
   sync, or backup semantics.
 - Create new sheet-mode tournaments in the selected Event. Provide a clear, authorized way to
   associate existing unlinked sheet-mode rows with an Event.
-- Keep the current standalone Competition-admin sheet-tournament entry available during
-  migration; do not remove it until the unified flow has passed acceptance and its retirement
-  has been separately approved.
+- Keep the current Competition-admin spreadsheet-tournament entry permanently alongside the
+  Event-admin component entry. Both entry points manage the same `LiveTournament` records and
+  preserve their existing creator/system-admin permissions.
 - Clearly show sheet mode, sync errors, stale state, and backup availability. Database-mode
   activation/results/correction controls must not appear on this workspace.
 
@@ -280,9 +282,8 @@ Scope:
 
 ## Decisions needed before implementation
 
-1. **Legacy entry point:** proposed transition keeps the current Competition-admin
-   spreadsheet-tournament entry available until the new Event component passes acceptance;
-   removal requires a later explicit approval.
+The user has approved permanent retention of the current Competition-admin
+spreadsheet-tournament entry alongside the Event-admin component entry.
 
 ## Out of scope for this implementation plan
 
@@ -295,6 +296,5 @@ Scope:
 
 ## Next step
 
-Review the one remaining decision above and approve Phase 1 only after it is resolved. No
-implementation has started; the current local `.idea/php.xml` change is unrelated and must
-remain outside any commit.
+Approve Phase 1 to begin implementation. No implementation has started; the current local
+`.idea/php.xml` change is unrelated and must remain outside any commit.
