@@ -353,6 +353,7 @@ interface LiveBoutTable {
   tournamentId: string;
   sourceMatchId: Generated<string | null>;
   scheduledPhaseId: Generated<string | null>;
+  sourceScheduleSignature: Generated<string | null>;
   ringId: string;
   order: number;
   label: string;

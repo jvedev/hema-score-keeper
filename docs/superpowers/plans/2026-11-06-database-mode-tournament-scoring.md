@@ -38,6 +38,8 @@ and is not the source of database-mode tournament schedules.
   and arena. Bracket matches are explicitly placed into a scheduled phase; bracket round
   numbers must not be interpreted as schedule slots. Slot and bout order express sequence,
   not guaranteed start times or match duration.
+- Pool bout orders are initially assigned in the pool generator's match order, persisted as
+  explicit per-ring orders, and editable in Event-admin after database-mode activation.
 - After a bout is completed, only a tournament admin may correct its exchanges. Store the
   correction as a revision and re-project the corrected result into Event-admin
   `Match`/`Exchange`.
@@ -171,11 +173,25 @@ resolved as recorded above.
   phase deletion until explicitly unassigned.
 - Added Event-admin per-match phase/order controls and tests for persistence, ordering
   conflicts, invalid placement, multiple phases, and planner rendering.
-- Verification update: backend typecheck/build and full suite pass (36 files, 353 tests);
-  Event-admin API/UI typechecks and production build pass; shared-UI suite passes (42 files,
-  224 tests).
-- Continue with database-mode activation and safe schedule projection, then ring
-  authorization and transactional result/correction projection.
+- Added authenticated database-mode activation and projection-refresh endpoints, with an
+  Event-admin live-scoring tab to activate a tournament and safely refresh its schedule.
+- Projection creates source-linked live rings and bouts, resolves fighter identities from
+  Event-admin entries, persists generated pool orders, and leaves bracket bouts unprojected
+  until an administrator assigns their phase and order.
+- Reprojection is idempotent and uses a stored schedule signature; changed or removed bouts
+  that have started scoring fail with a conflict. Event-admin pool regeneration also refuses
+  to delete a live bout that has started, within the same transaction as the planner refresh.
+- Database-mode tournaments do not enqueue sheet-sync jobs, and sheet import, backup, and
+  sync endpoints reject database-mode tournaments. Pool ring order can be edited in the
+  Event-admin match view after it has been generated.
+- The user requested intermediate commits and pushes on `co-pilot`; the completed prior
+  milestone was committed as `617ded9` and pushed to `origin/co-pilot`.
+- Verification after activation: full backend suite passes (37 files, 361 tests);
+  backend typecheck/build, shared-UI suite (42 files, 226 tests), Event-admin API/UI
+  typechecks, and Event-admin production build pass. No packages were installed.
+- The activation and schedule-projection checkpoint is ready to commit and push to
+  `co-pilot`. Then implement server-side ring authorization, followed by transactional
+  result and correction projection.
 
 ## Local command note
 
@@ -214,7 +230,10 @@ order within each slot across phases; and matches without an arena are excluded 
 assigned. Pool matches map to slots from their generated round and arena; bracket matches
 are explicitly placed in a phase. This ordering is sequence only, not a guaranteed bout start
 time or duration. Correction behavior is to preserve the prior exchange state as a revision
-and re-project the corrected result. Ownership/admin verification and explicit bracket
-scheduling now pass, including all 353 backend tests and 224 shared-UI tests; next implement
-database-mode activation and safe schedule projection without using PowerShell or installing
-packages.
+and re-project the corrected result. Ownership/admin and explicit bracket scheduling passed
+the full backend suite (353 tests) and shared-UI suite (224 tests) before activation.
+Activation, schedule projection, and pool-order editing now also pass the full backend suite
+(37 files, 361 tests) and shared-UI suite (42 files, 226 tests), along with relevant typechecks
+and builds. Commit and push this checkpoint to `co-pilot`, then implement server-side ring
+authorization followed by transactional result/correction projection. Continue without
+PowerShell or package installation.

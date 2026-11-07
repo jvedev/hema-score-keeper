@@ -82,7 +82,7 @@ describe("applySchemaMigrations", () => {
     expect(() => applySchemaMigrations(database)).not.toThrow();
     expect(adminRows()).toHaveLength(admins);
     expect(database.prepare("SELECT COUNT(*) AS count FROM SchemaMigration").get()).toEqual({ count: applied });
-    expect(applied).toBe(22);
+    expect(applied).toBe(23);
   });
 
   it("allows multiple stage phases on the same ring and time slot", () => {
@@ -122,7 +122,7 @@ describe("live ring keeper", () => {
     for (const token of tokens) expect(token).toMatch(/^[A-Za-z0-9_-]{32}$/);
     expect(tokens[0]).not.toBe(tokens[1]);
     expect(columns("LiveRing")).toEqual(expect.arrayContaining(["activeDeviceId", "activeUserId", "activeSince"]));
-    expect(columns("LiveBout")).toEqual(expect.arrayContaining(["clockSeconds", "clockRunning", "clockUpdatedAt"]));
+    expect(columns("LiveBout")).toEqual(expect.arrayContaining(["clockSeconds", "clockRunning", "clockUpdatedAt", "sourceScheduleSignature"]));
     expect(() => database.prepare("UPDATE LiveRing SET keeperToken = ? WHERE id = 'r2'").run(tokens[0])).toThrow(/UNIQUE/);
   });
 });

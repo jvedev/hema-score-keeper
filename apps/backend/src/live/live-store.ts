@@ -25,9 +25,10 @@ export async function activeExchanges(db: DbExecutor, boutId: string): Promise<L
 export async function enqueueSync(db: DbExecutor, tournamentId: string, boutId: string, now: Date = new Date()): Promise<void> {
   const tournament = await db
     .selectFrom("LiveTournament")
-    .select("googleSpreadsheetId")
+    .select(["mode", "googleSpreadsheetId"])
     .where("id", "=", tournamentId)
     .executeTakeFirst();
+  if (tournament?.mode === "DATABASE") return;
   const targets: LiveTarget[] = ["LOCAL"];
   if (tournament?.googleSpreadsheetId) {
     targets.push("GOOGLE");

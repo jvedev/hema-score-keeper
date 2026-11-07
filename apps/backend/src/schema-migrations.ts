@@ -488,6 +488,12 @@ const MIGRATIONS: readonly SchemaMigration[] = [
       database.exec('DROP INDEX IF EXISTS "ScheduledPhase_arenaId_timeSlotId_key"');
     },
   },
+  {
+    name: "2026-11-07-database-live-schedule-signature",
+    apply(database) {
+      addColumn(database, "LiveBout", "sourceScheduleSignature", "TEXT");
+    },
+  },
 ];
 
 export function applySchemaMigrations(database: NativeDatabase): void {

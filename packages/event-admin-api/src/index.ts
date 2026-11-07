@@ -230,6 +230,13 @@ export interface ApiTournamentAdminCandidate {
   username: string;
 }
 
+export interface ApiDatabaseLiveStatus {
+  active: boolean;
+  liveTournamentId: string | null;
+  rings: number;
+  bouts: number;
+}
+
 export interface ApiEvent {
   id: string;
   eventName: string;
@@ -348,6 +355,9 @@ export interface ApiClient {
   tournamentAdminCandidates(id: string): Promise<ApiTournamentAdminCandidate[]>;
   addTournamentAdmin(id: string, userId: string): Promise<ApiTournamentAdmin[]>;
   removeTournamentAdmin(id: string, userId: string): Promise<void>;
+  databaseLiveStatus(id: string): Promise<ApiDatabaseLiveStatus>;
+  activateDatabaseLive(id: string): Promise<{ id: string; projection: { rings: number; bouts: number; removedBouts: number } }>;
+  projectDatabaseLive(id: string): Promise<{ rings: number; bouts: number; removedBouts: number }>;
   createArena(body: { eventId: string; name: string; order?: number; leftColor?: string; rightColor?: string }): Promise<ApiArena>;
   updateArena(
     id: string,
@@ -515,6 +525,21 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
       })).admins,
     removeTournamentAdmin: (id, userId) =>
       requestJson<void>(baseUrl, `/tournaments/${id}/admins/${encodeURIComponent(userId)}`, { method: "DELETE" }),
+    databaseLiveStatus: (id) => requestJson<ApiDatabaseLiveStatus>(baseUrl, `/tournaments/${id}/live`),
+    activateDatabaseLive: (id) =>
+      requestJson<{ id: string; projection: { rings: number; bouts: number; removedBouts: number } }>(
+        baseUrl,
+        `/tournaments/${id}/live`,
+        { method: "POST" },
+      ),
+    projectDatabaseLive: async (id) => {
+      const result = await requestJson<{ rings: number; bouts: number; removedBouts: number }>(
+        baseUrl,
+        `/live-tournaments/${id}/project`,
+        { method: "POST" },
+      );
+      return result;
+    },
     createArena: (body) => requestJson<ApiArena>(baseUrl, "/arenas", { method: "POST", body }),
     updateArena: (id, body) => requestJson<ApiArena>(baseUrl, `/arenas/${id}`, { method: "PATCH", body }),
     listArenas: () => requestJson<ApiArena[]>(baseUrl, "/arenas"),

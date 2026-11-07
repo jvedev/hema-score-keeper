@@ -257,6 +257,71 @@ describe("event-view", () => {
     expect(mock.scheduledMatches).toEqual([{ id: "match-1", scheduledPhaseId: "phase-1", order: 3 }]);
   });
 
+  it("allows adjusting an automatically assigned pool bout order", async () => {
+    const mock = installEventViewMock();
+    const tournament = mock.event.tournaments[0]!;
+    const stage = tournament.stages.find((candidate) => candidate.id === "stage-1")!;
+    stage.rounds = [{
+      id: "pool-round",
+      stageId: stage.id,
+      roundNumber: 1,
+      matches: [{
+        id: "pool-match",
+        roundId: "pool-round",
+        arenaId: "arena-1",
+        entryAId: null,
+        entryBId: null,
+        winnerEntryId: null,
+        scoreA: null,
+        scoreB: null,
+        ruleset: null,
+        scheduledMatch: { scheduledPhaseId: "pool-phase", order: 1 },
+      }],
+    }];
+
+    await import("./event-view");
+    const element = document.createElement("event-view");
+    document.body.appendChild(element);
+    await flush();
+    const stageCard = await waitForElement<HTMLElement>(element, 'div[data-action="select-stage"][data-id="stage-1"]');
+    stageCard.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    await flush();
+    const matchesTab = await waitForElement<HTMLButtonElement>(element, 'button[data-action="set-stage-tab"][data-tab="matches"]');
+    matchesTab.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    await flush();
+
+    const form = await waitForElement<HTMLFormElement>(element, 'form[data-action="match-schedule"]');
+    expect(form.querySelector<HTMLInputElement>('input[name="scheduledPhaseId"]')?.value).toBe("pool-phase");
+    const orderInput = form.querySelector<HTMLInputElement>('input[name="order"]')!;
+    orderInput.value = "3";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+
+    await waitForCondition(() => mock.scheduledMatches.length === 1);
+    expect(mock.scheduledMatches).toEqual([{ id: "pool-match", scheduledPhaseId: "pool-phase", order: 3 }]);
+  });
+
+  it("activates and refreshes database-mode scoring from the tournament tab", async () => {
+    const mock = installEventViewMock();
+    await import("./event-view");
+    const element = document.createElement("event-view");
+    document.body.appendChild(element);
+    await flush();
+
+    const liveTab = await waitForElement<HTMLButtonElement>(element, 'button[data-action="set-tournament-tab"][data-tab="live"]');
+    liveTab.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    await waitForText(element, "Database-mode scoring");
+
+    const activate = await waitForElement<HTMLButtonElement>(element, 'button[data-action="activate-database-live"]');
+    activate.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    await waitForText(element, "Database-mode actief");
+    expect(mock.databaseLiveStatus).toMatchObject({ active: true, liveTournamentId: "live-1", rings: 2, bouts: 3 });
+
+    const project = await waitForElement<HTMLButtonElement>(element, 'button[data-action="project-database-live"]');
+    project.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    await waitForCondition(() => mock.databaseLiveProjectionCalls === 1);
+    expect(mock.databaseLiveProjectionCalls).toBe(1);
+  });
+
   it("keeps judge skills after updating and removes duplicate judge entries", async () => {
     const mock = installEventViewMock();
     mock.entries.push(
@@ -301,6 +366,8 @@ function installEventViewMock() {
   const tournamentId = "tournament-1";
   const event = buildEvent();
   const scheduledMatches: Array<{ id: string; scheduledPhaseId: string; order: number }> = [];
+  const databaseLiveStatus = { active: false, liveTournamentId: null as string | null, rings: 0, bouts: 0 };
+  let databaseLiveProjectionCalls = 0;
 
   globalThis.fetch = async (input, init) => {
     const request = input instanceof Request ? input : new Request(input, init);
@@ -312,6 +379,21 @@ function installEventViewMock() {
 
     if (request.method === "GET" && pathname.includes("/users")) {
       return jsonResponse(users);
+    }
+
+    const databaseLive = pathname.match(/^\/api\/v1\/tournaments\/([^/]+)\/live$/);
+    if (databaseLive && databaseLive[1] === tournamentId) {
+      if (request.method === "GET") return jsonResponse(databaseLiveStatus);
+      if (request.method === "POST") {
+        Object.assign(databaseLiveStatus, { active: true, liveTournamentId: "live-1", rings: 2, bouts: 3 });
+        return jsonResponse({ id: "live-1", projection: { rings: 2, bouts: 3, removedBouts: 0 } });
+      }
+    }
+
+    const projectLive = pathname.match(/^\/api\/v1\/live-tournaments\/([^/]+)\/project$/);
+    if (projectLive && request.method === "POST") {
+      databaseLiveProjectionCalls += 1;
+      return jsonResponse({ rings: 2, bouts: 3, removedBouts: 0 });
     }
 
     const matchSchedule = pathname.match(/^\/api\/v1\/matches\/([^/]+)\/schedule$/);
@@ -486,6 +568,10 @@ function installEventViewMock() {
     users,
     entries,
     scheduledMatches,
+    databaseLiveStatus,
+    get databaseLiveProjectionCalls() {
+      return databaseLiveProjectionCalls;
+    },
     restore() {
       globalThis.fetch = originalFetch;
       window.fetch = originalWindowFetch;

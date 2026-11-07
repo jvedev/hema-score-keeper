@@ -77,6 +77,7 @@ describe("migration creates live tables", () => {
       "fighterLeft", "fighterRight", "status", "startedAt", "finishedAt", "clockSeconds", "clockRunning", "clockUpdatedAt",
       "round", "period", "extension", "periodStartedAt", "warningsLeft", "warningsRight",
       "fighterLeftId", "fighterRightId", "fighterLeftManuallyAssigned", "fighterRightManuallyAssigned",
+      "sourceScheduleSignature",
     ]);
     expect(await columnNames("LiveExchange")).toEqual([
       "id", "boutId", "seq", "kind", "leftPoints", "rightPoints", "isDouble",

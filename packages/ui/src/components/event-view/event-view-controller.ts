@@ -1,6 +1,7 @@
 import {
   createApiClient,
   type ApiArena,
+  type ApiDatabaseLiveStatus,
   type ApiEntry,
   type ApiEvent,
   type ApiEventMutationResult,
@@ -20,7 +21,7 @@ import "./event-view-app.css";
 import "../pool-results/pool-results.js";
 
 type EventTab = "tournaments" | "arenas" | "officials" | "rulesets";
-type TournamentTab = "entries" | "officials" | "stages" | "admins";
+type TournamentTab = "entries" | "officials" | "stages" | "admins" | "live";
 type StageTab = "overview" | "arenas" | "officials" | "rounds" | "matches" | "pool-results";
 type EditorKind = "event" | "tournament" | "arena" | "entry" | "stage" | "stage-arena" | "stage-official";
 
@@ -71,6 +72,9 @@ interface AppState {
   tournamentAdminCandidates: ApiTournamentAdminCandidate[];
   tournamentAdminError: string | null;
   tournamentAdminsLoading: boolean;
+  databaseLiveStatus: ApiDatabaseLiveStatus | null;
+  databaseLiveLoading: boolean;
+  databaseLiveError: string | null;
   selectedEventId: string | null;
   selectedTournamentId: string | null;
   selectedStageId: string | null;
@@ -102,6 +106,9 @@ const state: AppState = {
   tournamentAdminCandidates: [],
   tournamentAdminError: null,
   tournamentAdminsLoading: false,
+  databaseLiveStatus: null,
+  databaseLiveLoading: false,
+  databaseLiveError: null,
   selectedEventId: null,
   selectedTournamentId: null,
   selectedStageId: null,
@@ -194,6 +201,12 @@ function onAppClick(event: MouseEvent): void {
       return;
     case "remove-tournament-admin":
       void removeTournamentAdmin(target.dataset.userId);
+      return;
+    case "activate-database-live":
+      void activateDatabaseLive();
+      return;
+    case "project-database-live":
+      void projectDatabaseLive();
       return;
     case "delete-event":
       void deleteEvent(target.dataset.id);
@@ -730,6 +743,7 @@ function renderShell(): string {
               { value: "officials", label: "Vrijwilligers" },
               { value: "stages", label: "Stages" },
               { value: "admins", label: "Admins" },
+              { value: "live", label: "Live score" },
             ],
           )}
           <div class="panel-body">
@@ -1028,6 +1042,8 @@ function renderTournamentCreateAction(): string {
       return renderCreateButton("stage", "Nieuwe stage");
     case "admins":
       return "";
+    case "live":
+      return "";
   }
 }
 
@@ -1058,6 +1074,8 @@ function renderTournamentTab(event: ApiEvent, tournament: ApiTournament): string
       return renderTournamentOfficials(tournament);
     case "admins":
       return renderTournamentAdmins();
+    case "live":
+      return renderDatabaseLive();
     case "stages":
       return `
         <div class="stage-workspace">
@@ -1521,7 +1539,7 @@ function renderMatches(event: ApiEvent, tournament: ApiTournament, stage: ApiSta
     return `
       <div class="info-card">
         <div class="info-card-title">Automatische poolplanning</div>
-        <div class="info-card-subtitle">Poolbouts volgen de gegenereerde ronde en arena. Alleen bracket-bouts worden hier handmatig ingepland.</div>
+        <div class="info-card-subtitle">Poolbouts volgen automatisch hun gegenereerde ronde en arena. Hun ringvolgorde wordt bij activering aangemaakt en kan daarna hier worden aangepast.</div>
       </div>
       ${renderMatchList(tournament, stage, matches)}
     `;
@@ -1638,7 +1656,24 @@ function renderMatchList(
               <span class="badge badge-muted">${escapeHtml(arena?.name ?? "Geen arena")}</span>
               <span class="badge badge-muted">${match.scoreA ?? "?"}-${match.scoreB ?? "?"}</span>
               <span class="badge badge-muted">${escapeHtml(entryName(winner) ?? "Geen winnaar")}</span>
+              ${match.scheduledMatch
+                ? `<span class="badge badge-muted">Volgorde ${match.scheduledMatch.order}</span>`
+                : ""}
             </div>
+            ${match.scheduledMatch
+              ? `
+                <form class="editor-form" data-action="match-schedule">
+                  <input type="hidden" name="matchId" value="${escapeHtml(match.id)}" />
+                  <input type="hidden" name="scheduledPhaseId" value="${escapeHtml(match.scheduledMatch.scheduledPhaseId)}" />
+                  <label class="field">
+                    <span>Volgorde op ring binnen tijdslot</span>
+                    <input class="text-input" name="order" type="number" min="1" step="1" required
+                      value="${match.scheduledMatch.order}" />
+                  </label>
+                  <button type="submit" class="button">Volgorde opslaan</button>
+                </form>
+              `
+              : `<div class="info-card-subtitle">De ringvolgorde wordt aangemaakt zodra database-mode wordt geactiveerd.</div>`}
           </div>
         `;
       }).join("")}
@@ -1848,8 +1883,12 @@ function selectTournament(id?: string): void {
 
   state.selectedTournamentId = id;
   state.selectedStageId = null;
+  state.databaseLiveStatus = null;
+  state.databaseLiveLoading = false;
+  state.databaseLiveError = null;
   render();
   if (state.tournamentTab === "admins") void loadTournamentAdmins();
+  if (state.tournamentTab === "live") void loadDatabaseLiveStatus();
 }
 
 function selectStage(id?: string): void {
@@ -1891,8 +1930,10 @@ function setEventTab(tab: EventTab): void {
 function setTournamentTab(tab: TournamentTab): void {
   state.tournamentTab = tab;
   state.tournamentAdminError = null;
+  state.databaseLiveError = null;
   render();
   if (tab === "admins") void loadTournamentAdmins();
+  if (tab === "live") void loadDatabaseLiveStatus();
 }
 
 async function loadTournamentAdmins(): Promise<void> {
@@ -1917,6 +1958,103 @@ async function loadTournamentAdmins(): Promise<void> {
   } finally {
     if (currentTournament(currentEvent())?.id === tournament.id) {
       state.tournamentAdminsLoading = false;
+      render();
+    }
+  }
+}
+
+function renderDatabaseLive(): string {
+  if (state.databaseLiveLoading) return renderEmptyCard("Live scoringstatus laden...");
+  if (state.databaseLiveError) return renderEmptyCard(state.databaseLiveError);
+  const live = state.databaseLiveStatus;
+  if (!live) return renderEmptyCard("De live scoringstatus is nog niet geladen.");
+  if (!live.active) {
+    return `
+      <div class="info-card">
+        <div class="info-card-title">Database-mode scoring</div>
+        <div class="info-card-subtitle">Activeer live scoring op basis van dit toernooi en de huidige planning. Poolbouts zonder arena worden overgeslagen.</div>
+        <button type="button" class="button" data-action="activate-database-live">Database-mode activeren</button>
+      </div>
+    `;
+  }
+  return `
+    <div class="info-card">
+      <div class="info-card-title">Database-mode actief</div>
+      <div class="info-card-subtitle">${live.rings} ringen · ${live.bouts} bouts</div>
+      <button type="button" class="button secondary" data-action="project-database-live">Planning veilig bijwerken</button>
+    </div>
+  `;
+}
+
+async function loadDatabaseLiveStatus(): Promise<void> {
+  const tournament = currentTournament(currentEvent());
+  if (!tournament) return;
+  state.databaseLiveLoading = true;
+  state.databaseLiveError = null;
+  render();
+  try {
+    const status = await api.databaseLiveStatus(tournament.id);
+    if (currentTournament(currentEvent())?.id !== tournament.id) return;
+    state.databaseLiveStatus = status;
+  } catch (error) {
+    if (currentTournament(currentEvent())?.id !== tournament.id) return;
+    state.databaseLiveError = toErrorMessage(error);
+  } finally {
+    if (currentTournament(currentEvent())?.id === tournament.id) {
+      state.databaseLiveLoading = false;
+      render();
+    }
+  }
+}
+
+async function activateDatabaseLive(): Promise<void> {
+  const tournament = currentTournament(currentEvent());
+  if (!tournament) return;
+  state.databaseLiveLoading = true;
+  state.databaseLiveError = null;
+  render();
+  try {
+    const result = await api.activateDatabaseLive(tournament.id);
+    if (currentTournament(currentEvent())?.id !== tournament.id) return;
+    state.databaseLiveStatus = {
+      active: true,
+      liveTournamentId: result.id,
+      rings: result.projection.rings,
+      bouts: result.projection.bouts,
+    };
+  } catch (error) {
+    if (currentTournament(currentEvent())?.id !== tournament.id) return;
+    state.databaseLiveError = toErrorMessage(error);
+  } finally {
+    if (currentTournament(currentEvent())?.id === tournament.id) {
+      state.databaseLiveLoading = false;
+      render();
+    }
+  }
+}
+
+async function projectDatabaseLive(): Promise<void> {
+  const tournamentId = currentTournament(currentEvent())?.id;
+  const liveTournamentId = state.databaseLiveStatus?.liveTournamentId;
+  if (!tournamentId || !liveTournamentId) return;
+  state.databaseLiveLoading = true;
+  state.databaseLiveError = null;
+  render();
+  try {
+    const projection = await api.projectDatabaseLive(liveTournamentId);
+    if (currentTournament(currentEvent())?.id !== tournamentId) return;
+    state.databaseLiveStatus = {
+      active: true,
+      liveTournamentId,
+      rings: projection.rings,
+      bouts: projection.bouts,
+    };
+  } catch (error) {
+    if (currentTournament(currentEvent())?.id !== tournamentId) return;
+    state.databaseLiveError = toErrorMessage(error);
+  } finally {
+    if (currentTournament(currentEvent())?.id === tournamentId) {
+      state.databaseLiveLoading = false;
       render();
     }
   }

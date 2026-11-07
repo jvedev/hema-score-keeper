@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createTestContext, insertUser, type TestContext } from "./helpers.js";
+import { bearer, createTestContext, insertUser, type TestContext, type TestUser } from "./helpers.js";
 
 describe("bracket match scheduling", () => {
   let ctx: TestContext;
+  let organizer: TestUser;
   const stageId = "final-stage";
   const semiStageId = "semi-stage";
   const eliminationStageId = "elimination-stage";
@@ -14,7 +15,7 @@ describe("bracket match scheduling", () => {
 
   beforeEach(async () => {
     ctx = await createTestContext();
-    const user = await insertUser(ctx.database, { id: "organizer", role: "USER" });
+    organizer = await insertUser(ctx.database, { id: "organizer", role: "USER" });
     await ctx.database.insertInto("Event").values({
       id: "event",
       eventName: "Tournament day",
@@ -24,12 +25,18 @@ describe("bracket match scheduling", () => {
     await ctx.database.insertInto("Tournament").values({
       id: "tournament",
       eventId: "event",
-      createdByUserId: user.id,
+      createdByUserId: organizer.id,
       name: "Open",
       rulesetId: null,
       currentStageId: null,
       order: 0,
       color: "#5B8CFF",
+    }).execute();
+    await ctx.database.insertInto("TournamentAdmin").values({
+      tournamentId: "tournament",
+      userId: organizer.id,
+      addedByUserId: organizer.id,
+      createdAt: "2026-11-07T10:00:00.000Z",
     }).execute();
     await ctx.database.insertInto("Stage").values([
       {
@@ -96,6 +103,7 @@ describe("bracket match scheduling", () => {
       { id: "slot-two", scheduleId: "schedule", order: 1, durationMinutes: 60, label: "Slot 2", color: null, isBreak: 0 },
     ]).execute();
     await ctx.database.insertInto("ScheduledPhase").values([
+      { id: "pool-ring-one-slot-one", stageId: poolStageId, arenaId: "ring-one", timeSlotId: "slot-one" },
       { id: finalPhaseId, stageId, arenaId: "ring-one", timeSlotId: "slot-one" },
       { id: semiPhaseId, stageId: semiStageId, arenaId: "ring-one", timeSlotId: "slot-one" },
       { id: otherRingPhaseId, stageId, arenaId: "ring-two", timeSlotId: "slot-one" },
@@ -111,7 +119,7 @@ describe("bracket match scheduling", () => {
       { id: "final-match-two", roundId: "final-round", arenaId: null, entryAId: null, entryBId: null, winnerEntryId: null, scoreA: null, scoreB: null, rulesetId: null },
       { id: "final-match-three", roundId: "final-round", arenaId: null, entryAId: null, entryBId: null, winnerEntryId: null, scoreA: null, scoreB: null, rulesetId: null },
       { id: "semi-match", roundId: "semi-round", arenaId: null, entryAId: null, entryBId: null, winnerEntryId: null, scoreA: null, scoreB: null, rulesetId: null },
-      { id: "pool-match", roundId: "pool-round", arenaId: null, entryAId: null, entryBId: null, winnerEntryId: null, scoreA: null, scoreB: null, rulesetId: null },
+      { id: "pool-match", roundId: "pool-round", arenaId: "ring-one", entryAId: null, entryBId: null, winnerEntryId: null, scoreA: null, scoreB: null, rulesetId: null },
     ]).execute();
   });
 
@@ -123,6 +131,7 @@ describe("bracket match scheduling", () => {
     const response = await ctx.app.inject({
       method: "PUT",
       url: "/api/v1/matches/final-match/schedule",
+      headers: bearer(organizer),
       payload: { scheduledPhaseId: finalPhaseId, order: 1 },
     });
 
@@ -135,22 +144,26 @@ describe("bracket match scheduling", () => {
     const removed = await ctx.app.inject({
       method: "DELETE",
       url: "/api/v1/matches/final-match/schedule",
+      headers: bearer(organizer),
     });
     expect(removed.statusCode).toBe(204);
     expect(await ctx.database.selectFrom("ScheduledMatch").selectAll().execute()).toEqual([]);
   });
 
-  it("rejects pool matches, phases from another stage, and duplicate ring order across phases", async () => {
+  it("allows pool order edits but rejects mismatched phases and duplicate ring order across phases", async () => {
     const poolMatch = await ctx.app.inject({
       method: "PUT",
       url: "/api/v1/matches/pool-match/schedule",
-      payload: { scheduledPhaseId: finalPhaseId, order: 1 },
+      headers: bearer(organizer),
+      payload: { scheduledPhaseId: "pool-ring-one-slot-one", order: 1 },
     });
-    expect(poolMatch.statusCode).toBe(409);
+    expect(poolMatch.statusCode).toBe(200);
+    expect(poolMatch.json().scheduledMatch).toEqual({ scheduledPhaseId: "pool-ring-one-slot-one", order: 1 });
 
     const wrongStage = await ctx.app.inject({
       method: "PUT",
       url: "/api/v1/matches/final-match/schedule",
+      headers: bearer(organizer),
       payload: { scheduledPhaseId: semiPhaseId, order: 1 },
     });
     expect(wrongStage.statusCode).toBe(400);
@@ -158,14 +171,16 @@ describe("bracket match scheduling", () => {
     const first = await ctx.app.inject({
       method: "PUT",
       url: "/api/v1/matches/final-match/schedule",
-      payload: { scheduledPhaseId: finalPhaseId, order: 1 },
+      headers: bearer(organizer),
+      payload: { scheduledPhaseId: finalPhaseId, order: 2 },
     });
     expect(first.statusCode).toBe(200);
 
     const collision = await ctx.app.inject({
       method: "PUT",
       url: "/api/v1/matches/semi-match/schedule",
-      payload: { scheduledPhaseId: semiPhaseId, order: 1 },
+      headers: bearer(organizer),
+      payload: { scheduledPhaseId: semiPhaseId, order: 2 },
     });
     expect(collision.statusCode).toBe(409);
   });
@@ -174,16 +189,19 @@ describe("bracket match scheduling", () => {
     const first = await ctx.app.inject({
       method: "PUT",
       url: "/api/v1/matches/final-match/schedule",
+      headers: bearer(organizer),
       payload: { scheduledPhaseId: finalPhaseId, order: 1 },
     });
     const otherRing = await ctx.app.inject({
       method: "PUT",
       url: "/api/v1/matches/final-match-two/schedule",
+      headers: bearer(organizer),
       payload: { scheduledPhaseId: otherRingPhaseId, order: 1 },
     });
     const laterSlot = await ctx.app.inject({
       method: "PUT",
       url: "/api/v1/matches/final-match-three/schedule",
+      headers: bearer(organizer),
       payload: { scheduledPhaseId: laterPhaseId, order: 1 },
     });
 
@@ -209,13 +227,14 @@ describe("bracket match scheduling", () => {
       .where("arenaId", "=", "ring-one")
       .where("timeSlotId", "=", "slot-one")
       .execute();
-    expect(phases).toHaveLength(3);
+    expect(phases).toHaveLength(4);
   });
 
   it("prevents deleting a phase while bracket matches remain assigned", async () => {
     const scheduled = await ctx.app.inject({
       method: "PUT",
       url: "/api/v1/matches/final-match/schedule",
+      headers: bearer(organizer),
       payload: { scheduledPhaseId: finalPhaseId, order: 1 },
     });
     expect(scheduled.statusCode).toBe(200);
@@ -223,6 +242,7 @@ describe("bracket match scheduling", () => {
     const response = await ctx.app.inject({
       method: "DELETE",
       url: `/api/v1/scheduled-phases/${finalPhaseId}`,
+      headers: bearer(organizer),
     });
 
     expect(response.statusCode).toBe(409);

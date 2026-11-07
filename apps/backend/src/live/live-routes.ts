@@ -5,8 +5,10 @@ import type { FastifyInstance } from "fastify";
 import type { Kysely } from "kysely";
 import { requirePathParam, type AccessUser } from "../access-user.js";
 import { requireUser } from "../bouts/bout-routes.js";
-import type { BackendDatabase, LiveTarget } from "../db.js";
+import type { BackendDatabase, DbExecutor, LiveTarget } from "../db.js";
 import { ensureObject, HttpError, optionalString, requireString } from "../http.js";
+import { requireEventTournamentAdmin } from "../tournaments/access.js";
+import { activateDatabaseTournament, projectDatabaseTournament } from "./database-mode.js";
 import { rulesOf } from "./bout-display.js";
 import { boutScores, ringBouts } from "./bout-routes.js";
 import { XlsxCellSource } from "./cell-source.js";
@@ -51,6 +53,56 @@ function registerLiveRoutesInScope(app: FastifyInstance, database: Kysely<Backen
     return { id };
   });
 
+  app.post("/api/v1/tournaments/:id/live", async (request) => {
+    const user = await requireUser(request, database);
+    const sourceTournamentId = requirePathParam(request, "id");
+    return database.transaction().execute(async (trx) => {
+      await requireEventTournamentAdmin(trx, sourceTournamentId, user);
+      return activateDatabaseTournament(trx, sourceTournamentId, user.id, app.now().toISOString());
+    });
+  });
+
+  app.get("/api/v1/tournaments/:id/live", async (request) => {
+    const user = await requireUser(request, database);
+    const sourceTournamentId = requirePathParam(request, "id");
+    await requireEventTournamentAdmin(database, sourceTournamentId, user);
+    const liveTournament = await database.selectFrom("LiveTournament")
+      .select(["id", "mode"])
+      .where("sourceTournamentId", "=", sourceTournamentId)
+      .executeTakeFirst();
+    if (!liveTournament) {
+      return { active: false, liveTournamentId: null, rings: 0, bouts: 0 };
+    }
+    if (liveTournament.mode !== "DATABASE") {
+      throw new HttpError(409, "The source tournament is linked to a non-database live tournament.");
+    }
+    const [ringCount, boutCount] = await Promise.all([
+      database.selectFrom("LiveRing")
+        .select((expressionBuilder) => expressionBuilder.fn.count<number>("id").as("count"))
+        .where("tournamentId", "=", liveTournament.id)
+        .executeTakeFirst(),
+      database.selectFrom("LiveBout")
+        .select((expressionBuilder) => expressionBuilder.fn.count<number>("id").as("count"))
+        .where("tournamentId", "=", liveTournament.id)
+        .executeTakeFirst(),
+    ]);
+    return {
+      active: true,
+      liveTournamentId: liveTournament.id,
+      rings: ringCount?.count ?? 0,
+      bouts: boutCount?.count ?? 0,
+    };
+  });
+
+  app.post("/api/v1/live-tournaments/:id/project", async (request) => {
+    const user = await requireUser(request, database);
+    const liveTournamentId = requirePathParam(request, "id");
+    return database.transaction().execute(async (trx) => {
+      await requireTournamentAdmin(trx, liveTournamentId, user);
+      return projectDatabaseTournament(trx, liveTournamentId, app.now().toISOString());
+    });
+  });
+
   // The laptop person's list: own tournaments (every tournament for a system admin), newest first.
   app.get("/api/v1/live-tournaments", async (request) => {
     const user = await requireUser(request, database);
@@ -65,6 +117,7 @@ function registerLiveRoutesInScope(app: FastifyInstance, database: Kysely<Backen
     const user = await requireUser(request, database);
     const tournamentId = requirePathParam(request, "id");
     await requireTournamentAdmin(database, tournamentId, user);
+    await requireSheetTournament(database, tournamentId);
     const body = request.body;
     if (!Buffer.isBuffer(body) || body.length === 0) {
       throw new HttpError(400, "Send the .xlsx file as the request body (application/octet-stream).");
@@ -82,6 +135,7 @@ function registerLiveRoutesInScope(app: FastifyInstance, database: Kysely<Backen
     const user = await requireUser(request, database);
     const tournamentId = requirePathParam(request, "id");
     await requireTournamentAdmin(database, tournamentId, user);
+    await requireSheetTournament(database, tournamentId);
     const tournament = await database
       .selectFrom("LiveTournament")
       .select("googleSpreadsheetId")
@@ -110,6 +164,7 @@ function registerLiveRoutesInScope(app: FastifyInstance, database: Kysely<Backen
     const user = await requireUser(request, database);
     const tournamentId = requirePathParam(request, "id");
     await requireTournamentAdmin(database, tournamentId, user);
+    await requireSheetTournament(database, tournamentId);
     return { targets: await syncStatus(database, tournamentId) };
   });
 
@@ -389,6 +444,7 @@ function registerLiveRoutesInScope(app: FastifyInstance, database: Kysely<Backen
     const user = await requireUser(request, database);
     const tournamentId = requirePathParam(request, "id");
     await requireTournamentAdmin(database, tournamentId, user);
+    await requireSheetTournament(database, tournamentId);
     let bytes: Buffer;
     try {
       bytes = await readFile(backupPath(tournamentId));
@@ -537,7 +593,7 @@ function fighterNameKey(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("en");
 }
 
-export async function requireTournamentAdmin(database: Kysely<BackendDatabase>, tournamentId: string, user: AccessUser): Promise<void> {
+export async function requireTournamentAdmin(database: DbExecutor, tournamentId: string, user: AccessUser): Promise<void> {
   const tournament = await database
     .selectFrom("LiveTournament")
     .select(["createdByUserId", "mode", "sourceTournamentId"])
@@ -552,6 +608,18 @@ export async function requireTournamentAdmin(database: Kysely<BackendDatabase>, 
   }
   if (user.role !== "SYSTEM_ADMIN" && tournament.createdByUserId !== user.id) {
     throw new HttpError(403, "Only the creator of the tournament or a system admin can do this.");
+  }
+}
+
+async function requireSheetTournament(database: DbExecutor, tournamentId: string): Promise<void> {
+  const tournament = await database
+    .selectFrom("LiveTournament")
+    .select("mode")
+    .where("id", "=", tournamentId)
+    .executeTakeFirst();
+  if (!tournament) throw new HttpError(404, "Tournament not found.");
+  if (tournament.mode !== "SHEET") {
+    throw new HttpError(409, "Spreadsheet imports and backups are unavailable for database-mode tournaments.");
   }
 }
 

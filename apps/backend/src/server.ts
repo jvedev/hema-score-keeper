@@ -791,8 +791,10 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.get("/api/v1/events", async () => {
-    await syncAllPlannerArtifacts(database);
-    return loadEvents(database);
+    return database.transaction().execute(async (trx) => {
+      await syncAllPlannerArtifacts(trx);
+      return loadEvents(trx);
+    });
   });
 
   app.post("/api/v1/events", async (request) => {
@@ -920,8 +922,10 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
 
   app.get("/api/v1/events/:id/schedule", async (request) => {
     const eventId = requirePathParam(request, "id");
-    await syncEventArtifacts(database, eventId);
-    return requireEventScheduleResponse(database, eventId);
+    return database.transaction().execute(async (trx) => {
+      await syncEventArtifacts(trx, eventId);
+      return requireEventScheduleResponse(trx, eventId);
+    });
   });
 
   app.patch("/api/v1/events/:id/schedule", async (request) => {
@@ -1031,39 +1035,45 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
     const stageId = requireString(body.stageId, "Stage ID");
     const arenaId = requireString(body.arenaId, "Arena ID");
     const timeSlotId = requireString(body.timeSlotId, "Time slot ID");
-    await validateScheduledPhase(database, stageId, arenaId, timeSlotId);
     const id = generateId();
-    await database.insertInto("ScheduledPhase").values({ id, stageId, arenaId, timeSlotId }).execute();
-    await syncStageArtifacts(database, [stageId]);
-    return requireScheduledPhaseApi(database, id);
+    return database.transaction().execute(async (trx) => {
+      await validateScheduledPhase(trx, stageId, arenaId, timeSlotId);
+      await trx.insertInto("ScheduledPhase").values({ id, stageId, arenaId, timeSlotId }).execute();
+      await syncStageArtifacts(trx, [stageId]);
+      return requireScheduledPhaseApi(trx, id);
+    });
   });
 
   app.patch("/api/v1/scheduled-phases/:id", async (request) => {
     const id = requirePathParam(request, "id");
-    const existing = await requireScheduledPhaseRow(database, id);
     const body = ensureObject(request.body, "Scheduled phase");
-    const stageId = body.stageId === undefined ? existing.stageId : requireString(body.stageId, "Stage ID");
-    const arenaId = body.arenaId === undefined ? existing.arenaId : requireString(body.arenaId, "Arena ID");
-    const timeSlotId = body.timeSlotId === undefined ? existing.timeSlotId : requireString(body.timeSlotId, "Time slot ID");
-    await validateScheduledPhase(database, stageId, arenaId, timeSlotId, id);
-    await database.updateTable("ScheduledPhase").set({ stageId, arenaId, timeSlotId }).where("id", "=", id).execute();
-    await syncStageArtifacts(database, [existing.stageId, stageId]);
-    return requireScheduledPhaseApi(database, id);
+    return database.transaction().execute(async (trx) => {
+      const existing = await requireScheduledPhaseRow(trx, id);
+      const stageId = body.stageId === undefined ? existing.stageId : requireString(body.stageId, "Stage ID");
+      const arenaId = body.arenaId === undefined ? existing.arenaId : requireString(body.arenaId, "Arena ID");
+      const timeSlotId = body.timeSlotId === undefined ? existing.timeSlotId : requireString(body.timeSlotId, "Time slot ID");
+      await validateScheduledPhase(trx, stageId, arenaId, timeSlotId, id);
+      await trx.updateTable("ScheduledPhase").set({ stageId, arenaId, timeSlotId }).where("id", "=", id).execute();
+      await syncStageArtifacts(trx, [existing.stageId, stageId]);
+      return requireScheduledPhaseApi(trx, id);
+    });
   });
 
   app.delete("/api/v1/scheduled-phases/:id", async (request, reply) => {
     const id = requirePathParam(request, "id");
-    const existing = await requireScheduledPhaseRow(database, id);
-    const assignedMatch = await database
-      .selectFrom("ScheduledMatch")
-      .select("matchId")
-      .where("scheduledPhaseId", "=", id)
-      .executeTakeFirst();
-    if (assignedMatch) {
-      throw new HttpError(409, "Unassign bracket matches before deleting this scheduled phase.");
-    }
-    await database.deleteFrom("ScheduledPhase").where("id", "=", id).execute();
-    await syncStageArtifacts(database, [existing.stageId]);
+    await database.transaction().execute(async (trx) => {
+      const existing = await requireScheduledPhaseRow(trx, id);
+      const assignedMatch = await trx
+        .selectFrom("ScheduledMatch")
+        .select("matchId")
+        .where("scheduledPhaseId", "=", id)
+        .executeTakeFirst();
+      if (assignedMatch) {
+        throw new HttpError(409, "Remove scheduled match orders before deleting this scheduled phase.");
+      }
+      await trx.deleteFrom("ScheduledPhase").where("id", "=", id).execute();
+      await syncStageArtifacts(trx, [existing.stageId]);
+    });
     reply.status(204).send();
   });
 
@@ -1121,22 +1131,26 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
     }
 
     const id = generateId();
-    await database.insertInto("ScheduledAssignment").values({
-      id,
-      scheduledPhaseId: scheduledPhase.id,
-      userId,
-      role,
-    }).execute();
-    await syncStageArtifacts(database, [stage.id]);
-    return requireScheduledAssignmentApi(database, id);
+    return database.transaction().execute(async (trx) => {
+      await trx.insertInto("ScheduledAssignment").values({
+        id,
+        scheduledPhaseId: scheduledPhase.id,
+        userId,
+        role,
+      }).execute();
+      await syncStageArtifacts(trx, [stage.id]);
+      return requireScheduledAssignmentApi(trx, id);
+    });
   });
 
   app.delete("/api/v1/scheduled-assignments/:id", async (request, reply) => {
     const id = requirePathParam(request, "id");
-    const assignment = await requireScheduledAssignmentRow(database, id);
-    const phase = await requireScheduledPhaseRow(database, assignment.scheduledPhaseId);
-    await database.deleteFrom("ScheduledAssignment").where("id", "=", id).execute();
-    await syncStageArtifacts(database, [phase.stageId]);
+    await database.transaction().execute(async (trx) => {
+      const assignment = await requireScheduledAssignmentRow(trx, id);
+      const phase = await requireScheduledPhaseRow(trx, assignment.scheduledPhaseId);
+      await trx.deleteFrom("ScheduledAssignment").where("id", "=", id).execute();
+      await syncStageArtifacts(trx, [phase.stageId]);
+    });
     reply.status(204).send();
   });
 
@@ -1697,12 +1711,17 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   app.get("/api/v1/matches", async () => listMatches(database));
 
   app.put("/api/v1/matches/:id/schedule", async (request) => {
+    const user = await requireUser(request, database);
     const matchId = requirePathParam(request, "id");
     const body = ensureObject(request.body, "Match schedule");
     const scheduledPhaseId = requireString(body.scheduledPhaseId, "Scheduled phase ID");
     const order = requirePositiveInteger(body.order, "Match order");
 
     await database.transaction().execute(async (trx) => {
+      const match = await requireMatchRow(trx, matchId);
+      const round = await trx.selectFrom("Round").selectAll().where("id", "=", match.roundId).executeTakeFirstOrThrow();
+      const stage = await requireStageRow(trx, round.stageId);
+      await requireEventTournamentAdmin(trx, stage.tournamentId, user);
       await validateScheduledMatch(trx, matchId, scheduledPhaseId, order);
       await trx
         .insertInto("ScheduledMatch")
@@ -1714,9 +1733,18 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.delete("/api/v1/matches/:id/schedule", async (request, reply) => {
+    const user = await requireUser(request, database);
     const matchId = requirePathParam(request, "id");
-    await requireMatchRow(database, matchId);
-    await database.deleteFrom("ScheduledMatch").where("matchId", "=", matchId).execute();
+    await database.transaction().execute(async (trx) => {
+      const match = await requireMatchRow(trx, matchId);
+      const round = await trx.selectFrom("Round").selectAll().where("id", "=", match.roundId).executeTakeFirstOrThrow();
+      const stage = await requireStageRow(trx, round.stageId);
+      await requireEventTournamentAdmin(trx, stage.tournamentId, user);
+      if (stage.type === "POOL") {
+        throw new HttpError(409, "Pool match orders cannot be removed; assign a different ring order.");
+      }
+      await trx.deleteFrom("ScheduledMatch").where("matchId", "=", matchId).execute();
+    });
     reply.status(204).send();
   });
 

@@ -1251,6 +1251,21 @@ async function syncRoundMatches(executor: DbExecutor, round: RoundRow, desiredMa
 
   for (const existing of existingMatches) {
     if (!desiredByKey.has(matchKey(existing.arenaId, existing.entryAId, existing.entryBId))) {
+      const liveBout = await executor
+        .selectFrom("LiveBout")
+        .select(["id", "status"])
+        .where("sourceMatchId", "=", existing.id)
+        .executeTakeFirst();
+      if (liveBout) {
+        const hasExchange = await executor.selectFrom("LiveExchange")
+          .select("id")
+          .where("boutId", "=", liveBout.id)
+          .executeTakeFirst();
+        if (liveBout.status !== "PENDING" || hasExchange) {
+          throw new HttpError(409, `Pool match "${existing.id}" cannot be removed because live scoring has started.`);
+        }
+        await executor.deleteFrom("LiveBout").where("id", "=", liveBout.id).execute();
+      }
       await executor.deleteFrom("Match").where("id", "=", existing.id).execute();
     }
   }
@@ -1358,13 +1373,28 @@ export async function validateScheduledMatch(
     `Round "${match.roundId}" not found.`,
   );
   const stage = await requireStageRow(executor, round.stageId);
-  if (stage.type === "POOL") {
-    throw new HttpError(409, "Pool matches are scheduled automatically from their round and arena.");
-  }
-
   const phase = await requireScheduledPhaseRow(executor, scheduledPhaseId);
   if (phase.stageId !== stage.id) {
     throw new HttpError(400, "A match must be placed in a scheduled phase for its stage.");
+  }
+  if (stage.type === "POOL") {
+    if (match.arenaId === null) {
+      throw new HttpError(409, "A pool match needs an arena before its bout order can be changed.");
+    }
+    const generatedPhase = await executor
+      .selectFrom("ScheduledPhase")
+      .innerJoin("ScheduleTimeSlot", "ScheduleTimeSlot.id", "ScheduledPhase.timeSlotId")
+      .select("ScheduledPhase.id")
+      .where("ScheduledPhase.stageId", "=", stage.id)
+      .where("ScheduledPhase.arenaId", "=", match.arenaId)
+      .where("ScheduleTimeSlot.order", "=", round.roundNumber)
+      .executeTakeFirst();
+    if (!generatedPhase) {
+      throw new HttpError(409, "The pool match has no generated phase for its round and arena.");
+    }
+    if (generatedPhase.id !== phase.id) {
+      throw new HttpError(409, "A pool match's phase is determined by its generated round and arena.");
+    }
   }
 
   const occupiedOrder = await executor
