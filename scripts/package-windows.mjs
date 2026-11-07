@@ -44,7 +44,7 @@ try {
     throw new Error(`The package already exists and will not be overwritten: ${packageRoot}`);
   }
 
-  for (const app of ["competition", "competition-admin", "score-keeper", "event-admin", "tournament-admin"]) {
+  for (const app of ["competition", "competition-admin", "score-keeper", "event-admin"]) {
     await cp(path.join(repoRoot, "apps", app, "dist"), path.join(serverRoot, "apps", app, "dist"), {
       recursive: true,
     });
@@ -96,7 +96,7 @@ try {
     [
       "HEMA Score Keeper local server",
       "",
-      "Start HemaScoreKeeper.Launcher.exe. The server and all five apps are served from one origin.",
+      "Start HemaScoreKeeper.Launcher.exe. The server and all four apps are served from one origin.",
       "Connect phones to the same Wi-Fi and open one of the LAN addresses printed by the launcher.",
       "Allow its TCP port on the Windows Private network profile if Windows Firewall asks.",
       "Do not configure public router port forwarding. This local HTTP setup does not support Web Push.",

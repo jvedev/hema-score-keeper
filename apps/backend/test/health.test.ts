@@ -17,7 +17,8 @@ describe("test harness", () => {
     expect(response.body).toContain('href="/score-keeper/"');
     expect(response.body).toContain('href="/competition-admin/"');
     expect(response.body).toContain('href="/event-admin/"');
-    expect(response.body).toContain('href="/tournament-admin/"');
+    expect(response.body.match(/href="\/event-admin\/"/g)).toHaveLength(1);
+    expect(response.body).not.toContain('href="/tournament-admin/"');
   });
 
   it("gives every context its own database", async () => {

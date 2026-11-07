@@ -2,8 +2,8 @@ import Fastify from "fastify";
 import { productionAppMounts, registerStaticApps } from "../apps/backend/dist/static-apps.js";
 
 const mounts = productionAppMounts();
-if (mounts.length !== 5) {
-  throw new Error(`Expected five built apps, found ${mounts.length}.`);
+if (mounts.length !== 4) {
+  throw new Error(`Expected four built apps, found ${mounts.length}.`);
 }
 
 const app = Fastify();
@@ -34,6 +34,16 @@ try {
     }
     console.log(`Verified ${mount.id}: ${mount.base} and deep-link fallback`);
   }
+
+  const removedApp = await app.inject({
+    method: "GET",
+    url: "/tournament-admin/",
+    headers: { accept: "text/html" },
+  });
+  if (removedApp.statusCode !== 404) {
+    throw new Error(`Removed Tournament-admin path should return 404 (${removedApp.statusCode}).`);
+  }
+  console.log("Verified removed Tournament-admin path returns 404.");
 
   const api = await app.inject({ method: "GET", url: "/api/v1/deployment-check" });
   if (api.statusCode !== 200 || api.json().ok !== true) {

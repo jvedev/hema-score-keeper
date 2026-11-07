@@ -1,6 +1,6 @@
 # Competition deploy
 
-The five web apps and backend can run from one codebase in two ways: a Windows LAN package
+The four web apps and backend can run from one codebase in two ways: a Windows LAN package
 for events, or a Node.js site on Alwaysdata. The production build uses the same fixed app
 paths and same-origin API (`/api/v1`) in both places. The participant app can also be hosted
 separately on GitHub Pages as described below.
@@ -13,7 +13,6 @@ separately on GitHub Pages as described below.
 | Competition administration | `/competition-admin/` |
 | Score keeper and scoreboard | `/score-keeper/` |
 | Event administration | `/event-admin/` |
-| Tournament administration | `/tournament-admin/` |
 | Backend API | `/api/v1/` |
 
 Build all production apps and verify their roots, assets and deep links with
@@ -30,7 +29,7 @@ npm run package:windows
 The command builds the apps, packages a matching Windows Node runtime and native SQLite
 dependencies, builds the self-contained launcher, and smoke-tests the packaged server. The
 result is a versioned folder under `artifacts/windows/`; distribute or copy the complete
-folder, not just the executable. Start `HemaScoreKeeper.Launcher.exe`. It serves all five
+folder, not just the executable. Start `HemaScoreKeeper.Launcher.exe`. It serves all four
 apps and the API on port 3001, opens the local root page, and prints LAN addresses for phones
 on the same Wi-Fi. Set `HEMASCORE_PORT` before launch to use another port.
 
@@ -110,7 +109,7 @@ npm run create-admin --workspace @hema/backend -- --username <username> --name "
 It asks for a password interactively. Confirm that the actual Alwaysdata account supports
 Node >=22, installs the native `better-sqlite3` dependency, and permits the existing
 background workers within its resource limits. Those account-specific checks cannot be
-verified from this repository. Open the site's HTTPS root page to reach all five apps.
+verified from this repository. Open the site's HTTPS root page to reach all four apps.
 
 The Windows package is built on Windows because `better-sqlite3` contains native code;
 Alwaysdata installs Linux-native dependencies on its own platform. Source, app paths, and

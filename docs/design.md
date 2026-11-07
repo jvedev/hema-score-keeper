@@ -2,7 +2,7 @@
 
 ## Apps
 
-- `tournament-admin`: beheer van events, tournaments, arenas, stages en inschrijvingen.
+- `event-admin`: beheer van events en de bijbehorende tournaments; een event kan geen, één of meerdere tournaments bevatten.
 - `score-keeper`: aparte live score-app voor 1 arena/match tegelijk.
 
 ## Domeinmodel
@@ -38,10 +38,10 @@ Een rulesetversie die al in een match gebruikt is, blijft readonly. Voor aanpass
 
 ## Navigatievoorstel
 
-### `tournament-admin`
+### `event-admin`
 
 - `/events` - event-overzicht met aanmaken, bewerken en verwijderen.
-- `/events/:eventId` - event detail met arenas en tournaments op 1 pagina.
+- `/events/:eventId` - event detail met arenas en nul of meer tournaments.
 - `/events/:eventId/tournaments/:tournamentId` - tournament detail met entries, officials en stages.
 - `/events/:eventId/tournaments/:tournamentId/stages/:stageId` - stage detail met type-afhankelijke instellingen, arena-koppelingen en live data.
 
@@ -57,5 +57,6 @@ Een rulesetversie die al in een match gebruikt is, blijft readonly. Voor aanpass
 
 De term "vrijwilligers" in het oude ontwerp past beter als "officials". Als er echt event-brede vrijwilligers nodig zijn, is daar later een aparte event-staff laag voor nodig.
 
-# event admin
-in deze admin app kan je events beheren en alle bijbehoorende
+# Event-admin
+Each tournament belongs to exactly one event. The former standalone Tournament-admin
+placeholder is removed; its future administration workflow will be designed within Event-admin.

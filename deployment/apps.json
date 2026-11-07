@@ -3,7 +3,6 @@
     { "id": "competition", "base": "/hema-score-keeper/competition/", "directory": "competition" },
     { "id": "competition-admin", "base": "/competition-admin/", "directory": "competition-admin" },
     { "id": "score-keeper", "base": "/score-keeper/", "directory": "score-keeper" },
-    { "id": "event-admin", "base": "/event-admin/", "directory": "event-admin" },
-    { "id": "tournament-admin", "base": "/tournament-admin/", "directory": "tournament-admin" }
+    { "id": "event-admin", "base": "/event-admin/", "directory": "event-admin" }
   ]
 }

@@ -176,7 +176,6 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
       "competition-admin": "Competition administration",
       "score-keeper": "Score keeper and scoreboard",
       "event-admin": "Event administration",
-      "tournament-admin": "Tournament administration",
     };
     const links = appPaths()
       .map(({ id, base }) => `<li><a href="${base}">${labels[id] ?? id}</a></li>`)
