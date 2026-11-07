@@ -33,6 +33,8 @@ and screen concepts are approved.
 - Attaching/detaching a Competition or spreadsheet-mode tournament changes only its parent
   Event relationship and preserves component data. Event deletion detaches these component
   types instead of deleting them; detaching removes parent-Event access.
+- Spreadsheet-mode tournament ring/bout order remains in its existing workflow; the shared
+  Event planner covers database-mode Tournament stages only.
 - The component model must leave room for later types such as workshops without forcing
   tournament-specific behavior onto every component.
 - Do not assume the separate Competition and Tournament domain models should be merged into a
@@ -233,6 +235,7 @@ phase boundary.
   code or schema changes.
 - Competition cardinality, attachment/detachment data behavior, and Event-admin membership
   bootstrap are approved.
-- Confirm the implementation plan's spreadsheet-planner boundary and legacy entry-point
-  transition. Other UX details such as officials terminology and localization behavior remain
-  part of implementation design.
+- The spreadsheet-planner boundary is approved: the shared planner covers database-mode
+  Tournament stages only. Confirm the legacy sheet-workflow entry-point transition. Other UX
+  details such as officials terminology and localization behavior remain part of
+  implementation design.

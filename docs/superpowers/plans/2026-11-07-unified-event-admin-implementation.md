@@ -39,6 +39,8 @@ pre-implementation decisions below are approved.
   Event relationship. Its child data is preserved; detaching restores standalone management
   for Competition and removes parent-Event access to the spreadsheet tournament. Deleting an
   Event also detaches these component types instead of deleting their data.
+- Spreadsheet-mode tournament ring/bout order remains in its existing workflow; the shared
+  Event planner schedules database-mode Tournament stages only.
 - A rating Competition may be standalone or linked to exactly one Event. For an attached
   Competition, management rights combine the parent Event administrators, existing
   Competition administrators, and `SYSTEM_ADMIN`.
@@ -202,9 +204,9 @@ Scope:
   without changing tournament-specific behavior unnecessarily.
 - Preserve participants, officials, stages, admins, stage progression, schedule, live status,
   completed results, and authorized correction history.
-- Keep the event-wide planner focused on Event-admin database-mode Tournament stages. Do not
-  silently schedule rating Competition bouts or spreadsheet-mode LiveTournament bouts into
-  it.
+- Keep the event-wide planner focused on Event-admin database-mode Tournament stages, as the
+  user decided. Do not schedule rating Competition bouts or spreadsheet-mode LiveTournament
+  bouts into it.
 - Keep Event membership and Tournament administrator controls separate and explain their
   permission scopes in the UI.
 
@@ -278,10 +280,7 @@ Scope:
 
 ## Decisions needed before implementation
 
-1. **Spreadsheet schedule:** proposed first implementation leaves spreadsheet-mode ring/bout
-   order inside its existing workflow and does not add it to the Event-wide database-mode
-   planner. Confirm or revise.
-2. **Legacy entry point:** proposed transition keeps the current Competition-admin
+1. **Legacy entry point:** proposed transition keeps the current Competition-admin
    spreadsheet-tournament entry available until the new Event component passes acceptance;
    removal requires a later explicit approval.
 
@@ -296,6 +295,6 @@ Scope:
 
 ## Next step
 
-Review the two remaining decisions above and approve Phase 1 only after they are resolved. No
+Review the one remaining decision above and approve Phase 1 only after it is resolved. No
 implementation has started; the current local `.idea/php.xml` change is unrelated and must
 remain outside any commit.
