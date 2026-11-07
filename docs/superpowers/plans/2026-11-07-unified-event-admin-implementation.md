@@ -35,6 +35,10 @@ pre-implementation decisions below are approved.
   belongs to exactly one Event.
 - An Event may contain multiple rating Competitions; each rating Competition may be linked to
   no more than one Event.
+- Attaching or detaching a Competition or spreadsheet-mode tournament changes only its parent
+  Event relationship. Its child data is preserved; detaching restores standalone management
+  for Competition and removes parent-Event access to the spreadsheet tournament. Deleting an
+  Event also detaches these component types instead of deleting their data.
 - A rating Competition may be standalone or linked to exactly one Event. For an attached
   Competition, management rights combine the parent Event administrators, existing
   Competition administrators, and `SYSTEM_ADMIN`.
@@ -96,10 +100,9 @@ Use the existing domain tables rather than a polymorphic `Activity` table:
 - Add scoped create/link/unlink operations. Attaching or detaching changes only the parent
   relationship; it must not copy, merge, or delete Competition participants, LiveTournament
   bouts, exchanges, or other child data.
-- Event deletion should detach standalone-capable Competition and spreadsheet-mode
-  LiveTournament records rather than silently deleting them. Existing database-mode
-  Tournament cascade behavior remains unchanged unless a reviewed migration intentionally
-  changes it.
+- Event deletion detaches standalone-capable Competition and spreadsheet-mode LiveTournament
+  records rather than deleting them. Existing database-mode Tournament cascade behavior
+  remains unchanged unless a reviewed migration intentionally changes it.
 
 ## Proposed implementation phases
 
@@ -123,7 +126,8 @@ Scope:
 - For an attached Competition, enforce the approved union of parent Event administrators,
   Competition administrators, and `SYSTEM_ADMIN`. Standalone Competition authorization
   remains unchanged.
-- Define attach, detach, Event deletion, and existing unlinked sheet-tournament behavior.
+- Implement the approved attach/detach and Event-deletion behavior, and define the handling
+  of existing unlinked sheet-tournament records.
 
 Acceptance:
 
@@ -274,13 +278,10 @@ Scope:
 
 ## Decisions needed before implementation
 
-1. **Attach/detach semantics:** proposed behavior keeps the child data unchanged, detaches
-   rather than deletes on unlink/Event deletion, and leaves standalone Competition admins
-   intact. Confirm or revise.
-2. **Spreadsheet schedule:** proposed first implementation leaves spreadsheet-mode ring/bout
+1. **Spreadsheet schedule:** proposed first implementation leaves spreadsheet-mode ring/bout
    order inside its existing workflow and does not add it to the Event-wide database-mode
    planner. Confirm or revise.
-3. **Legacy entry point:** proposed transition keeps the current Competition-admin
+2. **Legacy entry point:** proposed transition keeps the current Competition-admin
    spreadsheet-tournament entry available until the new Event component passes acceptance;
    removal requires a later explicit approval.
 
@@ -295,6 +296,6 @@ Scope:
 
 ## Next step
 
-Review the three remaining decisions above and approve Phase 1 only after they are resolved. No
+Review the two remaining decisions above and approve Phase 1 only after they are resolved. No
 implementation has started; the current local `.idea/php.xml` change is unrelated and must
 remain outside any commit.

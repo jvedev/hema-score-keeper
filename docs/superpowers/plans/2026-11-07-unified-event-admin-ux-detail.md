@@ -151,6 +151,10 @@ proposed event workflow therefore offers both **Create competition for this even
 Event; an Event can show multiple type-specific components. The old Competition-admin entry
 point is not removed as part of this design.
 
+Attaching or detaching a Competition changes only its parent Event relationship. Competition
+data and its existing admins remain intact; detaching makes it standalone again and removes
+the former Event-admins' component access.
+
 **Competition workspace:** retain its current capabilities and terminology, including:
 
 - Participant and standings list, participant drilldown, and bout history/details.

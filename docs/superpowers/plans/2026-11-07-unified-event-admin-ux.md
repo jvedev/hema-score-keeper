@@ -4,8 +4,8 @@ Status: event-first direction and low-fidelity wireframes approved. Competition 
 administered inside Event-admin. It can remain standalone or be linked to one Event;
 event-admin and Competition-admin rights combine for an attached Competition. The user also
 decided to retain the separate spreadsheet-mode `LiveTournament` workflow alongside
-database-mode as a distinct component under Event → Components. Full UX review remains
-approved; the implementation plan is drafted for review.
+database-mode as a distinct component under Event → Components. The low-fidelity wireframes
+are approved; the implementation plan is drafted for review.
 
 ## Goal
 
@@ -30,6 +30,9 @@ and screen concepts are approved.
   to its existing creator and `SYSTEM_ADMIN`. The user approved that creators of new Events
   become their first Event administrator; existing Events without one are bootstrapped by
   `SYSTEM_ADMIN`.
+- Attaching/detaching a Competition or spreadsheet-mode tournament changes only its parent
+  Event relationship and preserves component data. Event deletion detaches these component
+  types instead of deleting them; detaching removes parent-Event access.
 - The component model must leave room for later types such as workshops without forcing
   tournament-specific behavior onto every component.
 - Do not assume the separate Competition and Tournament domain models should be merged into a
@@ -198,11 +201,12 @@ in the path.
    [`2026-11-07-unified-event-admin-ux-detail.md`](2026-11-07-unified-event-admin-ux-detail.md);
    low-fidelity screen concepts are in
    [`2026-11-07-unified-event-admin-wireframes.md`](2026-11-07-unified-event-admin-wireframes.md).
-   Standalone/attachment lifecycle remains to be clarified.
+   The user approved preserving child data on attach/detach and detaching these component
+   types, rather than deleting them, when an Event is deleted.
 3. **In progress:** implementation plan drafted in
-    [`2026-11-07-unified-event-admin-implementation.md`](2026-11-07-unified-event-admin-implementation.md).
-    It maps routes, APIs, schema and migration work, but lists five decisions that must be
-    resolved before implementation.
+   [`2026-11-07-unified-event-admin-implementation.md`](2026-11-07-unified-event-admin-implementation.md).
+   It maps routes, APIs, schema and migration work; two decisions remain before
+   implementation.
 4. **Implementation:** deliver in small reviewable slices, preserving current behavior unless
    an approved design intentionally changes it; run targeted and workspace verification.
 
@@ -227,8 +231,8 @@ phase boundary.
 
 - The low-fidelity wireframes are approved. Review the implementation plan before any product
   code or schema changes.
-- An Event may contain multiple rating Competitions; each Competition remains linked to at
-  most one Event. The Event-admin membership bootstrap is also approved.
-- Resolve the implementation plan's attach/detach behavior, spreadsheet-planner boundary,
-  and legacy entry-point transition. Other UX details such as officials terminology and
-  localization behavior remain part of implementation design.
+- Competition cardinality, attachment/detachment data behavior, and Event-admin membership
+  bootstrap are approved.
+- Confirm the implementation plan's spreadsheet-planner boundary and legacy entry-point
+  transition. Other UX details such as officials terminology and localization behavior remain
+  part of implementation design.
