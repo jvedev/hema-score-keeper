@@ -1,6 +1,6 @@
 # Admin app consolidation
 
-Status: implemented and verified on `co-pilot`; commit/push pending.
+Status: implemented, verified, committed, and pushed to `origin/co-pilot` as `f5b5602`.
 
 ## Goal
 
@@ -77,9 +77,9 @@ This phase removes that placeholder app rather than presenting it as production 
 
 ## Status / next
 
-Implementation and verification are complete. Commit the phase-specific changes and push
-`co-pilot`; leave `.idea/php.xml` out of the commit. The next separate phase is planning the
-combined admin UX, with explicit support for events containing zero or more tournaments.
+Implementation and verification are complete and pushed in `f5b5602`. The unrelated
+`.idea/php.xml` modification remains local and uncommitted. The next separate phase is planning
+the combined admin UX, with explicit support for events containing zero or more tournaments.
 
 ## Acceptance criteria
 
