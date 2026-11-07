@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { sql } from "kysely";
 import { enqueueSync } from "../src/live/live-store.js";
 import { bearer, createTestContext, insertUser, type TestContext, type TestUser } from "./helpers.js";
 
@@ -121,6 +122,43 @@ describe("database-mode tournament activation and projection", () => {
       method: "POST",
       url: `/api/v1/live-tournaments/${liveTournamentId}/project`,
       headers: bearer(as),
+    });
+  }
+
+  async function scoreAndFinish(
+    sourceMatchId: string,
+    exchanges: Array<{ clientExchangeId: string; leftPoints: number; rightPoints: number; round?: number }>,
+  ) {
+    const bout = await ctx.database.selectFrom("LiveBout")
+      .selectAll()
+      .where("sourceMatchId", "=", sourceMatchId)
+      .executeTakeFirstOrThrow();
+    const ring = await ctx.database.selectFrom("LiveRing")
+      .select("keeperToken")
+      .where("id", "=", bout.ringId)
+      .executeTakeFirstOrThrow();
+    const deviceId = `device-${sourceMatchId}`;
+    const headers = { ...bearer(admin), "x-ring-token": ring.keeperToken, "x-device-id": deviceId };
+    const claim = await ctx.app.inject({
+      method: "POST",
+      url: `/api/v1/live-rings/by-token/${ring.keeperToken}/claim`,
+      headers: bearer(admin),
+      payload: { deviceId },
+    });
+    expect(claim.statusCode).toBe(200);
+    for (const exchange of exchanges) {
+      const response = await ctx.app.inject({
+        method: "POST",
+        url: `/api/v1/live-bouts/${bout.id}/exchanges`,
+        headers,
+        payload: { ...exchange, kind: "EXCHANGE" },
+      });
+      expect(response.statusCode).toBe(200);
+    }
+    return ctx.app.inject({
+      method: "POST",
+      url: `/api/v1/live-bouts/${bout.id}/finish`,
+      headers,
     });
   }
 
@@ -286,5 +324,148 @@ describe("database-mode tournament activation and projection", () => {
     const response = await activate();
     expect(response.statusCode).toBe(409);
     expect(await ctx.database.selectFrom("LiveTournament").select("id").execute()).toEqual([]);
+  });
+
+  it("projects finished results and exchanges atomically, idempotently, and blocks manual completion", async () => {
+    await activate();
+    const manual = await ctx.app.inject({
+      method: "POST",
+      url: "/api/v1/matches/pool-match-a/complete",
+      payload: { scoreA: 1, scoreB: 0, exchanges: [] },
+    });
+    expect(manual.statusCode).toBe(409);
+    expect(await ctx.database.selectFrom("Match").select(["scoreA", "scoreB"]).where("id", "=", "pool-match-a").executeTakeFirst())
+      .toEqual({ scoreA: null, scoreB: null });
+
+    const exchanges = [
+      { clientExchangeId: "score-a", leftPoints: 2, rightPoints: 0 },
+      { clientExchangeId: "score-b", leftPoints: 0, rightPoints: 1 },
+    ];
+    const finished = await scoreAndFinish("pool-match-a", exchanges);
+    expect(finished.statusCode).toBe(200);
+    const match = await ctx.database.selectFrom("Match").selectAll().where("id", "=", "pool-match-a").executeTakeFirstOrThrow();
+    expect(match).toMatchObject({ scoreA: 2, scoreB: 1, winnerEntryId: "entry-a" });
+    const eventExchanges = await ctx.database.selectFrom("Exchange").selectAll().where("matchId", "=", "pool-match-a").execute();
+    expect(eventExchanges).toHaveLength(2);
+    expect(eventExchanges.map((exchange) => [exchange.scoreA, exchange.scoreB])).toEqual([[2, 0], [2, 1]]);
+    expect(JSON.parse(eventExchanges[0]!.details!)).toMatchObject({
+      source: "LIVE",
+      kind: "EXCHANGE",
+      liveBoutId: expect.any(String),
+      liveExchangeId: expect.any(String),
+      seq: 1,
+    });
+    expect((await ctx.database.selectFrom("LiveBout").select("sourceResultSignature").where("sourceMatchId", "=", "pool-match-a").executeTakeFirst())
+      ?.sourceResultSignature).toMatch(/^[a-f0-9]{64}$/);
+
+    expect((await scoreAndFinish("pool-match-a", exchanges)).statusCode).toBe(200);
+    expect(await ctx.database.selectFrom("Exchange").select("id").where("matchId", "=", "pool-match-a").execute())
+      .toHaveLength(2);
+  });
+
+  it("lets only a tournament admin correct a completed result and preserves the prior version", async () => {
+    await activate();
+    expect((await scoreAndFinish("pool-match-a", [
+      { clientExchangeId: "original-a", leftPoints: 1, rightPoints: 0 },
+      { clientExchangeId: "original-b", leftPoints: 0, rightPoints: 1 },
+    ])).statusCode).toBe(200);
+
+    const bout = await ctx.database.selectFrom("LiveBout")
+      .select("id")
+      .where("sourceMatchId", "=", "pool-match-a")
+      .executeTakeFirstOrThrow();
+    const payload = {
+      exchanges: [
+        { clientExchangeId: "corrected-a", kind: "EXCHANGE", leftPoints: 0, rightPoints: 2 },
+        { clientExchangeId: "corrected-b", kind: "DEDUCTION", leftPoints: -1, rightPoints: 0 },
+      ],
+    };
+    const denied = await ctx.app.inject({
+      method: "POST",
+      url: `/api/v1/live-bouts/${bout.id}/correction`,
+      headers: bearer(other),
+      payload,
+    });
+    expect(denied.statusCode).toBe(403);
+
+    const corrected = await ctx.app.inject({
+      method: "POST",
+      url: `/api/v1/live-bouts/${bout.id}/correction`,
+      headers: bearer(admin),
+      payload,
+    });
+    expect(corrected.statusCode).toBe(200);
+    expect(corrected.json()).toMatchObject({ revision: 1, score: { left: -1, right: 2 } });
+    expect(await ctx.database.selectFrom("Match").select(["scoreA", "scoreB", "winnerEntryId"]).where("id", "=", "pool-match-a").executeTakeFirst())
+      .toEqual({ scoreA: -1, scoreB: 2, winnerEntryId: "entry-b" });
+    const revision = await ctx.database.selectFrom("LiveBoutRevision").selectAll().where("boutId", "=", bout.id).executeTakeFirstOrThrow();
+    expect(revision).toMatchObject({ revision: 1, replacedByUserId: admin.id });
+    expect(JSON.parse(revision.exchangesJson)).toHaveLength(2);
+    const currentExchanges = await ctx.database.selectFrom("LiveExchange").select(["clientExchangeId", "undoneAt"]).where("boutId", "=", bout.id).orderBy("seq").execute();
+    expect(currentExchanges).toEqual([
+      { clientExchangeId: "corrected-a", undoneAt: null },
+      { clientExchangeId: "corrected-b", undoneAt: null },
+    ]);
+    expect(await ctx.database.selectFrom("Exchange").select("id").where("matchId", "=", "pool-match-a").execute()).toHaveLength(2);
+    const retried = await ctx.app.inject({
+      method: "POST",
+      url: `/api/v1/live-bouts/${bout.id}/correction`,
+      headers: bearer(admin),
+      payload,
+    });
+    expect(retried.statusCode).toBe(200);
+    expect(retried.json().revision).toBe(1);
+    expect(await ctx.database.selectFrom("LiveBoutRevision").select("id").where("boutId", "=", bout.id).execute()).toHaveLength(1);
+    expect(await ctx.database.selectFrom("Exchange").select("id").where("matchId", "=", "pool-match-a").execute()).toHaveLength(2);
+  });
+
+  it("rolls back a finish when the source match already has an external result", async () => {
+    await activate();
+    await ctx.database.updateTable("Match").set({ scoreA: 7, scoreB: 2 }).where("id", "=", "pool-match-a").execute();
+    const finish = await scoreAndFinish("pool-match-a", [
+      { clientExchangeId: "live-result", leftPoints: 1, rightPoints: 0 },
+    ]);
+    expect(finish.statusCode).toBe(409);
+    expect(await ctx.database.selectFrom("LiveBout").select(["status", "sourceResultSignature"])
+      .where("sourceMatchId", "=", "pool-match-a").executeTakeFirst())
+      .toEqual({ status: "RUNNING", sourceResultSignature: null });
+    expect(await ctx.database.selectFrom("Match").select(["scoreA", "scoreB"]).where("id", "=", "pool-match-a").executeTakeFirst())
+      .toEqual({ scoreA: 7, scoreB: 2 });
+    expect(await ctx.database.selectFrom("Exchange").select("id").where("matchId", "=", "pool-match-a").execute()).toEqual([]);
+  });
+
+  it("rolls back a correction if projecting the Event-admin exchange rows fails", async () => {
+    await activate();
+    expect((await scoreAndFinish("pool-match-a", [
+      { clientExchangeId: "original", leftPoints: 2, rightPoints: 0 },
+    ])).statusCode).toBe(200);
+    const bout = await ctx.database.selectFrom("LiveBout")
+      .select("id")
+      .where("sourceMatchId", "=", "pool-match-a")
+      .executeTakeFirstOrThrow();
+    const matchBefore = await ctx.database.selectFrom("Match").selectAll().where("id", "=", "pool-match-a").executeTakeFirstOrThrow();
+    const exchangeIdsBefore = await ctx.database.selectFrom("Exchange").select("id").where("matchId", "=", "pool-match-a").execute();
+    await sql`CREATE TRIGGER fail_live_result_projection
+      BEFORE INSERT ON Exchange
+      BEGIN
+        SELECT RAISE(ABORT, 'forced result projection failure');
+      END`.execute(ctx.database);
+
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: `/api/v1/live-bouts/${bout.id}/correction`,
+      headers: bearer(admin),
+      payload: {
+        exchanges: [{ clientExchangeId: "corrected", kind: "EXCHANGE", leftPoints: 0, rightPoints: 3 }],
+      },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(await ctx.database.selectFrom("LiveBoutRevision").select("id").where("boutId", "=", bout.id).execute()).toEqual([]);
+    expect(await ctx.database.selectFrom("LiveExchange").select("clientExchangeId").where("boutId", "=", bout.id).execute())
+      .toEqual([{ clientExchangeId: "original" }]);
+    expect(await ctx.database.selectFrom("Match").selectAll().where("id", "=", "pool-match-a").executeTakeFirst())
+      .toEqual(matchBefore);
+    expect(await ctx.database.selectFrom("Exchange").select("id").where("matchId", "=", "pool-match-a").execute())
+      .toEqual(exchangeIdsBefore);
   });
 });

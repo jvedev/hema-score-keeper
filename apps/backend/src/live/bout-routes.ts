@@ -11,6 +11,8 @@ import { scoreOf, type BoutScore } from "./bout-score.js";
 import { activeExchanges, enqueueSync, type LiveExchangeRow } from "./live-store.js";
 import { checkRingToken, requireKeeper } from "./ring-keeper.js";
 import { requireLiveRingAccess } from "./ring-access.js";
+import { requireEventTournamentAdmin } from "../tournaments/access.js";
+import { correctDatabaseBoutResult, projectDatabaseBoutResult } from "./database-results.js";
 
 type LiveBoutRow = Selectable<BackendDatabase["LiveBout"]>;
 
@@ -21,7 +23,7 @@ const MAX_SEQ_ATTEMPTS = 5;
 const MAX_ROUND = 9;
 const MAX_WARNINGS = 99;
 
-interface ExchangeInput {
+export interface ExchangeInput {
   clientExchangeId: string;
   kind: "EXCHANGE" | "DEDUCTION";
   leftPoints: number;
@@ -347,7 +349,40 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
           .where("id", "=", boutId)
           .execute();
       }
+      await projectDatabaseBoutResult(trx, boutId);
       return { bout: await getBout(trx, boutId), score: await scoreFor(trx, boutId) };
+    });
+  });
+
+  app.post("/api/v1/live-bouts/:id/correction", async (request) => {
+    const user = await requireUser(request, database);
+    const boutId = requirePathParam(request, "id");
+    const body = ensureObject(request.body, "Bout correction");
+    if (!Array.isArray(body.exchanges)) throw new HttpError(400, "exchanges must be an array.");
+    const exchanges = body.exchanges.map(parseExchangeInput);
+    if (new Set(exchanges.map((exchange) => exchange.clientExchangeId)).size !== exchanges.length) {
+      throw new HttpError(400, "clientExchangeId values must be unique within the correction.");
+    }
+
+    return database.transaction().execute(async (trx) => {
+      const bout = await getBout(trx, boutId);
+      const tournament = await trx.selectFrom("LiveTournament")
+        .select(["mode", "sourceTournamentId"])
+        .where("id", "=", bout.tournamentId)
+        .executeTakeFirstOrThrow();
+      if (tournament.mode !== "DATABASE" || tournament.sourceTournamentId === null) {
+        throw new HttpError(409, "Only a database-mode bout can be corrected here.");
+      }
+      await requireEventTournamentAdmin(trx, tournament.sourceTournamentId, user);
+      const revision = await correctDatabaseBoutResult(trx, boutId, user.id, exchanges, app.now().toISOString());
+      const correctedBout = await getBout(trx, boutId);
+      const correctedExchanges = await activeExchanges(trx, boutId);
+      return {
+        bout: correctedBout,
+        exchanges: correctedExchanges.map(publicExchange),
+        score: scoreOf(correctedExchanges),
+        revision,
+      };
     });
   });
 

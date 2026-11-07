@@ -1796,6 +1796,16 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
     }
 
     await database.transaction().execute(async (trx) => {
+      const liveBout = await trx
+        .selectFrom("LiveBout")
+        .innerJoin("LiveTournament", "LiveTournament.id", "LiveBout.tournamentId")
+        .select("LiveBout.id")
+        .where("LiveBout.sourceMatchId", "=", matchId)
+        .where("LiveTournament.mode", "=", "DATABASE")
+        .executeTakeFirst();
+      if (liveBout) {
+        throw new HttpError(409, "This match is completed through live scoring.");
+      }
       for (const exchange of exchanges) {
         if (exchange.details === undefined) {
           throw new HttpError(400, "Match exchange details must be provided.");

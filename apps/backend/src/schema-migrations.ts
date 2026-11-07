@@ -494,6 +494,12 @@ const MIGRATIONS: readonly SchemaMigration[] = [
       addColumn(database, "LiveBout", "sourceScheduleSignature", "TEXT");
     },
   },
+  {
+    name: "2026-11-07-database-live-result-signature",
+    apply(database) {
+      addColumn(database, "LiveBout", "sourceResultSignature", "TEXT");
+    },
+  },
 ];
 
 export function applySchemaMigrations(database: NativeDatabase): void {

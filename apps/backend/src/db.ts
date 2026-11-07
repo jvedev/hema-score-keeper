@@ -354,6 +354,7 @@ interface LiveBoutTable {
   sourceMatchId: Generated<string | null>;
   scheduledPhaseId: Generated<string | null>;
   sourceScheduleSignature: Generated<string | null>;
+  sourceResultSignature: Generated<string | null>;
   ringId: string;
   order: number;
   label: string;

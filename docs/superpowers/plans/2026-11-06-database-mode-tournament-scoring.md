@@ -3,7 +3,8 @@
 Status: implementation in progress. The user approved the updated plan on 2026-11-06.
 Ownership/admin APIs, bracket scheduling, database-mode activation/projection, and
 server-side ring authorization are implemented. Transactional result/correction projection
-remains outstanding.
+is implemented on the backend; the remaining work is the admin correction UI, mode-aware
+client details, and end-to-end verification.
 
 ## Goal
 
@@ -192,15 +193,28 @@ resolved as recorded above.
 - Added coverage for all allowed assignment roles, disallowed `FIGHTER`/unassigned users,
   phase-scoped read access, role revocation, and authorization on exchange, undo, start,
   finish, and clock writes.
+- Added transactional projection on finish from authoritative `LiveExchange` rows into
+  Event-admin match scores and exchange details. A persisted result signature makes finish
+  retries idempotent; pre-existing external results conflict without changing the live bout.
+- Blocked the separate Event-admin match-completion route for matches linked to database-mode
+  live bouts, keeping a single result write path.
+- Added tournament-admin-only correction of completed bouts. Each correction snapshots the
+  prior bout/exchange state in `LiveBoutRevision`, replaces the current live exchanges, and
+  reprojects the Event-admin result in the same transaction. Identical retries do not add a
+  second revision; projection failures roll back the revision, exchanges, and match update.
+- Event-admin match views already render the projected score/winner fields. A dedicated
+  correction workflow and mode-aware score-keeper details remain to be implemented.
 - The user requested intermediate commits and pushes on `co-pilot`; the completed prior
   milestone was committed as `617ded9` and pushed to `origin/co-pilot`.
 - The activation/projection checkpoint was committed as `be965e1` and pushed to
   `origin/co-pilot`.
-- Verification after ring authorization: backend typecheck/build and full suite pass
-  (38 files, 364 tests). Shared-UI suite (42 files, 226 tests), Event-admin API/UI typechecks,
-  and Event-admin production build also pass. No packages were installed.
-- Commit and push ring authorization to `co-pilot`, then implement transactional result and
-  correction projection.
+- Ring authorization was committed and pushed as `f6e7d14`.
+- Verification after result projection: backend typecheck/build and complete suite pass
+  (38 files, 368 tests). Shared-UI suite (42 files, 226 tests), Event-admin API/UI typechecks,
+  and Event-admin production build also passed for the preceding checkpoint. No packages
+  were installed.
+- Commit and push the verified result/correction backend, then implement the admin correction
+  workflow and mode-aware client details before final end-to-end verification.
 
 ## Local command note
 
@@ -242,7 +256,9 @@ time or duration. Correction behavior is to preserve the prior exchange state as
 and re-project the corrected result. Ownership/admin and explicit bracket scheduling passed
 the full backend suite (353 tests) and shared-UI suite (224 tests) before activation.
 Activation, schedule projection, and pool-order editing pass the full backend suite (37 files,
-361 tests) and shared-UI suite (42 files, 226 tests). Ring authorization now passes the full
-backend suite (38 files, 364 tests), typecheck, and build. Commit and push that checkpoint to
-`co-pilot`, then implement transactional result/correction projection. Continue without
-PowerShell or package installation.
+361 tests) and shared-UI suite (42 files, 226 tests). Ring authorization passed the full
+backend suite (38 files, 364 tests), typecheck, and build. Transactional result projection,
+admin corrections, migration, and rollback tests now pass the full backend suite (38 files,
+368 tests), typecheck, and build. Commit and push this checkpoint to `co-pilot`, then add the
+admin correction workflow and mode-aware client details before final integration verification.
+Continue without PowerShell or package installation.
