@@ -27,8 +27,9 @@ and screen concepts are approved.
   Event-admin database-mode Tournament and from Competition. The user chose to place both
   tournament workflows under Event → Components.
 - Parent-Event administrators may manage an attached spreadsheet-mode tournament, in addition
-  to its existing creator and `SYSTEM_ADMIN`. The Event-admin membership model and bootstrap
-  policy are proposed in the implementation plan and remain to be approved.
+  to its existing creator and `SYSTEM_ADMIN`. The user approved that creators of new Events
+  become their first Event administrator; existing Events without one are bootstrapped by
+  `SYSTEM_ADMIN`.
 - The component model must leave room for later types such as workshops without forcing
   tournament-specific behavior onto every component.
 - Do not assume the separate Competition and Tournament domain models should be merged into a
@@ -226,7 +227,7 @@ phase boundary.
 
 - The low-fidelity wireframes are approved. Review the implementation plan before any product
   code or schema changes.
-- Resolve the implementation plan's Event-admin membership bootstrap, Competition
-  cardinality, attach/detach behavior, spreadsheet-planner boundary, and legacy entry-point
-  transition. Other UX details such as officials terminology and localization behavior remain
-  part of implementation design.
+- Resolve the implementation plan's Competition cardinality, attach/detach behavior,
+  spreadsheet-planner boundary, and legacy entry-point transition. The Event-admin membership
+  bootstrap is approved. Other UX details such as officials terminology and localization
+  behavior remain part of implementation design.

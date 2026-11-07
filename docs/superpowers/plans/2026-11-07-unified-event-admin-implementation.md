@@ -29,6 +29,8 @@ pre-implementation decisions below are approved.
   component type, not as the database-mode Tournament or rating Competition.
 - Event administrators of the parent Event gain management access to an attached
   spreadsheet-mode tournament, in addition to its existing creator and `SYSTEM_ADMIN`.
+- The creator of a new Event becomes its first Event administrator. Existing Events without
+  an administrator remain unowned until a `SYSTEM_ADMIN` assigns their first administrator.
 - An Event may contain zero or more database-mode Tournaments; each database-mode Tournament
   belongs to exactly one Event.
 - A rating Competition may be standalone or linked to exactly one Event. For an attached
@@ -88,8 +90,8 @@ Use the existing domain tables rather than a polymorphic `Activity` table:
   Keep each underlying entity's existing fields and operations; avoid copying one type's
   behavior into another type's API.
 - Add an explicit per-Event administrator relation and authorization helpers. The user has
-  approved the permission outcome for attached Competition and spreadsheet-mode tournaments,
-  but the membership model and bootstrap policy still need approval (see decisions below).
+  approved the membership bootstrap policy and permission outcomes for attached Competition
+  and spreadsheet-mode tournaments.
 - Add scoped create/link/unlink operations. Attaching or detaching changes only the parent
   relationship; it must not copy, merge, or delete Competition participants, LiveTournament
   bouts, exchanges, or other child data.
@@ -109,9 +111,9 @@ Scope:
 
 - Introduce an `EventAdmin` membership model so "administrator of the parent Event" is
   enforceable and distinct from `TournamentAdmin` and `CompetitionAdmin`.
-- Proposed bootstrap: the authenticated creator of a new Event becomes its first Event
-  administrator. Existing Events without an administrator remain unowned until a
-  `SYSTEM_ADMIN` assigns their first administrator.
+- The user approved this bootstrap: the authenticated creator of a new Event becomes its
+  first Event administrator. Existing Events without an administrator remain unowned until
+  a `SYSTEM_ADMIN` assigns their first administrator.
 - Define the Event-admin operations that Event administrators may perform. Membership in an
   Event must not silently grant database-mode Tournament administration; the Tournament
   creator/admin and ring-role permissions remain scoped as already implemented.
@@ -271,18 +273,15 @@ Scope:
 
 ## Decisions needed before implementation
 
-1. **Event-admin membership bootstrap:** approve a new EventAdmin relation, with creators of
-   new Events added automatically and existing unowned Events bootstrapped only by
-   `SYSTEM_ADMIN`, or choose another policy.
-2. **Competition cardinality:** current wireframes allow multiple rating Competitions per
+1. **Competition cardinality:** current wireframes allow multiple rating Competitions per
    Event. Confirm that or cap each Event at one.
-3. **Attach/detach semantics:** proposed behavior keeps the child data unchanged, detaches
+2. **Attach/detach semantics:** proposed behavior keeps the child data unchanged, detaches
    rather than deletes on unlink/Event deletion, and leaves standalone Competition admins
    intact. Confirm or revise.
-4. **Spreadsheet schedule:** proposed first implementation leaves spreadsheet-mode ring/bout
+3. **Spreadsheet schedule:** proposed first implementation leaves spreadsheet-mode ring/bout
    order inside its existing workflow and does not add it to the Event-wide database-mode
    planner. Confirm or revise.
-5. **Legacy entry point:** proposed transition keeps the current Competition-admin
+4. **Legacy entry point:** proposed transition keeps the current Competition-admin
    spreadsheet-tournament entry available until the new Event component passes acceptance;
    removal requires a later explicit approval.
 
@@ -297,6 +296,6 @@ Scope:
 
 ## Next step
 
-Review the five decisions above and approve Phase 1 only after they are resolved. No
+Review the four remaining decisions above and approve Phase 1 only after they are resolved. No
 implementation has started; the current local `.idea/php.xml` change is unrelated and must
 remain outside any commit.
