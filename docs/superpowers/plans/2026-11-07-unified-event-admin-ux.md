@@ -1,6 +1,7 @@
 # Unified Event-admin UX
 
-Status: proposed; awaiting user review before detailed design or implementation.
+Status: information-architecture direction approved; detailed UX concept drafted and awaiting
+user review.
 
 ## Goal
 
@@ -135,11 +136,11 @@ in the path.
 
 ## Proposed phase sequence
 
-1. **UX concept (this plan):** agree on the hierarchy, separation of event and tournament
-   concerns, and which current capabilities must remain.
-2. **Detailed interaction design:** map user journeys and screen states; produce low-fidelity
-   layouts for Events, Event overview, Tournament overview, Stage workspace, and Schedule
-   planner. Review empty and multi-tournament cases explicitly.
+1. **Done:** user approved the event-first hierarchy, optional tournaments, event-wide planner,
+   and keeping live scoring in Score-keeper.
+2. **Done:** drafted the screen and interaction concept in
+   [`2026-11-07-unified-event-admin-ux-detail.md`](2026-11-07-unified-event-admin-ux-detail.md).
+   The detailed concept is awaiting user review; it covers empty and multi-tournament cases.
 3. **Implementation plan:** map the approved designs to routes/components/API needs, identify
    any necessary database changes, and define migration/data-reset and verification approach.
    Ask for approval before implementation.
@@ -163,8 +164,6 @@ phase boundary.
 
 ## Open review points
 
-- Confirm whether the proposed event-first navigation and dedicated tournament workspace fit
-  the desired way of working.
-- Confirm whether the planner belongs as an event-level workspace as proposed.
-- Confirm the proposed user journeys and preservation of all current capabilities before
-  detailed screen design.
+- Detailed screen design is awaiting review. Decisions still to validate are listed in the
+  detailed concept, including the officials terminology, permission/read-only scope, and
+  language selection behavior.
