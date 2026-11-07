@@ -248,6 +248,17 @@ describe("ring mode", () => {
     expect(state().ring?.name).toBe("Ring 1");
   });
 
+  it("keeps the tournament scoring mode in ring state", async () => {
+    api.ring = {
+      ...(api.ring as RingByToken),
+      tournament: { id: "t1", name: "Cup", mode: "DATABASE" },
+    };
+
+    await controller().open("tok");
+
+    expect(state().tournamentMode).toBe("DATABASE");
+  });
+
   it("claim on an active ring asks to confirm", async () => {
     keptBy("Ann");
     const ring = controller();

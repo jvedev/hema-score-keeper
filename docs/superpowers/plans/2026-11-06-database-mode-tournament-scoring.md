@@ -1,10 +1,10 @@
 # Database-mode tournament scoring
 
 Status: implementation in progress. The user approved the updated plan on 2026-11-06.
-Ownership/admin APIs, bracket scheduling, database-mode activation/projection, and
-server-side ring authorization are implemented. Transactional result/correction projection
-is implemented on the backend; the remaining work is the admin correction UI, mode-aware
-client details, and end-to-end verification.
+Ownership/admin APIs, bracket scheduling, database-mode activation/projection,
+server-side ring authorization, transactional result/correction projection, the Event-admin
+correction UI, and score-keeper mode details are implemented and automated verification
+passes. Remaining acceptance is a fresh-local-database interactive workflow check.
 
 ## Goal
 
@@ -139,8 +139,9 @@ resolved as recorded above.
    - Atomically write completed live results to Event-admin `Match`/`Exchange` records using
      the agreed source-of-truth policy; cover idempotent retry, correction and failed
      transaction behavior.
-   - Update competition-admin's tournament screen and score-keeper ring details to identify
-     database mode and show meaningful schedule/admin state.
+   - Keep database-mode status and correction controls in Event-admin, the schedule source;
+     show the tournament scoring mode in score-keeper ring details. The separate
+     competition-admin ratings domain is not part of this flow.
    - Keep scoreboard output mode-agnostic and verify existing sheet-mode behavior.
 6. **Verification and handoff**
    - Focused migrations, backend authorization/projection tests, Event-admin API/UI tests,
@@ -202,19 +203,26 @@ resolved as recorded above.
   prior bout/exchange state in `LiveBoutRevision`, replaces the current live exchanges, and
   reprojects the Event-admin result in the same transaction. Identical retries do not add a
   second revision; projection failures roll back the revision, exchanges, and match update.
-- Event-admin match views already render the projected score/winner fields. A dedicated
-  correction workflow and mode-aware score-keeper details remain to be implemented.
+- Event-admin match views render projected scores and winners. Its live-scoring tab now
+  loads completed results for admins and supports adding, editing, and removing exchanges
+  before submitting an atomic correction. Form validation mirrors backend limits, rejects
+  duplicate exchange IDs and blank numeric fields, and stale schedule-refresh responses
+  cannot overwrite a newly selected tournament.
+- Score-keeper ring details now label database versus spreadsheet mode using localized
+  English and Dutch strings. The mode is carried through the ring state; existing mock
+  Event-admin match data now includes the required schedule-link field.
 - The user requested intermediate commits and pushes on `co-pilot`; the completed prior
   milestone was committed as `617ded9` and pushed to `origin/co-pilot`.
 - The activation/projection checkpoint was committed as `be965e1` and pushed to
   `origin/co-pilot`.
 - Ring authorization was committed and pushed as `f6e7d14`.
-- Verification after result projection: backend typecheck/build and complete suite pass
-  (38 files, 368 tests). Shared-UI suite (42 files, 226 tests), Event-admin API/UI typechecks,
-  and Event-admin production build also passed for the preceding checkpoint. No packages
-  were installed.
-- Commit and push the verified result/correction backend, then implement the admin correction
-  workflow and mode-aware client details before final end-to-end verification.
+- Full workspace suite passes: backend 38 files/368 tests; score-keeper 13 files/105 tests;
+  shared UI 42 files/229 tests; all other workspace suites also pass. Workspace typechecks
+  and production builds passed, including the final Event-admin UI changes. No packages were
+  installed.
+- The user-requested intermediate commits and pushes are on `co-pilot`; the current verified
+  correction-UI/mode-details checkpoint is ready to commit and push. Keep the unrelated
+  `.idea/php.xml` change out of the commit.
 
 ## Local command note
 
@@ -252,13 +260,12 @@ of a legacy tournament; time slots determine primary order, with an explicit sha
 order within each slot across phases; and matches without an arena are excluded until
 assigned. Pool matches map to slots from their generated round and arena; bracket matches
 are explicitly placed in a phase. This ordering is sequence only, not a guaranteed bout start
-time or duration. Correction behavior is to preserve the prior exchange state as a revision
-and re-project the corrected result. Ownership/admin and explicit bracket scheduling passed
-the full backend suite (353 tests) and shared-UI suite (224 tests) before activation.
-Activation, schedule projection, and pool-order editing pass the full backend suite (37 files,
-361 tests) and shared-UI suite (42 files, 226 tests). Ring authorization passed the full
-backend suite (38 files, 364 tests), typecheck, and build. Transactional result projection,
-admin corrections, migration, and rollback tests now pass the full backend suite (38 files,
-368 tests), typecheck, and build. Commit and push this checkpoint to `co-pilot`, then add the
-admin correction workflow and mode-aware client details before final integration verification.
-Continue without PowerShell or package installation.
+time or duration. Corrections preserve the prior exchange state as a revision and re-project
+the corrected result.
+
+The implementation and automated verification are complete: the full workspace test suite,
+workspace typechecks, and production builds pass. Next, commit and push the verified
+Event-admin correction UI and score-keeper mode-details checkpoint on `co-pilot`, then
+perform the fresh-local-database interactive acceptance check. Phone, Web Push and
+Alwaysdata-account checks remain deferred. Continue without PowerShell or package
+installation.

@@ -237,6 +237,30 @@ export interface ApiDatabaseLiveStatus {
   bouts: number;
 }
 
+export interface ApiDatabaseLiveExchange {
+  clientExchangeId: string;
+  kind: "EXCHANGE" | "DEDUCTION";
+  leftPoints: number;
+  rightPoints: number;
+  isDouble: boolean;
+  firstScorer: "LEFT" | "RIGHT" | null;
+  round: number;
+}
+
+export interface ApiDatabaseLiveResult {
+  boutId: string;
+  sourceMatchId: string;
+  label: string;
+  fighterLeft: string;
+  fighterRight: string;
+  score: { left: number; right: number; doubles: number };
+  exchanges: ApiDatabaseLiveExchange[];
+}
+
+export interface ApiDatabaseLiveCorrectionInput {
+  exchanges: readonly Omit<ApiDatabaseLiveExchange, "isDouble">[];
+}
+
 export interface ApiEvent {
   id: string;
   eventName: string;
@@ -356,8 +380,10 @@ export interface ApiClient {
   addTournamentAdmin(id: string, userId: string): Promise<ApiTournamentAdmin[]>;
   removeTournamentAdmin(id: string, userId: string): Promise<void>;
   databaseLiveStatus(id: string): Promise<ApiDatabaseLiveStatus>;
+  databaseLiveResults(id: string): Promise<ApiDatabaseLiveResult[]>;
   activateDatabaseLive(id: string): Promise<{ id: string; projection: { rings: number; bouts: number; removedBouts: number } }>;
   projectDatabaseLive(id: string): Promise<{ rings: number; bouts: number; removedBouts: number }>;
+  correctDatabaseLiveResult(id: string, body: ApiDatabaseLiveCorrectionInput): Promise<{ revision: number }>;
   createArena(body: { eventId: string; name: string; order?: number; leftColor?: string; rightColor?: string }): Promise<ApiArena>;
   updateArena(
     id: string,
@@ -526,6 +552,8 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
     removeTournamentAdmin: (id, userId) =>
       requestJson<void>(baseUrl, `/tournaments/${id}/admins/${encodeURIComponent(userId)}`, { method: "DELETE" }),
     databaseLiveStatus: (id) => requestJson<ApiDatabaseLiveStatus>(baseUrl, `/tournaments/${id}/live`),
+    databaseLiveResults: async (id) =>
+      (await requestJson<{ results: ApiDatabaseLiveResult[] }>(baseUrl, `/tournaments/${id}/live/results`)).results,
     activateDatabaseLive: (id) =>
       requestJson<{ id: string; projection: { rings: number; bouts: number; removedBouts: number } }>(
         baseUrl,
@@ -540,6 +568,8 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
       );
       return result;
     },
+    correctDatabaseLiveResult: (id, body) =>
+      requestJson<{ revision: number }>(baseUrl, `/live-bouts/${id}/correction`, { method: "POST", body }),
     createArena: (body) => requestJson<ApiArena>(baseUrl, "/arenas", { method: "POST", body }),
     updateArena: (id, body) => requestJson<ApiArena>(baseUrl, `/arenas/${id}`, { method: "PATCH", body }),
     listArenas: () => requestJson<ApiArena[]>(baseUrl, "/arenas"),

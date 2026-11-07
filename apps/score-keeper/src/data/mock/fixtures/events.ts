@@ -60,6 +60,7 @@ const openStage = {
           scoreA: null,
           scoreB: null,
           ruleset: defaultRuleset,
+          scheduledMatch: null,
         },
         {
           id: "match-2",
@@ -71,6 +72,7 @@ const openStage = {
           scoreA: null,
           scoreB: null,
           ruleset: defaultRuleset,
+          scheduledMatch: null,
         },
       ],
     },
@@ -89,6 +91,7 @@ const openStage = {
           scoreA: null,
           scoreB: null,
           ruleset: defaultRuleset,
+          scheduledMatch: null,
         },
         {
           id: "match-4",
@@ -100,6 +103,7 @@ const openStage = {
           scoreA: null,
           scoreB: null,
           ruleset: defaultRuleset,
+          scheduledMatch: null,
         },
       ],
     },

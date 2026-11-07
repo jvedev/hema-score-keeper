@@ -322,6 +322,120 @@ describe("event-view", () => {
     expect(mock.databaseLiveProjectionCalls).toBe(1);
   });
 
+  it("loads completed live results and submits an admin correction", async () => {
+    const mock = installEventViewMock();
+    Object.assign(mock.databaseLiveStatus, { active: true, liveTournamentId: "live-1", rings: 1, bouts: 1 });
+    mock.databaseLiveResults.push({
+      boutId: "live-bout-1",
+      sourceMatchId: "match-1",
+      label: "Bout 1",
+      fighterLeft: "Alice",
+      fighterRight: "Bob",
+      score: { left: 1, right: 0, doubles: 0 },
+      exchanges: [{
+        clientExchangeId: "exchange-1",
+        kind: "EXCHANGE",
+        leftPoints: 1,
+        rightPoints: 0,
+        isDouble: false,
+        firstScorer: "LEFT",
+        round: 1,
+      }],
+    });
+    await import("./event-view");
+    const element = document.createElement("event-view");
+    document.body.appendChild(element);
+    await flush();
+    const liveTab = await waitForElement<HTMLButtonElement>(element, 'button[data-action="set-tournament-tab"][data-tab="live"]');
+    liveTab.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    await waitForText(element, "Bout 1 · 1-0");
+
+    const form = await waitForElement<HTMLFormElement>(element, 'form[data-action="database-live-correction"]');
+    form.querySelector<HTMLInputElement>('input[name="leftPoints"]')!.value = "2";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await waitForCondition(() => mock.databaseLiveCorrectionCalls === 1 && mock.lastDatabaseLiveCorrection !== undefined);
+    expect(mock.lastDatabaseLiveCorrection).toEqual({
+      exchanges: [{
+        clientExchangeId: "exchange-1",
+        kind: "EXCHANGE",
+        leftPoints: 2,
+        rightPoints: 0,
+        firstScorer: "LEFT",
+        round: 1,
+      }],
+    });
+    mock.restore();
+    element.remove();
+  });
+
+  it("rejects duplicate exchange IDs before submitting a correction", async () => {
+    const mock = installEventViewMock();
+    Object.assign(mock.databaseLiveStatus, { active: true, liveTournamentId: "live-1", rings: 1, bouts: 1 });
+    mock.databaseLiveResults.push({
+      boutId: "live-bout-1",
+      sourceMatchId: "match-1",
+      label: "Bout 1",
+      fighterLeft: "Alice",
+      fighterRight: "Bob",
+      score: { left: 1, right: 0, doubles: 0 },
+      exchanges: [
+        { clientExchangeId: "exchange-1", kind: "EXCHANGE", leftPoints: 1, rightPoints: 0, isDouble: false, firstScorer: "LEFT", round: 1 },
+        { clientExchangeId: "exchange-2", kind: "EXCHANGE", leftPoints: 0, rightPoints: 1, isDouble: false, firstScorer: "RIGHT", round: 1 },
+      ],
+    });
+    await import("./event-view");
+    const element = document.createElement("event-view");
+    document.body.appendChild(element);
+    await flush();
+    const liveTab = await waitForElement<HTMLButtonElement>(element, 'button[data-action="set-tournament-tab"][data-tab="live"]');
+    liveTab.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    const form = await waitForElement<HTMLFormElement>(element, 'form[data-action="database-live-correction"]');
+    const ids = form.querySelectorAll<HTMLInputElement>('input[name="clientExchangeId"]');
+    ids[1]!.value = ids[0]!.value;
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+
+    await waitForText(element, "Elke exchange moet een unieke ID hebben.");
+    expect(mock.databaseLiveCorrectionCalls).toBe(0);
+    mock.restore();
+    element.remove();
+  });
+
+  it("rejects blank correction points instead of treating them as zero", async () => {
+    const mock = installEventViewMock();
+    Object.assign(mock.databaseLiveStatus, { active: true, liveTournamentId: "live-1", rings: 1, bouts: 1 });
+    mock.databaseLiveResults.push({
+      boutId: "live-bout-1",
+      sourceMatchId: "match-1",
+      label: "Bout 1",
+      fighterLeft: "Alice",
+      fighterRight: "Bob",
+      score: { left: 1, right: 0, doubles: 0 },
+      exchanges: [{
+        clientExchangeId: "exchange-1",
+        kind: "EXCHANGE",
+        leftPoints: 1,
+        rightPoints: 0,
+        isDouble: false,
+        firstScorer: "LEFT",
+        round: 1,
+      }],
+    });
+    await import("./event-view");
+    const element = document.createElement("event-view");
+    document.body.appendChild(element);
+    await flush();
+    const liveTab = await waitForElement<HTMLButtonElement>(element, 'button[data-action="set-tournament-tab"][data-tab="live"]');
+    liveTab.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    const form = await waitForElement<HTMLFormElement>(element, 'form[data-action="database-live-correction"]');
+    form.querySelector<HTMLInputElement>('input[name="leftPoints"]')!.value = "";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+
+    await waitForText(element, "Controleer type, punten en ronde van elke exchange.");
+    expect(mock.databaseLiveCorrectionCalls).toBe(0);
+    mock.restore();
+    element.remove();
+  });
+
   it("keeps judge skills after updating and removes duplicate judge entries", async () => {
     const mock = installEventViewMock();
     mock.entries.push(
@@ -367,7 +481,26 @@ function installEventViewMock() {
   const event = buildEvent();
   const scheduledMatches: Array<{ id: string; scheduledPhaseId: string; order: number }> = [];
   const databaseLiveStatus = { active: false, liveTournamentId: null as string | null, rings: 0, bouts: 0 };
+  const databaseLiveResults: Array<{
+    boutId: string;
+    sourceMatchId: string;
+    label: string;
+    fighterLeft: string;
+    fighterRight: string;
+    score: { left: number; right: number; doubles: number };
+    exchanges: Array<{
+      clientExchangeId: string;
+      kind: "EXCHANGE" | "DEDUCTION";
+      leftPoints: number;
+      rightPoints: number;
+      isDouble: boolean;
+      firstScorer: "LEFT" | "RIGHT" | null;
+      round: number;
+    }>;
+  }> = [];
   let databaseLiveProjectionCalls = 0;
+  let databaseLiveCorrectionCalls = 0;
+  let lastDatabaseLiveCorrection: unknown;
 
   globalThis.fetch = async (input, init) => {
     const request = input instanceof Request ? input : new Request(input, init);
@@ -388,6 +521,18 @@ function installEventViewMock() {
         Object.assign(databaseLiveStatus, { active: true, liveTournamentId: "live-1", rings: 2, bouts: 3 });
         return jsonResponse({ id: "live-1", projection: { rings: 2, bouts: 3, removedBouts: 0 } });
       }
+    }
+
+    const liveResults = pathname.match(/^\/api\/v1\/tournaments\/([^/]+)\/live\/results$/);
+    if (liveResults && liveResults[1] === tournamentId && request.method === "GET") {
+      return jsonResponse({ results: databaseLiveResults });
+    }
+
+    const liveCorrection = pathname.match(/^\/api\/v1\/live-bouts\/([^/]+)\/correction$/);
+    if (liveCorrection && request.method === "POST") {
+      databaseLiveCorrectionCalls += 1;
+      lastDatabaseLiveCorrection = await request.json();
+      return jsonResponse({ revision: 1 });
     }
 
     const projectLive = pathname.match(/^\/api\/v1\/live-tournaments\/([^/]+)\/project$/);
@@ -569,8 +714,15 @@ function installEventViewMock() {
     entries,
     scheduledMatches,
     databaseLiveStatus,
+    databaseLiveResults,
     get databaseLiveProjectionCalls() {
       return databaseLiveProjectionCalls;
+    },
+    get databaseLiveCorrectionCalls() {
+      return databaseLiveCorrectionCalls;
+    },
+    get lastDatabaseLiveCorrection() {
+      return lastDatabaseLiveCorrection;
     },
     restore() {
       globalThis.fetch = originalFetch;

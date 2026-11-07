@@ -1,6 +1,7 @@
 import {
   createApiClient,
   type ApiArena,
+  type ApiDatabaseLiveResult,
   type ApiDatabaseLiveStatus,
   type ApiEntry,
   type ApiEvent,
@@ -73,6 +74,7 @@ interface AppState {
   tournamentAdminError: string | null;
   tournamentAdminsLoading: boolean;
   databaseLiveStatus: ApiDatabaseLiveStatus | null;
+  databaseLiveResults: ApiDatabaseLiveResult[] | null;
   databaseLiveLoading: boolean;
   databaseLiveError: string | null;
   selectedEventId: string | null;
@@ -107,6 +109,7 @@ const state: AppState = {
   tournamentAdminError: null,
   tournamentAdminsLoading: false,
   databaseLiveStatus: null,
+  databaseLiveResults: null,
   databaseLiveLoading: false,
   databaseLiveError: null,
   selectedEventId: null,
@@ -208,6 +211,21 @@ function onAppClick(event: MouseEvent): void {
     case "project-database-live":
       void projectDatabaseLive();
       return;
+    case "add-live-correction-exchange": {
+      const form = target.closest<HTMLFormElement>("[data-action=\"database-live-correction\"]");
+      form?.querySelector("[data-correction-exchanges]")?.insertAdjacentHTML("beforeend", renderCorrectionExchangeRow({
+        clientExchangeId: newCorrectionExchangeId(),
+        kind: "EXCHANGE",
+        leftPoints: 1,
+        rightPoints: 0,
+        firstScorer: null,
+        round: 1,
+      }));
+      return;
+    }
+    case "remove-live-correction-exchange":
+      target.closest("[data-correction-row]")?.remove();
+      return;
     case "delete-event":
       void deleteEvent(target.dataset.id);
       return;
@@ -289,6 +307,7 @@ function onAppSubmit(event: SubmitEvent): void {
     && form.dataset.action !== "volunteer-update"
     && form.dataset.action !== "tournament-admin-add"
     && form.dataset.action !== "match-schedule"
+    && form.dataset.action !== "database-live-correction"
   )) {
     return;
   }
@@ -300,6 +319,8 @@ function onAppSubmit(event: SubmitEvent): void {
     void submitVolunteerUpdate(form);
   } else if (form.dataset.action === "match-schedule") {
     void submitMatchSchedule(form);
+  } else if (form.dataset.action === "database-live-correction") {
+    void submitDatabaseLiveCorrection(form);
   } else {
     void submitTournamentAdminAdd(form);
   }
@@ -1884,6 +1905,7 @@ function selectTournament(id?: string): void {
   state.selectedTournamentId = id;
   state.selectedStageId = null;
   state.databaseLiveStatus = null;
+  state.databaseLiveResults = null;
   state.databaseLiveLoading = false;
   state.databaseLiveError = null;
   render();
@@ -1983,7 +2005,84 @@ function renderDatabaseLive(): string {
       <div class="info-card-subtitle">${live.rings} ringen · ${live.bouts} bouts</div>
       <button type="button" class="button secondary" data-action="project-database-live">Planning veilig bijwerken</button>
     </div>
+    ${renderDatabaseLiveResults()}
   `;
+}
+
+function renderDatabaseLiveResults(): string {
+  const results = state.databaseLiveResults;
+  if (results === null) return renderEmptyCard("Voltooide livebouts laden...");
+  if (results.length === 0) return renderEmptyCard("Er zijn nog geen voltooide livebouts om te corrigeren.");
+  return `
+    <div class="list">
+      ${results.map((result) => `
+        <div class="info-card">
+          <div class="info-card-title">${escapeHtml(result.label)} · ${result.score.left}-${result.score.right}</div>
+          <div class="info-card-subtitle">${escapeHtml(result.fighterLeft)} vs ${escapeHtml(result.fighterRight)}</div>
+          <form class="editor-form" data-action="database-live-correction" data-bout-id="${escapeHtml(result.boutId)}">
+            <div class="info-card-subtitle">Beheerdercorrectie van exchanges (ronde, type en punten)</div>
+            <div class="list" data-correction-exchanges>
+              ${result.exchanges.map(renderCorrectionExchangeRow).join("")}
+            </div>
+            <div class="card-actions">
+              <button type="button" class="button secondary" data-action="add-live-correction-exchange">Exchange toevoegen</button>
+              <button type="submit" class="button">Correctie opslaan</button>
+            </div>
+          </form>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderCorrectionExchangeRow(
+  exchange: Omit<ApiDatabaseLiveResult["exchanges"][number], "isDouble">,
+): string {
+  return `
+    <div class="info-card" data-correction-row>
+      <input type="hidden" name="clientExchangeId" value="${escapeHtml(exchange.clientExchangeId)}" />
+      <label class="field">
+        <span>Type</span>
+        <select class="text-input" name="kind">
+          <option value="EXCHANGE" ${exchange.kind === "EXCHANGE" ? "selected" : ""}>Exchange</option>
+          <option value="DEDUCTION" ${exchange.kind === "DEDUCTION" ? "selected" : ""}>Aftrek</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Punten links</span>
+        <input class="text-input" name="leftPoints" type="number" min="-10" max="10" step="1" value="${exchange.leftPoints}" required />
+      </label>
+      <label class="field">
+        <span>Punten rechts</span>
+        <input class="text-input" name="rightPoints" type="number" min="-10" max="10" step="1" value="${exchange.rightPoints}" required />
+      </label>
+      <label class="field">
+        <span>Eerste scorer</span>
+        <select class="text-input" name="firstScorer">
+          <option value="" ${exchange.firstScorer === null ? "selected" : ""}>Geen</option>
+          <option value="LEFT" ${exchange.firstScorer === "LEFT" ? "selected" : ""}>Links</option>
+          <option value="RIGHT" ${exchange.firstScorer === "RIGHT" ? "selected" : ""}>Rechts</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Ronde</span>
+        <input class="text-input" name="round" type="number" min="1" max="9" step="1" value="${exchange.round}" required />
+      </label>
+      <button type="button" class="button secondary" data-action="remove-live-correction-exchange">Exchange verwijderen</button>
+    </div>
+  `;
+}
+
+function newCorrectionExchangeId(): string {
+  return `correction-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function isCorrectionExchangeKind(value: string | undefined): value is "EXCHANGE" | "DEDUCTION" {
+  return value === "EXCHANGE" || value === "DEDUCTION";
+}
+
+function isCorrectionFirstScorer(value: string | null | undefined): value is "LEFT" | "RIGHT" | null {
+  return value === null || value === "LEFT" || value === "RIGHT";
 }
 
 async function loadDatabaseLiveStatus(): Promise<void> {
@@ -1994,8 +2093,10 @@ async function loadDatabaseLiveStatus(): Promise<void> {
   render();
   try {
     const status = await api.databaseLiveStatus(tournament.id);
+    const results = status.active ? await api.databaseLiveResults(tournament.id) : [];
     if (currentTournament(currentEvent())?.id !== tournament.id) return;
     state.databaseLiveStatus = status;
+    state.databaseLiveResults = results;
   } catch (error) {
     if (currentTournament(currentEvent())?.id !== tournament.id) return;
     state.databaseLiveError = toErrorMessage(error);
@@ -2022,6 +2123,7 @@ async function activateDatabaseLive(): Promise<void> {
       rings: result.projection.rings,
       bouts: result.projection.bouts,
     };
+    state.databaseLiveResults = [];
   } catch (error) {
     if (currentTournament(currentEvent())?.id !== tournament.id) return;
     state.databaseLiveError = toErrorMessage(error);
@@ -2043,17 +2145,96 @@ async function projectDatabaseLive(): Promise<void> {
   try {
     const projection = await api.projectDatabaseLive(liveTournamentId);
     if (currentTournament(currentEvent())?.id !== tournamentId) return;
+    const results = await api.databaseLiveResults(tournamentId);
+    if (currentTournament(currentEvent())?.id !== tournamentId) return;
     state.databaseLiveStatus = {
       active: true,
       liveTournamentId,
       rings: projection.rings,
       bouts: projection.bouts,
     };
+    state.databaseLiveResults = results;
   } catch (error) {
     if (currentTournament(currentEvent())?.id !== tournamentId) return;
     state.databaseLiveError = toErrorMessage(error);
   } finally {
     if (currentTournament(currentEvent())?.id === tournamentId) {
+      state.databaseLiveLoading = false;
+      render();
+    }
+  }
+}
+
+async function submitDatabaseLiveCorrection(form: HTMLFormElement): Promise<void> {
+  const tournament = currentTournament(currentEvent());
+  const boutId = form.dataset.boutId;
+  if (!tournament || !boutId) return;
+  const formData = new FormData(form);
+  state.databaseLiveLoading = true;
+  state.databaseLiveError = null;
+  render();
+  try {
+    const ids = formData.getAll("clientExchangeId").map(String);
+    const kinds = formData.getAll("kind").map(String);
+    const numberValues = (name: string) => formData.getAll(name).map((value) => {
+      const raw = String(value).trim();
+      return raw === "" ? Number.NaN : Number(raw);
+    });
+    const left = numberValues("leftPoints");
+    const right = numberValues("rightPoints");
+    const firstScorers = formData.getAll("firstScorer").map((value) => String(value) || null);
+    const rounds = numberValues("round");
+    if ([kinds, left, right, firstScorers, rounds].some((values) => values.length !== ids.length)) {
+      throw new Error("De exchangecorrectie bevat onvolledige regels.");
+    }
+    const exchanges = ids.map((clientExchangeId, index) => {
+      const kind = kinds[index];
+      const firstScorer = firstScorers[index];
+      const leftPoints = left[index];
+      const rightPoints = right[index];
+      const round = rounds[index];
+      if (
+        !clientExchangeId ||
+        clientExchangeId.length > 100 ||
+        !isCorrectionExchangeKind(kind) ||
+        !isCorrectionFirstScorer(firstScorer) ||
+        typeof leftPoints !== "number" ||
+        !Number.isInteger(leftPoints) ||
+        leftPoints < -10 ||
+        leftPoints > 10 ||
+        typeof rightPoints !== "number" ||
+        !Number.isInteger(rightPoints) ||
+        rightPoints < -10 ||
+        rightPoints > 10 ||
+        typeof round !== "number" ||
+        !Number.isInteger(round) ||
+        round < 1 ||
+        round > 9
+      ) {
+        throw new Error("Controleer type, punten en ronde van elke exchange.");
+      }
+      return {
+        clientExchangeId,
+        kind,
+        leftPoints,
+        rightPoints,
+        firstScorer,
+        round,
+      };
+    });
+    if (new Set(exchanges.map((exchange) => exchange.clientExchangeId)).size !== exchanges.length) {
+      throw new Error("Elke exchange moet een unieke ID hebben.");
+    }
+    await api.correctDatabaseLiveResult(boutId, { exchanges });
+    const results = await api.databaseLiveResults(tournament.id);
+    if (currentTournament(currentEvent())?.id !== tournament.id) return;
+    state.databaseLiveResults = results;
+  } catch (error) {
+    if (currentTournament(currentEvent())?.id === tournament.id) {
+      state.databaseLiveError = toErrorMessage(error);
+    }
+  } finally {
+    if (currentTournament(currentEvent())?.id === tournament.id) {
       state.databaseLiveLoading = false;
       render();
     }

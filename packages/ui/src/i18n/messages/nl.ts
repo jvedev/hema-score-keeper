@@ -98,6 +98,8 @@ export const nl: Record<MessageKey, string> = {
   "scorekeeper.signedInAs": "Ingelogd als {name}",
   "scorekeeper.loginFailed": "Inloggen is niet gelukt.",
   "ring.eyebrow": "Ring",
+  "ring.databaseMode": "Databasemodus",
+  "ring.sheetMode": "Spreadsheetmodus",
   "ring.loading": "Ring laden…",
   "ring.signInTitle": "Log in om deze ring bij te houden",
   "ring.linkInvalid": "Deze ringlink is niet meer geldig",

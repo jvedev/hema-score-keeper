@@ -15,7 +15,8 @@ import { XlsxCellSource } from "./cell-source.js";
 import { backupPath } from "./data-dir.js";
 import { GoogleCellSource, GoogleError, googleCredentials, sharedGoogleApi } from "./google-sheets.js";
 import { applySchedulePlan, readSchedulePlan, tournamentLayout } from "./import.js";
-import { enqueueSync } from "./live-store.js";
+import { activeExchanges, enqueueSync } from "./live-store.js";
+import { scoreOf } from "./bout-score.js";
 import { activeKeeperOf, publicRing } from "./ring-keeper.js";
 import { withTournamentLock } from "./tournament-lock.js";
 import { registerPushRoutes } from "./push-notifications.js";
@@ -91,6 +92,52 @@ function registerLiveRoutesInScope(app: FastifyInstance, database: Kysely<Backen
       liveTournamentId: liveTournament.id,
       rings: ringCount?.count ?? 0,
       bouts: boutCount?.count ?? 0,
+    };
+  });
+
+  app.get("/api/v1/tournaments/:id/live/results", async (request) => {
+    const user = await requireUser(request, database);
+    const sourceTournamentId = requirePathParam(request, "id");
+    await requireEventTournamentAdmin(database, sourceTournamentId, user);
+    const liveTournament = await database.selectFrom("LiveTournament")
+      .select(["id", "mode"])
+      .where("sourceTournamentId", "=", sourceTournamentId)
+      .executeTakeFirst();
+    if (!liveTournament) return { results: [] };
+    if (liveTournament.mode !== "DATABASE") {
+      throw new HttpError(409, "The source tournament is linked to a non-database live tournament.");
+    }
+
+    const bouts = await database.selectFrom("LiveBout")
+      .select(["id", "sourceMatchId", "label", "fighterLeft", "fighterRight"])
+      .where("tournamentId", "=", liveTournament.id)
+      .where("status", "=", "DONE")
+      .where("sourceMatchId", "is not", null)
+      .orderBy("ringId")
+      .orderBy("order")
+      .execute();
+    return {
+      results: await Promise.all(bouts.map(async (bout) => {
+        if (bout.sourceMatchId === null) throw new HttpError(500, "A linked live bout is missing its source match.");
+        const exchanges = await activeExchanges(database, bout.id);
+        return {
+          boutId: bout.id,
+          sourceMatchId: bout.sourceMatchId,
+          label: bout.label,
+          fighterLeft: bout.fighterLeft,
+          fighterRight: bout.fighterRight,
+          score: scoreOf(exchanges),
+          exchanges: exchanges.map(({ clientExchangeId, kind, leftPoints, rightPoints, isDouble, firstScorer, round }) => ({
+            clientExchangeId,
+            kind,
+            leftPoints,
+            rightPoints,
+            isDouble: isDouble === 1,
+            firstScorer,
+            round,
+          })),
+        };
+      })),
     };
   });
 

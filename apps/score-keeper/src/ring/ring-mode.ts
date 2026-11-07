@@ -299,7 +299,8 @@ function renderRingBody(state: Readonly<RingModeState>): string {
 
 function renderRing(state: Readonly<RingModeState>): string {
   const next = state.bouts.find((bout) => bout.id === state.nextBoutId);
-  return `<p class="mode-eyebrow">${escapeHtml(state.tournamentName)}</p>
+  const modeLabel = state.tournamentMode === "DATABASE" ? t("ring.databaseMode") : t("ring.sheetMode");
+  return `<p class="mode-eyebrow">${escapeHtml(state.tournamentName)} · ${escapeHtml(modeLabel)}</p>
     <h1>${escapeHtml(state.ring?.name ?? "")}</h1>
     <p class="mode-copy ring-keeper">${escapeHtml(keeperLine(state))}</p>
     ${renderNotice(state)}

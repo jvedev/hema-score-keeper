@@ -98,7 +98,7 @@ export interface ServerExchange {
 
 export interface RingByToken {
   ring: LiveRing;
-  tournament: { id: string; name: string; mode: string };
+  tournament: { id: string; name: string; mode: "SHEET" | "DATABASE" };
   /** The tournament's ring rules, raw (read with `parseRingRules`; absent from an older backend). */
   rules?: unknown;
   bouts: LiveBoutRow[];

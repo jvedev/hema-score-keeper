@@ -96,6 +96,8 @@ export const en = {
   "scorekeeper.signedInAs": "Signed in as {name}",
   "scorekeeper.loginFailed": "Signing in didn't work.",
   "ring.eyebrow": "Ring",
+  "ring.databaseMode": "Database mode",
+  "ring.sheetMode": "Spreadsheet mode",
   "ring.loading": "Loading the ring…",
   "ring.signInTitle": "Sign in to keep this ring",
   "ring.linkInvalid": "This ring link is no longer valid",

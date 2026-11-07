@@ -357,6 +357,26 @@ describe("database-mode tournament activation and projection", () => {
     });
     expect((await ctx.database.selectFrom("LiveBout").select("sourceResultSignature").where("sourceMatchId", "=", "pool-match-a").executeTakeFirst())
       ?.sourceResultSignature).toMatch(/^[a-f0-9]{64}$/);
+    const liveResults = await ctx.app.inject({
+      method: "GET",
+      url: "/api/v1/tournaments/source-tournament/live/results",
+      headers: bearer(admin),
+    });
+    expect(liveResults.statusCode).toBe(200);
+    expect(liveResults.json().results).toEqual([
+      expect.objectContaining({
+        sourceMatchId: "pool-match-a",
+        score: { left: 2, right: 1, doubles: 0 },
+        exchanges: expect.arrayContaining([
+          expect.objectContaining({ clientExchangeId: "score-a", kind: "EXCHANGE" }),
+        ]),
+      }),
+    ]);
+    expect((await ctx.app.inject({
+      method: "GET",
+      url: "/api/v1/tournaments/source-tournament/live/results",
+      headers: bearer(other),
+    })).statusCode).toBe(403);
 
     expect((await scoreAndFinish("pool-match-a", exchanges)).statusCode).toBe(200);
     expect(await ctx.database.selectFrom("Exchange").select("id").where("matchId", "=", "pool-match-a").execute())

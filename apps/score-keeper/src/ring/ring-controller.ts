@@ -124,6 +124,7 @@ export interface RingModeState {
   error: string | null;
   ring: LiveRing | null;
   tournamentName: string;
+  tournamentMode: "SHEET" | "DATABASE";
   bouts: LiveBoutRow[];
   activeKeeper: ActiveKeeper | null;
   /** This device keeps the ring (as far as it knows; a TAKEN_OVER answer says otherwise). */
@@ -273,6 +274,7 @@ export class RingController {
       error: null,
       ring: null,
       tournamentName: "",
+      tournamentMode: "SHEET",
       bouts: [],
       activeKeeper: null,
       isKeeper: false,
@@ -613,6 +615,7 @@ export class RingController {
       screen: this.#state.screen === "bout" ? "bout" : "ring",
       ring: ring.ring,
       tournamentName: ring.tournament.name,
+      tournamentMode: ring.tournament.mode,
       rules: parseRingRules(ring.rules),
       bouts: ring.bouts,
       activeKeeper: ring.activeKeeper,
@@ -1224,4 +1227,3 @@ function keeperName(value: unknown): string | null {
   const name = typeof value === "object" && value !== null ? (value as { userName?: unknown }).userName : undefined;
   return typeof name === "string" ? name : null;
 }
-
