@@ -227,7 +227,8 @@ phase boundary.
 
 - The low-fidelity wireframes are approved. Review the implementation plan before any product
   code or schema changes.
-- Resolve the implementation plan's Competition cardinality, attach/detach behavior,
-  spreadsheet-planner boundary, and legacy entry-point transition. The Event-admin membership
-  bootstrap is approved. Other UX details such as officials terminology and localization
-  behavior remain part of implementation design.
+- An Event may contain multiple rating Competitions; each Competition remains linked to at
+  most one Event. The Event-admin membership bootstrap is also approved.
+- Resolve the implementation plan's attach/detach behavior, spreadsheet-planner boundary,
+  and legacy entry-point transition. Other UX details such as officials terminology and
+  localization behavior remain part of implementation design.

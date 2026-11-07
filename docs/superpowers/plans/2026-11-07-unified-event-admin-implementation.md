@@ -33,6 +33,8 @@ pre-implementation decisions below are approved.
   an administrator remain unowned until a `SYSTEM_ADMIN` assigns their first administrator.
 - An Event may contain zero or more database-mode Tournaments; each database-mode Tournament
   belongs to exactly one Event.
+- An Event may contain multiple rating Competitions; each rating Competition may be linked to
+  no more than one Event.
 - A rating Competition may be standalone or linked to exactly one Event. For an attached
   Competition, management rights combine the parent Event administrators, existing
   Competition administrators, and `SYSTEM_ADMIN`.
@@ -84,8 +86,7 @@ Use the existing domain tables rather than a polymorphic `Activity` table:
   Event components. Database-mode Event ownership is derived from its source Tournament, not
   stored a second time.
 - Add a nullable `Competition.eventId` relationship. Null means standalone; a Competition can
-  be linked to no more than one Event, while an Event may contain multiple Competitions unless
-  the user chooses a narrower cardinality.
+  be linked to no more than one Event, while an Event may contain multiple Competitions.
 - Return a type-discriminated, type-specific component collection from an Event read API.
   Keep each underlying entity's existing fields and operations; avoid copying one type's
   behavior into another type's API.
@@ -273,15 +274,13 @@ Scope:
 
 ## Decisions needed before implementation
 
-1. **Competition cardinality:** current wireframes allow multiple rating Competitions per
-   Event. Confirm that or cap each Event at one.
-2. **Attach/detach semantics:** proposed behavior keeps the child data unchanged, detaches
+1. **Attach/detach semantics:** proposed behavior keeps the child data unchanged, detaches
    rather than deletes on unlink/Event deletion, and leaves standalone Competition admins
    intact. Confirm or revise.
-3. **Spreadsheet schedule:** proposed first implementation leaves spreadsheet-mode ring/bout
+2. **Spreadsheet schedule:** proposed first implementation leaves spreadsheet-mode ring/bout
    order inside its existing workflow and does not add it to the Event-wide database-mode
    planner. Confirm or revise.
-4. **Legacy entry point:** proposed transition keeps the current Competition-admin
+3. **Legacy entry point:** proposed transition keeps the current Competition-admin
    spreadsheet-tournament entry available until the new Event component passes acceptance;
    removal requires a later explicit approval.
 
@@ -296,6 +295,6 @@ Scope:
 
 ## Next step
 
-Review the four remaining decisions above and approve Phase 1 only after they are resolved. No
+Review the three remaining decisions above and approve Phase 1 only after they are resolved. No
 implementation has started; the current local `.idea/php.xml` change is unrelated and must
 remain outside any commit.
