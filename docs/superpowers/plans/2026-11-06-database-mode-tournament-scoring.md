@@ -220,9 +220,8 @@ resolved as recorded above.
   shared UI 42 files/229 tests; all other workspace suites also pass. Workspace typechecks
   and production builds passed, including the final Event-admin UI changes. No packages were
   installed.
-- The user-requested intermediate commits and pushes are on `co-pilot`; the current verified
-  correction-UI/mode-details checkpoint is ready to commit and push. Keep the unrelated
-  `.idea/php.xml` change out of the commit.
+- The correction-UI/mode-details checkpoint was committed and pushed to `origin/co-pilot`
+  as `7565f33`. The unrelated `.idea/php.xml` change remains local and uncommitted.
 
 ## Local command note
 
@@ -264,8 +263,8 @@ time or duration. Corrections preserve the prior exchange state as a revision an
 the corrected result.
 
 The implementation and automated verification are complete: the full workspace test suite,
-workspace typechecks, and production builds pass. Next, commit and push the verified
-Event-admin correction UI and score-keeper mode-details checkpoint on `co-pilot`, then
-perform the fresh-local-database interactive acceptance check. Phone, Web Push and
+workspace typechecks, and production builds pass. The Event-admin correction UI and
+score-keeper mode-details checkpoint is committed and pushed as `7565f33` on `co-pilot`.
+Next, perform the fresh-local-database interactive acceptance check. Phone, Web Push and
 Alwaysdata-account checks remain deferred. Continue without PowerShell or package
 installation.
