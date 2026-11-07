@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { bearer, createTestContext, insertUser, type TestContext, type TestUser } from "./helpers.js";
+import { bearer, createTestContext, insertEventAdmin, insertUser, type TestContext, type TestUser } from "./helpers.js";
 
 describe("Event-admin tournament administrators", () => {
   let ctx: TestContext;
@@ -18,6 +18,7 @@ describe("Event-admin tournament administrators", () => {
       rulesetId: null,
       allFightersAreVolunteers: 0,
     }).execute();
+    await insertEventAdmin(ctx.database, { eventId: "event", userId: creator.id });
   });
 
   afterEach(async () => {

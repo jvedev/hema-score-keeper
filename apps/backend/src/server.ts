@@ -2,7 +2,7 @@ import { pathToFileURL } from "node:url";
 import Fastify from "fastify";
 import type { Kysely, Updateable } from "kysely";
 import type { ApiRulesetDefinition, EntryKind, ScheduleRole, StageOfficialRole, StageType } from "./api-types.js";
-import { db, type BackendDatabase, toSqliteBoolean } from "./db.js";
+import { db, type BackendDatabase, type DbExecutor, toSqliteBoolean } from "./db.js";
 import {
   createAuthTokenPair,
   generateToken,
@@ -28,6 +28,10 @@ import { registerCompetitionAdminRoutes } from "./competitions/admin-routes.js";
 import { registerParticipantRoutes } from "./competitions/participant-routes.js";
 import { withInviteCodeForAdmins } from "./competitions/signup-routes.js";
 import { requireEventTournamentAdmin } from "./tournaments/access.js";
+import {
+  requireEventAdmin,
+  requireEventOrTournamentAdmin,
+} from "./events/access.js";
 import { readSheetValues, writeSheetValues } from "./google-sheets.js";
 import {
   ensureJsonValue,
@@ -797,26 +801,108 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.post("/api/v1/events", async (request) => {
+    const creator = await requireUser(request, database);
     const body = ensureObject(request.body, "Event");
     if (body.rulesetId !== undefined && body.rulesetId !== null) {
       throw new HttpError(400, "Event ruleset can only be selected after the event has been created.");
     }
 
     const id = generateId();
-    await database.insertInto("Event").values({
-      id,
-      eventName: requireString(body.eventName, "Event name"),
-      rulesetId: null,
-      allFightersAreVolunteers: body.allFightersAreVolunteers === undefined
-        ? 0
-        : toSqliteBoolean(requireBoolean(body.allFightersAreVolunteers, "All fighters are volunteers")),
-    }).execute();
+    await database.transaction().execute(async (trx) => {
+      await trx.insertInto("Event").values({
+        id,
+        eventName: requireString(body.eventName, "Event name"),
+        rulesetId: null,
+        allFightersAreVolunteers: body.allFightersAreVolunteers === undefined
+          ? 0
+          : toSqliteBoolean(requireBoolean(body.allFightersAreVolunteers, "All fighters are volunteers")),
+      }).execute();
+      await trx.insertInto("EventAdmin").values({
+        eventId: id,
+        userId: creator.id,
+        addedByUserId: creator.id,
+        createdAt: app.now().toISOString(),
+      }).execute();
+    });
     return toEventMutationResult(await requireEventApi(database, id));
   });
 
+  app.get("/api/v1/events/:id/admins", async (request) => {
+    const user = await requireUser(request, database);
+    const eventId = requirePathParam(request, "id");
+    await requireEventAdmin(database, eventId, user);
+    return { admins: await listEventAdmins(database, eventId) };
+  });
+
+  app.get("/api/v1/events/:id/admin-candidates", async (request) => {
+    const user = await requireUser(request, database);
+    const eventId = requirePathParam(request, "id");
+    await requireEventAdmin(database, eventId, user);
+    const candidates = await database
+      .selectFrom("User")
+      .select(["id", "name", "username"])
+      .where("status", "=", "ACTIVE")
+      .orderBy("username")
+      .execute();
+    return { candidates };
+  });
+
+  app.post("/api/v1/events/:id/admins", async (request) => {
+    const user = await requireUser(request, database);
+    const eventId = requirePathParam(request, "id");
+    const body = ensureObject(request.body, "Event admin");
+    const targetUserId = requireString(body.userId, "User ID");
+    await database.transaction().execute(async (trx) => {
+      await requireEventAdminTargetAssignmentAccess(trx, eventId, user);
+      const target = await requireUserRow(trx, targetUserId);
+      if (target.status !== "ACTIVE") {
+        throw new HttpError(409, "An inactive account cannot be assigned as an event admin.");
+      }
+      await trx.insertInto("EventAdmin").values({
+        eventId,
+        userId: targetUserId,
+        addedByUserId: user.id,
+        createdAt: app.now().toISOString(),
+      }).onConflict((conflict) => conflict.columns(["eventId", "userId"]).doNothing()).execute();
+    });
+    return { admins: await listEventAdmins(database, eventId) };
+  });
+
+  app.delete("/api/v1/events/:id/admins/:userId", async (request, reply) => {
+    const user = await requireUser(request, database);
+    const eventId = requirePathParam(request, "id");
+    const targetUserId = requirePathParam(request, "userId");
+    await database.transaction().execute(async (trx) => {
+      await requireEventAdmin(trx, eventId, user);
+      const membership = await trx
+        .selectFrom("EventAdmin")
+        .select("userId")
+        .where("eventId", "=", eventId)
+        .where("userId", "=", targetUserId)
+        .executeTakeFirst();
+      if (!membership) {
+        throw new HttpError(404, "Event admin not found.");
+      }
+      const adminCount = await trx
+        .selectFrom("EventAdmin")
+        .select((eb) => eb.fn.count<number>("userId").as("count"))
+        .where("eventId", "=", eventId)
+        .executeTakeFirst();
+      if ((adminCount?.count ?? 0) <= 1) {
+        throw new HttpError(409, "An event must keep at least one assigned admin.");
+      }
+      await trx.deleteFrom("EventAdmin")
+        .where("eventId", "=", eventId)
+        .where("userId", "=", targetUserId)
+        .execute();
+    });
+    reply.status(204).send();
+  });
+
   app.patch("/api/v1/events/:id", async (request) => {
+    const user = await requireUser(request, database);
     const id = requirePathParam(request, "id");
-    await requireEventRow(database, id);
+    await requireEventAdmin(database, id, user);
     const body = ensureObject(request.body, "Event");
     const changes: Partial<BackendDatabase["Event"]> = {};
 
@@ -841,8 +927,9 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.delete("/api/v1/events/:id", async (request, reply) => {
+    const user = await requireUser(request, database);
     const id = requirePathParam(request, "id");
-    await requireEventRow(database, id);
+    await requireEventAdmin(database, id, user);
     await database.deleteFrom("Event").where("id", "=", id).execute();
     reply.status(204).send();
   });
@@ -851,8 +938,9 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
     listRulesetDetails(database, requirePathParam(request, "id")));
 
   app.post("/api/v1/events/:id/rulesets", async (request) => {
+    const user = await requireUser(request, database);
     const eventId = requirePathParam(request, "id");
-    await requireEventRow(database, eventId);
+    await requireEventAdmin(database, eventId, user);
     const body = ensureObject(request.body, "Ruleset");
     const sourceRulesetId = body.baseRulesetId === undefined ? undefined : optionalString(body.baseRulesetId);
     const source = sourceRulesetId
@@ -883,8 +971,10 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
     requireRulesetDetail(database, requirePathParam(request, "id")));
 
   app.patch("/api/v1/rulesets/:id", async (request) => {
+    const user = await requireUser(request, database);
     const id = requirePathParam(request, "id");
     const existing = await requireRulesetDetail(database, id);
+    await requireEventAdmin(database, existing.eventId, user);
     if (existing.locked) {
       throw new HttpError(409, "A ruleset that is already used in a match cannot be altered.");
     }
@@ -928,7 +1018,9 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.patch("/api/v1/events/:id/schedule", async (request) => {
+    const user = await requireUser(request, database);
     const eventId = requirePathParam(request, "id");
+    await requireEventAdmin(database, eventId, user);
     const body = ensureObject(request.body, "Event schedule");
     const schedule = await ensureSchedule(database, eventId);
     const changes: Partial<BackendDatabase["EventSchedule"]> = {};
@@ -958,7 +1050,9 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.post("/api/v1/events/:id/schedule/slots", async (request) => {
+    const user = await requireUser(request, database);
     const eventId = requirePathParam(request, "id");
+    await requireEventAdmin(database, eventId, user);
     const body = ensureObject(request.body, "Schedule time slot");
     const schedule = await ensureSchedule(database, eventId);
     const lastSlot = await database
@@ -981,8 +1075,14 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.patch("/api/v1/schedule-time-slots/:id", async (request) => {
+    const user = await requireUser(request, database);
     const id = requirePathParam(request, "id");
     const timeSlot = await requireScheduleTimeSlotRow(database, id);
+    const schedule = await database.selectFrom("EventSchedule")
+      .select("eventId")
+      .where("id", "=", timeSlot.scheduleId)
+      .executeTakeFirstOrThrow();
+    await requireEventAdmin(database, schedule.eventId, user);
     const body = ensureObject(request.body, "Schedule time slot");
     const changes: Partial<BackendDatabase["ScheduleTimeSlot"]> = {};
 
@@ -1015,8 +1115,14 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.delete("/api/v1/schedule-time-slots/:id", async (request, reply) => {
+    const user = await requireUser(request, database);
     const id = requirePathParam(request, "id");
-    await requireScheduleTimeSlotRow(database, id);
+    const timeSlot = await requireScheduleTimeSlotRow(database, id);
+    const schedule = await database.selectFrom("EventSchedule")
+      .select("eventId")
+      .where("id", "=", timeSlot.scheduleId)
+      .executeTakeFirstOrThrow();
+    await requireEventAdmin(database, schedule.eventId, user);
     const phaseCount = await database
       .selectFrom("ScheduledPhase")
       .select((expressionBuilder) => expressionBuilder.fn.count<number>("id").as("count"))
@@ -1030,12 +1136,15 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.post("/api/v1/scheduled-phases", async (request) => {
+    const user = await requireUser(request, database);
     const body = ensureObject(request.body, "Scheduled phase");
     const stageId = requireString(body.stageId, "Stage ID");
     const arenaId = requireString(body.arenaId, "Arena ID");
     const timeSlotId = requireString(body.timeSlotId, "Time slot ID");
     const id = generateId();
     return database.transaction().execute(async (trx) => {
+      const stage = await requireStageRow(trx, stageId);
+      await requireEventOrTournamentAdmin(trx, stage.tournamentId, user);
       await validateScheduledPhase(trx, stageId, arenaId, timeSlotId);
       await trx.insertInto("ScheduledPhase").values({ id, stageId, arenaId, timeSlotId }).execute();
       await syncStageArtifacts(trx, [stageId]);
@@ -1044,11 +1153,16 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.patch("/api/v1/scheduled-phases/:id", async (request) => {
+    const user = await requireUser(request, database);
     const id = requirePathParam(request, "id");
     const body = ensureObject(request.body, "Scheduled phase");
     return database.transaction().execute(async (trx) => {
       const existing = await requireScheduledPhaseRow(trx, id);
       const stageId = body.stageId === undefined ? existing.stageId : requireString(body.stageId, "Stage ID");
+      const currentStage = await requireStageRow(trx, existing.stageId);
+      await requireEventOrTournamentAdmin(trx, currentStage.tournamentId, user);
+      const nextStage = await requireStageRow(trx, stageId);
+      await requireEventOrTournamentAdmin(trx, nextStage.tournamentId, user);
       const arenaId = body.arenaId === undefined ? existing.arenaId : requireString(body.arenaId, "Arena ID");
       const timeSlotId = body.timeSlotId === undefined ? existing.timeSlotId : requireString(body.timeSlotId, "Time slot ID");
       await validateScheduledPhase(trx, stageId, arenaId, timeSlotId, id);
@@ -1059,9 +1173,12 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.delete("/api/v1/scheduled-phases/:id", async (request, reply) => {
+    const user = await requireUser(request, database);
     const id = requirePathParam(request, "id");
     await database.transaction().execute(async (trx) => {
       const existing = await requireScheduledPhaseRow(trx, id);
+      const stage = await requireStageRow(trx, existing.stageId);
+      await requireEventOrTournamentAdmin(trx, stage.tournamentId, user);
       const assignedMatch = await trx
         .selectFrom("ScheduledMatch")
         .select("matchId")
@@ -1077,10 +1194,12 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.post("/api/v1/scheduled-phases/:id/assignments", async (request) => {
+    const adminUser = await requireUser(request, database);
     const scheduledPhaseId = requirePathParam(request, "id");
     const body = ensureObject(request.body, "Scheduled assignment");
     const scheduledPhase = await requireScheduledPhaseRow(database, scheduledPhaseId);
     const stage = await requireStageRow(database, scheduledPhase.stageId);
+    await requireEventOrTournamentAdmin(database, stage.tournamentId, adminUser);
     const tournament = await requireTournamentRow(database, stage.tournamentId);
     const arena = await requireArenaRow(database, scheduledPhase.arenaId);
     const userId = requireString(body.userId, "User ID");
@@ -1143,10 +1262,13 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.delete("/api/v1/scheduled-assignments/:id", async (request, reply) => {
+    const user = await requireUser(request, database);
     const id = requirePathParam(request, "id");
     await database.transaction().execute(async (trx) => {
       const assignment = await requireScheduledAssignmentRow(trx, id);
       const phase = await requireScheduledPhaseRow(trx, assignment.scheduledPhaseId);
+      const stage = await requireStageRow(trx, phase.stageId);
+      await requireEventOrTournamentAdmin(trx, stage.tournamentId, user);
       await trx.deleteFrom("ScheduledAssignment").where("id", "=", id).execute();
       await syncStageArtifacts(trx, [phase.stageId]);
     });
@@ -1157,7 +1279,7 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
     const creator = await requireUser(request, database);
     const body = ensureObject(request.body, "Tournament");
     const eventId = requireString(body.eventId, "Event ID");
-    await requireEventRow(database, eventId);
+    await requireEventAdmin(database, eventId, creator);
     const rulesetId = body.rulesetId === undefined
       ? undefined
       : body.rulesetId === null
@@ -1333,14 +1455,20 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.patch("/api/v1/tournaments/:id", async (request) => {
+    const user = await requireUser(request, database);
     const id = requirePathParam(request, "id");
     const currentTournament = await requireTournamentRow(database, id);
+    await requireEventTournamentAdmin(database, id, user);
     const body = ensureObject(request.body, "Tournament");
     const changes: Updateable<BackendDatabase["Tournament"]> = {};
 
     if (body.eventId !== undefined) {
       const eventId = requireString(body.eventId, "Event ID");
       await requireEventRow(database, eventId);
+      if (eventId !== currentTournament.eventId) {
+        await requireEventAdmin(database, currentTournament.eventId, user);
+        await requireEventAdmin(database, eventId, user);
+      }
       changes.eventId = eventId;
     }
     if (body.name !== undefined) {
@@ -1387,16 +1515,18 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.delete("/api/v1/tournaments/:id", async (request, reply) => {
+    const user = await requireUser(request, database);
     const id = requirePathParam(request, "id");
-    await requireTournamentRow(database, id);
+    await requireEventTournamentAdmin(database, id, user);
     await database.deleteFrom("Tournament").where("id", "=", id).execute();
     reply.status(204).send();
   });
 
   app.post("/api/v1/arenas", async (request) => {
+    const user = await requireUser(request, database);
     const body = ensureObject(request.body, "Arena");
     const eventId = requireString(body.eventId, "Event ID");
-    await requireEventRow(database, eventId);
+    await requireEventAdmin(database, eventId, user);
     const id = generateId();
     await database.insertInto("Arena").values({
       id,
@@ -1410,14 +1540,17 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.patch("/api/v1/arenas/:id", async (request) => {
+    const user = await requireUser(request, database);
     const id = requirePathParam(request, "id");
-    await requireArenaRow(database, id);
+    const existing = await requireArenaRow(database, id);
+    await requireEventAdmin(database, existing.eventId, user);
     const body = ensureObject(request.body, "Arena");
     const changes: Partial<BackendDatabase["Arena"]> = {};
 
     if (body.eventId !== undefined) {
       const eventId = requireString(body.eventId, "Event ID");
       await requireEventRow(database, eventId);
+      await requireEventAdmin(database, eventId, user);
       changes.eventId = eventId;
     }
     if (body.name !== undefined) {
@@ -1440,19 +1573,23 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.delete("/api/v1/arenas/:id", async (request, reply) => {
+    const user = await requireUser(request, database);
     const id = requirePathParam(request, "id");
-    await requireArenaRow(database, id);
+    const arena = await requireArenaRow(database, id);
+    await requireEventAdmin(database, arena.eventId, user);
     await database.deleteFrom("Arena").where("id", "=", id).execute();
     reply.status(204).send();
   });
 
   app.post("/api/v1/entries", async (request) => {
+    const user = await requireUser(request, database);
     const body = ensureObject(request.body, "Entry");
     const tournamentId = requireString(body.tournamentId, "Tournament ID");
     const userId = requireString(body.userId, "User ID");
     const requestedKind = body.kind === undefined ? undefined : parseEntryKind(body.kind);
     const seed = body.seed === undefined ? undefined : requirePositiveInteger(body.seed, "Seed");
     const tournament = await requireTournamentRow(database, tournamentId);
+    await requireEventTournamentAdmin(database, tournamentId, user);
     const event = await requireEventRow(database, tournament.eventId);
     await requireUserRow(database, userId);
     const kind = requestedKind === "FIGHTER" && event.allFightersAreVolunteers === 1 ? "BOTH" : requestedKind;
@@ -1468,14 +1605,17 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.patch("/api/v1/entries/:id", async (request) => {
+    const user = await requireUser(request, database);
     const id = requirePathParam(request, "id");
-    await requireEntryRow(database, id);
+    const existing = await requireEntryRow(database, id);
+    await requireEventTournamentAdmin(database, existing.tournamentId, user);
     const body = ensureObject(request.body, "Entry");
     const changes: Partial<BackendDatabase["Entry"]> = {};
 
     if (body.tournamentId !== undefined) {
       const tournamentId = requireString(body.tournamentId, "Tournament ID");
       await requireTournamentRow(database, tournamentId);
+      await requireEventTournamentAdmin(database, tournamentId, user);
       changes.tournamentId = tournamentId;
     }
     if (body.userId !== undefined) {
@@ -1497,17 +1637,21 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.delete("/api/v1/entries/:id", async (request, reply) => {
+    const user = await requireUser(request, database);
     const id = requirePathParam(request, "id");
-    await requireEntryRow(database, id);
+    const entry = await requireEntryRow(database, id);
+    await requireEventTournamentAdmin(database, entry.tournamentId, user);
     await database.deleteFrom("Entry").where("id", "=", id).execute();
     reply.status(204).send();
   });
 
   app.post("/api/v1/stages", async (request) => {
+    const user = await requireUser(request, database);
     const body = ensureObject(request.body, "Stage");
     const tournamentId = requireString(body.tournamentId, "Tournament ID");
     const type = parseStageType(body.type);
     const tournament = await requireTournamentRow(database, tournamentId);
+    await requireEventTournamentAdmin(database, tournamentId, user);
     const event = await requireEventRow(database, tournament.eventId);
     const rulesetId = body.rulesetId === undefined
       ? tournament.rulesetId ?? event.rulesetId ?? null
@@ -1550,12 +1694,15 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.patch("/api/v1/stages/:id", async (request) => {
+    const user = await requireUser(request, database);
     const id = requirePathParam(request, "id");
     const currentStage = await requireStageRow(database, id);
+    await requireEventTournamentAdmin(database, currentStage.tournamentId, user);
     const body = ensureObject(request.body, "Stage");
     const nextType = body.type === undefined ? currentStage.type : parseStageType(body.type);
     const nextTournamentId = body.tournamentId === undefined ? currentStage.tournamentId : requireString(body.tournamentId, "Tournament ID");
     const nextTournament = await requireTournamentRow(database, nextTournamentId);
+    await requireEventTournamentAdmin(database, nextTournamentId, user);
     const nextTournamentView = await requireTournamentApi(database, nextTournamentId);
     const changes: Partial<BackendDatabase["Stage"]> = {};
 
@@ -1629,15 +1776,19 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.delete("/api/v1/stages/:id", async (request, reply) => {
+    const user = await requireUser(request, database);
     const id = requirePathParam(request, "id");
-    await requireStageRow(database, id);
+    const stage = await requireStageRow(database, id);
+    await requireEventTournamentAdmin(database, stage.tournamentId, user);
     await database.deleteFrom("Stage").where("id", "=", id).execute();
     reply.status(204).send();
   });
 
   app.post("/api/v1/stages/:id/arenas", async (request) => {
+    const user = await requireUser(request, database);
     const stageId = requirePathParam(request, "id");
     const stage = await requireStageRow(database, stageId);
+    await requireEventTournamentAdmin(database, stage.tournamentId, user);
     const body = ensureObject(request.body, "Stage arena");
     const arenaId = requireString(body.arenaId, "Arena ID");
     const arena = await requireArenaRow(database, arenaId);
@@ -1656,23 +1807,28 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.delete("/api/v1/stages/:id/arenas/:arenaId", async (request, reply) => {
+    const user = await requireUser(request, database);
     const stageId = requirePathParam(request, "id");
     const arenaId = requirePathParam(request, "arenaId");
     const assignment = await database.selectFrom("StageArena")
-      .select(["id"])
+      .select(["id", "stageId"])
       .where("stageId", "=", stageId)
       .where("arenaId", "=", arenaId)
       .executeTakeFirst();
     if (!assignment) {
       throw new HttpError(404, `Stage arena assignment "${stageId}/${arenaId}" not found.`);
     }
+    const stage = await requireStageRow(database, assignment.stageId);
+    await requireEventTournamentAdmin(database, stage.tournamentId, user);
     await database.deleteFrom("StageArena").where("id", "=", assignment.id).execute();
     reply.status(204).send();
   });
 
   app.post("/api/v1/stages/:id/officials", async (request) => {
+    const user = await requireUser(request, database);
     const stageId = requirePathParam(request, "id");
     const stage = await requireStageRow(database, stageId);
+    await requireEventTournamentAdmin(database, stage.tournamentId, user);
     const body = ensureObject(request.body, "Stage official");
     const entryId = requireString(body.entryId, "Entry ID");
     const entry = await requireEntryRow(database, entryId);
@@ -1698,8 +1854,11 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.delete("/api/v1/stage-officials/:id", async (request, reply) => {
+    const user = await requireUser(request, database);
     const id = requirePathParam(request, "id");
     const official = await requireStageOfficialRow(database, id);
+    const stage = await requireStageRow(database, official.stageId);
+    await requireEventTournamentAdmin(database, stage.tournamentId, user);
     await database.deleteFrom("StageOfficial").where("id", "=", id).execute();
     await syncStageArtifacts(database, [official.stageId]);
     reply.status(204).send();
@@ -1720,7 +1879,7 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
       const match = await requireMatchRow(trx, matchId);
       const round = await trx.selectFrom("Round").selectAll().where("id", "=", match.roundId).executeTakeFirstOrThrow();
       const stage = await requireStageRow(trx, round.stageId);
-      await requireEventTournamentAdmin(trx, stage.tournamentId, user);
+      await requireEventOrTournamentAdmin(trx, stage.tournamentId, user);
       await validateScheduledMatch(trx, matchId, scheduledPhaseId, order);
       await trx
         .insertInto("ScheduledMatch")
@@ -1738,7 +1897,7 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
       const match = await requireMatchRow(trx, matchId);
       const round = await trx.selectFrom("Round").selectAll().where("id", "=", match.roundId).executeTakeFirstOrThrow();
       const stage = await requireStageRow(trx, round.stageId);
-      await requireEventTournamentAdmin(trx, stage.tournamentId, user);
+      await requireEventOrTournamentAdmin(trx, stage.tournamentId, user);
       if (stage.type === "POOL") {
         throw new HttpError(409, "Pool match orders cannot be removed; assign a different ring order.");
       }
@@ -1748,6 +1907,7 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.post("/api/v1/matches/:id/complete", async (request) => {
+    const user = await requireUser(request, database);
     const matchId = requirePathParam(request, "id");
     const match = await requireMatchRow(database, matchId);
     const existingExchanges = await listExchangesForMatch(database, matchId);
@@ -1760,6 +1920,7 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
       throw new HttpError(500, `Round "${match.roundId}" not found.`);
     }
     const stage = await requireStageRow(database, round.stageId);
+    await requireEventTournamentAdmin(database, stage.tournamentId, user);
     const body = ensureObject(request.body, "Match completion");
     const scoreA = requireInteger(body.scoreA, "Score A");
     const scoreB = requireInteger(body.scoreB, "Score B");
@@ -1837,6 +1998,29 @@ async function listTournamentAdmins(database: Kysely<BackendDatabase>, tournamen
       "Account.username as username",
     ])
     .where("Membership.tournamentId", "=", tournamentId)
+    .orderBy("Account.name", "asc")
+    .orderBy("Account.username", "asc")
+    .execute();
+  return rows.map(({ userId, addedByUserId, createdAt, name, username }) => ({
+    userId,
+    addedByUserId,
+    createdAt,
+    user: { id: userId, name, username },
+  }));
+}
+
+async function listEventAdmins(database: Kysely<BackendDatabase>, eventId: string) {
+  const rows = await database
+    .selectFrom("EventAdmin as Membership")
+    .innerJoin("User as Account", "Account.id", "Membership.userId")
+    .select([
+      "Membership.userId as userId",
+      "Membership.addedByUserId as addedByUserId",
+      "Membership.createdAt as createdAt",
+      "Account.name as name",
+      "Account.username as username",
+    ])
+    .where("Membership.eventId", "=", eventId)
     .orderBy("Account.name")
     .orderBy("Account.username")
     .execute();
@@ -1846,6 +2030,30 @@ async function listTournamentAdmins(database: Kysely<BackendDatabase>, tournamen
     createdAt,
     user: { id: userId, name, username },
   }));
+}
+
+async function requireEventAdminTargetAssignmentAccess(
+  executor: DbExecutor,
+  eventId: string,
+  user: AccessUser,
+): Promise<void> {
+  const event = await executor.selectFrom("Event")
+    .select("id")
+    .where("id", "=", eventId)
+    .executeTakeFirst();
+  if (!event) {
+    throw new HttpError(404, "Event not found.");
+  }
+  const adminCount = await executor.selectFrom("EventAdmin")
+    .select((eb) => eb.fn.count<number>("userId").as("count"))
+    .where("eventId", "=", eventId)
+    .executeTakeFirst();
+  if ((adminCount?.count ?? 0) === 0 && user.role !== "SYSTEM_ADMIN") {
+    throw new HttpError(403, "Only a system admin may assign the first admin to an existing event.");
+  }
+  if ((adminCount?.count ?? 0) > 0) {
+    await requireEventAdmin(executor, eventId, user);
+  }
 }
 
 function parseExistingRulesetDefinition(definition: string | null | undefined): ApiRulesetDefinition {

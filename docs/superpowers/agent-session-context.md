@@ -80,15 +80,22 @@ component choices and workspaces. The user also decided that parent-Event admini
 gain management access to an attached spreadsheet-mode tournament in addition to its current
 creator and `SYSTEM_ADMIN`. The user approved the Event-admin bootstrap: a new Event's
 creator becomes its first administrator; a `SYSTEM_ADMIN` assigns the first administrator
-for existing unowned Events. The low-fi wireframes are approved. A proposed implementation
+for existing unowned Events. The low-fi wireframes and implementation plan are approved; the
 plan is in
-[`plans/2026-11-07-unified-event-admin-implementation.md`](plans/2026-11-07-unified-event-admin-implementation.md);
-no code or schema changes have been made. The user confirmed spreadsheet-mode ring/bout order
+[`plans/2026-11-07-unified-event-admin-implementation.md`](plans/2026-11-07-unified-event-admin-implementation.md).
+The user confirmed spreadsheet-mode ring/bout order
 stays in its existing workflow and the shared Event planner schedules database-mode Tournament
 stages only. The existing Competition-admin spreadsheet-tournament entry remains permanently
 alongside the Event-admin entry. The user has also confirmed that an Event may contain multiple
-rating Competitions, while each Competition may be linked to only one Event. The next step is
-for the user to review the implementation plan and approve Phase 1; no product implementation
-is authorized yet.
+rating Competitions, while each Competition may be linked to only one Event. Phase 1 of the
+implementation plan is implemented and verified on `co-pilot`: Event creator/bootstrap
+ownership, membership APIs, Event-versus-Tournament permission checks, shared planner access,
+and focused authorization/migration tests. Backend tests (40 files/374 tests), workspace
+typechecks, backend build, and Event-admin production build pass; no packages were installed.
+Parent-Event permissions for attached sheet-mode tournaments and Competitions, plus their
+relationship/detach behavior, remain in Phase 2 because they depend on those relationship
+fields; Phase 2 has not been approved or started. Preserve `.idea/php.xml` as an unrelated
+local change. See the Phase 1 progress ledger for details; do not start Phase 2 without
+separate approval.
 
 This handoff was created on 2026-10-28. If the repository's plans or commit history have moved on, trust the newer repository evidence and update this file rather than following stale status here.

@@ -107,6 +107,12 @@ describe("applySchemaMigrations", () => {
     applySchemaMigrations(database);
 
     expect(database.prepare("SELECT name FROM SchemaMigration WHERE name = ?").get(migrationName)).toEqual({ name: migrationName });
+    expect(columns("EventAdmin")).toEqual(expect.arrayContaining([
+      "eventId",
+      "userId",
+      "addedByUserId",
+      "createdAt",
+    ]));
     expect(columns("Tournament")).toContain("createdByUserId");
     expect(columns("LiveTournament")).toContain("sourceTournamentId");
     expect(database.prepare("SELECT mode, googleSpreadsheetId, sourceTournamentId FROM LiveTournament WHERE id = 'legacy-sheet'").get())

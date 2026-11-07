@@ -209,6 +209,19 @@ export interface ApiEventScheduleResponse {
   schedule: ApiEventSchedule;
 }
 
+export interface ApiEventAdmin {
+  userId: string;
+  addedByUserId: string | null;
+  createdAt: string;
+  user: { id: string; name: string; username: string };
+}
+
+export interface ApiEventAdminCandidate {
+  id: string;
+  name: string;
+  username: string;
+}
+
 export interface ApiEvent {
   id: string;
   eventName: string;

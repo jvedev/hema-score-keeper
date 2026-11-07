@@ -220,6 +220,21 @@ export async function insertUser(
   return { id: input.id, role: input.role, clubId };
 }
 
+export async function insertEventAdmin(
+  database: Kysely<BackendDatabase>,
+  input: { eventId: string; userId: string; addedByUserId?: string | null; createdAt?: string },
+): Promise<void> {
+  await database
+    .insertInto("EventAdmin")
+    .values({
+      eventId: input.eventId,
+      userId: input.userId,
+      addedByUserId: input.addedByUserId === undefined ? input.userId : input.addedByUserId,
+      createdAt: input.createdAt ?? "2026-11-08T10:00:00.000Z",
+    })
+    .execute();
+}
+
 export function bearer(user: TestUser): { authorization: string } {
   return { authorization: `Bearer ${signAccessToken({ sub: user.id, role: user.role, clubId: user.clubId })}` };
 }

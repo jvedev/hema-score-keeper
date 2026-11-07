@@ -1,6 +1,6 @@
 # Unified Event-admin implementation plan
 
-Status: draft for review; no product code or database changes are authorized yet.
+Status: Phase 1 implementation is complete and verified; awaiting review before Phase 2.
 
 Parent UX plan: [`2026-11-07-unified-event-admin-ux.md`](2026-11-07-unified-event-admin-ux.md).
 Detailed concept: [`2026-11-07-unified-event-admin-ux-detail.md`](2026-11-07-unified-event-admin-ux-detail.md).
@@ -63,8 +63,8 @@ pre-implementation decisions below are approved.
   and database-live APIs. The backend returns Events with nested database-mode Tournaments,
   Arenas, and Rulesets; it does not yet expose a unified component list.
 - Event-admin database-mode Tournament ownership is already scoped through `TournamentAdmin`.
-  Event-wide administrator membership is not represented by the current Event schema/API and
-  must be designed explicitly before parent-Event permissions can be enforced.
+  Phase 1 adds a separate `EventAdmin` relation and APIs. Parent-Event authorization for
+  spreadsheet-mode tournaments and Competitions still depends on their relationship fields.
 - The `LiveTournament` table in `apps/backend/src/schema-migrations.ts` supports `SHEET` and
   `DATABASE`. Database-mode rows link to an Event-admin Tournament through
   `sourceTournamentId`; spreadsheet-mode rows have no Event link. Spreadsheet-mode
@@ -125,31 +125,29 @@ Scope:
 - Define the Event-admin operations that Event administrators may perform. Membership in an
   Event must not silently grant database-mode Tournament administration; the Tournament
   creator/admin and ring-role permissions remain scoped as already implemented.
-- Add parent-Event Event-admin rights to spreadsheet-mode management while preserving access
-  for its current creator and `SYSTEM_ADMIN`.
-- For an attached Competition, enforce the approved union of parent Event administrators,
-  Competition administrators, and `SYSTEM_ADMIN`. Standalone Competition authorization
-  remains unchanged.
-- Implement the approved attach/detach and Event-deletion behavior, and define the handling
-  of existing unlinked sheet-tournament records.
+- Record the permission contracts for attached spreadsheet-mode tournaments and
+  Competitions; their enforcement depends on the relationship fields introduced in Phase 2.
 
 Acceptance:
 
-- API authorization tests cover Event admins, Tournament admins, Competition admins,
-  original spreadsheet-tournament creators, `SYSTEM_ADMIN`, unrelated users, revoked
-  membership, and standalone entities.
+- API authorization tests cover Event admins, Tournament admins, `SYSTEM_ADMIN`, unrelated
+  users, and revoked Event/Tournament membership.
 - No Event-admin role is inferred from `COMPETITION_ADMIN`, Event membership from
   `TournamentAdmin`, or Tournament administration from Event membership.
-- A missing/unauthorized Event or component produces an explicit not-found/forbidden result,
-  not a successful empty component list.
+- Existing Events remain unowned until a `SYSTEM_ADMIN` assigns their first administrator.
 
 ### Phase 2 — Schema, migration, and component API
 
 Scope:
 
-- Add the Event administrator relation and APIs needed to assign/remove administrators.
+- Reuse the Phase 1 Event administrator relation and add any component-scoped membership
+  operations required by the attachment flows.
 - Add nullable `Competition.eventId` and sheet-mode `LiveTournament.eventId` relationships
   with indexes and reviewed delete behavior.
+- Enforce parent-Event access for attached spreadsheet-mode tournaments while preserving
+  their current creator and `SYSTEM_ADMIN` access. For an attached Competition, enforce the
+  union of parent Event administrators, Competition administrators, and `SYSTEM_ADMIN`;
+  standalone authorization remains unchanged.
 - Preserve existing sheet tournaments with a null Event association. Provide an explicit
   assignment path; do not guess which Event owns legacy rows.
 - Add Event component read models that return separate `databaseTournament`,
@@ -157,6 +155,8 @@ Scope:
   summaries. Do not expose sheet-only controls on database-mode records.
 - Add authorized create-for-Event, attach-existing, and detach operations. Validate
   component type, current parent, and Event-admin membership on the server.
+- Implement the approved attach/detach and Event-deletion behavior without deleting child
+  data, and define the explicit association path for existing unlinked sheet tournaments.
 - Keep existing standalone Competition and spreadsheet-mode API routes working during the
   transition. Database-mode API contracts and source links remain backward-compatible.
 
@@ -294,7 +294,26 @@ spreadsheet-tournament entry alongside the Event-admin component entry.
 - A generic plug-in/component framework for hypothetical future Workshops.
 - Real-phone, Web Push, or hosting acceptance unrelated to the Event-admin consolidation.
 
-## Next step
+## Status / next
 
-Approve Phase 1 to begin implementation. No implementation has started; the current local
-`.idea/php.xml` change is unrelated and must remain outside any commit.
+Phase 1 was implemented on `co-pilot`. It adds an `EventAdmin` relation and guarded runtime
+migration; requires authentication to create an Event and assigns its creator as first
+administrator; exposes admin list/candidate/add/remove APIs with guarded legacy bootstrap,
+active-account validation and last-admin protection; and applies Event-admin versus
+Tournament-admin checks to Event resources, Tournament setup, and shared planning operations.
+Event administrators can manage Event-owned resources and shared schedule placement, but do
+not become Tournament admins. Tournament admins retain Tournament setup and scoring-result
+permissions without gaining Event resource access. The Event-admin API client exposes the
+new membership calls.
+
+Verification passed: backend suite (40 files, 374 tests), all-workspace typecheck, backend
+build, Event-admin production build, and `git diff --check`. No packages were installed.
+`.idea/php.xml` remains unrelated and must stay excluded from commits.
+
+Phase boundary note: parent-Event access to attached spreadsheet-mode tournaments and
+Competitions, plus attach/detach and Event-deletion behavior, require their Event relationship
+fields. Those dependent schema and authorization changes are placed in Phase 2, which has
+not been approved or started.
+
+Next: review the Phase 1 implementation and the dependency sequencing. Do not start Phase 2
+until the user approves it.

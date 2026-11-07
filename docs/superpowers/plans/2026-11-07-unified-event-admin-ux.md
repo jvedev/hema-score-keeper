@@ -1,11 +1,11 @@
 # Unified Event-admin UX
 
-Status: event-first direction and low-fidelity wireframes approved. Competition will be
-administered inside Event-admin. It can remain standalone or be linked to one Event;
-event-admin and Competition-admin rights combine for an attached Competition. The user also
-decided to retain the separate spreadsheet-mode `LiveTournament` workflow alongside
-database-mode as a distinct component under Event → Components. The low-fidelity wireframes
-are approved; the implementation plan is drafted for review.
+Status: event-first direction and low-fidelity wireframes approved. Phase 1 of the
+implementation plan is implemented and verified; Phase 2 awaits separate approval.
+Competition will be administered inside Event-admin. It can remain standalone or be linked
+to one Event; event-admin and Competition-admin rights combine for an attached Competition.
+The separate spreadsheet-mode `LiveTournament` workflow remains alongside database-mode as
+a distinct component under Event → Components.
 
 ## Goal
 
@@ -205,10 +205,11 @@ in the path.
    [`2026-11-07-unified-event-admin-wireframes.md`](2026-11-07-unified-event-admin-wireframes.md).
    The user approved preserving child data on attach/detach and detaching these component
    types, rather than deleting them, when an Event is deleted.
-3. **In progress:** implementation plan drafted in
+3. **Done:** Phase 1 of the implementation plan approved and implemented in
    [`2026-11-07-unified-event-admin-implementation.md`](2026-11-07-unified-event-admin-implementation.md).
-   It maps routes, APIs, schema and migration work; two decisions remain before
-   implementation.
+   Event membership, ownership/bootstrap, and Event-vs-Tournament authorization separation
+   are implemented. Parent-Event authorization for attached component types depends on the
+   relationship schema in Phase 2. Phase 2 is not approved or started.
 4. **Implementation:** deliver in small reviewable slices, preserving current behavior unless
    an approved design intentionally changes it; run targeted and workspace verification.
 
@@ -231,8 +232,7 @@ phase boundary.
 
 ## Open review points
 
-- The low-fidelity wireframes are approved. Review the implementation plan before any product
-  code or schema changes.
+- Phase 1 is implemented and verified; Phase 2 and later phases require separate approval.
 - Competition cardinality, attachment/detachment data behavior, and Event-admin membership
   bootstrap are approved.
 - The spreadsheet-planner boundary is approved: the shared planner covers database-mode

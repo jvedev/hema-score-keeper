@@ -500,6 +500,25 @@ const MIGRATIONS: readonly SchemaMigration[] = [
       addColumn(database, "LiveBout", "sourceResultSignature", "TEXT");
     },
   },
+  {
+    name: "2026-11-08-event-admin-membership",
+    apply(database) {
+      if (!hasTable(database, "Event") || !hasTable(database, "User")) {
+        return false;
+      }
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS EventAdmin (
+          eventId TEXT NOT NULL REFERENCES Event(id) ON DELETE CASCADE,
+          userId TEXT NOT NULL REFERENCES User(id) ON DELETE CASCADE,
+          addedByUserId TEXT REFERENCES User(id) ON DELETE SET NULL,
+          createdAt TEXT NOT NULL,
+          PRIMARY KEY (eventId, userId)
+        );
+        CREATE INDEX IF NOT EXISTS idx_eventAdmin_user
+          ON EventAdmin(userId);
+      `);
+    },
+  },
 ];
 
 export function applySchemaMigrations(database: NativeDatabase): void {

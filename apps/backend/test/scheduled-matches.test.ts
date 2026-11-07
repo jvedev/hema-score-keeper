@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { bearer, createTestContext, insertUser, type TestContext, type TestUser } from "./helpers.js";
+import { bearer, createTestContext, insertEventAdmin, insertUser, type TestContext, type TestUser } from "./helpers.js";
 
 describe("bracket match scheduling", () => {
   let ctx: TestContext;
@@ -22,6 +22,7 @@ describe("bracket match scheduling", () => {
       rulesetId: null,
       allFightersAreVolunteers: 0,
     }).execute();
+    await insertEventAdmin(ctx.database, { eventId: "event", userId: organizer.id });
     await ctx.database.insertInto("Tournament").values({
       id: "tournament",
       eventId: "event",
@@ -214,6 +215,7 @@ describe("bracket match scheduling", () => {
     const response = await ctx.app.inject({
       method: "POST",
       url: "/api/v1/scheduled-phases",
+      headers: bearer(organizer),
       payload: {
         stageId: eliminationStageId,
         arenaId: "ring-one",

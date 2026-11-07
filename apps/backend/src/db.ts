@@ -74,6 +74,13 @@ interface EventTable {
   allFightersAreVolunteers: SqliteBoolean;
 }
 
+interface EventAdminTable {
+  eventId: string;
+  userId: string;
+  addedByUserId: string | null;
+  createdAt: string;
+}
+
 interface EventScheduleTable {
   id: string;
   eventId: string;
@@ -474,6 +481,7 @@ export interface BackendDatabase {
   PasswordResetToken: PasswordResetTokenTable;
   Skill: SkillTable;
   Event: EventTable;
+  EventAdmin: EventAdminTable;
   EventSchedule: EventScheduleTable;
   ScheduleTimeSlot: ScheduleTimeSlotTable;
   Tournament: TournamentTable;

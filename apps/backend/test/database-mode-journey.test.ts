@@ -22,6 +22,7 @@ describe("database-mode scoring journey", () => {
     const eventResponse = await ctx.app.inject({
       method: "POST",
       url: "/api/v1/events",
+      headers: bearer(organizer),
       payload: { eventName: "Journey Event" },
     });
     expect(eventResponse.statusCode).toBe(200);
@@ -77,6 +78,7 @@ describe("database-mode scoring journey", () => {
     const arenaResponse = await ctx.app.inject({
       method: "POST",
       url: "/api/v1/arenas",
+      headers: bearer(organizer),
       payload: { eventId, name: "Journey Ring", order: 1 },
     });
     expect(arenaResponse.statusCode).toBe(200);
@@ -86,12 +88,14 @@ describe("database-mode scoring journey", () => {
     const openingSlot = await ctx.app.inject({
       method: "POST",
       url: `/api/v1/events/${eventId}/schedule/slots`,
+      headers: bearer(organizer),
       payload: { durationMinutes: 60, label: "Opening" },
     });
     expect(openingSlot.statusCode).toBe(200);
     const slotResponse = await ctx.app.inject({
       method: "POST",
       url: `/api/v1/events/${eventId}/schedule/slots`,
+      headers: bearer(organizer),
       payload: { durationMinutes: 60, label: "Scoring" },
     });
     expect(slotResponse.statusCode).toBe(200);
@@ -99,6 +103,7 @@ describe("database-mode scoring journey", () => {
     const phaseResponse = await ctx.app.inject({
       method: "POST",
       url: "/api/v1/scheduled-phases",
+      headers: bearer(organizer),
       payload: { stageId, arenaId, timeSlotId: slotId },
     });
     expect(phaseResponse.statusCode).toBe(200);

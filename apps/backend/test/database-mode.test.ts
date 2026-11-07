@@ -331,6 +331,7 @@ describe("database-mode tournament activation and projection", () => {
     const manual = await ctx.app.inject({
       method: "POST",
       url: "/api/v1/matches/pool-match-a/complete",
+      headers: bearer(admin),
       payload: { scoreA: 1, scoreB: 0, exchanges: [] },
     });
     expect(manual.statusCode).toBe(409);

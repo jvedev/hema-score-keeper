@@ -205,6 +205,19 @@ export interface ApiEventScheduleResponse {
   schedule: ApiEventSchedule;
 }
 
+export interface ApiEventAdmin {
+  userId: string;
+  addedByUserId: string | null;
+  createdAt: string;
+  user: { id: string; name: string; username: string };
+}
+
+export interface ApiEventAdminCandidate {
+  id: string;
+  name: string;
+  username: string;
+}
+
 export interface ApiTournament {
   id: string;
   eventId: string;
@@ -308,6 +321,10 @@ export interface ApiClient {
   createEvent(body: { eventName: string; rulesetId?: string | null; allFightersAreVolunteers?: boolean }): Promise<ApiEventMutationResult>;
   updateEvent(id: string, body: { eventName?: string; rulesetId?: string | null; allFightersAreVolunteers?: boolean }): Promise<ApiEventMutationResult>;
   deleteEvent(id: string): Promise<void>;
+  eventAdmins(id: string): Promise<ApiEventAdmin[]>;
+  eventAdminCandidates(id: string): Promise<ApiEventAdminCandidate[]>;
+  addEventAdmin(id: string, userId: string): Promise<ApiEventAdmin[]>;
+  removeEventAdmin(id: string, userId: string): Promise<void>;
   getEventSchedule(eventId: string): Promise<ApiEventScheduleResponse>;
   updateEventSchedule(eventId: string, body: { startTimeMinutes?: number; currentTimeSlotId?: string | null }): Promise<ApiEventSchedule>;
   createScheduleTimeSlot(
@@ -489,6 +506,17 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
       body,
     }),
     deleteEvent: (id) => requestJson<void>(baseUrl, `/events/${id}`, { method: "DELETE" }),
+    eventAdmins: async (id) =>
+      (await requestJson<{ admins: ApiEventAdmin[] }>(baseUrl, `/events/${id}/admins`)).admins,
+    eventAdminCandidates: async (id) =>
+      (await requestJson<{ candidates: ApiEventAdminCandidate[] }>(baseUrl, `/events/${id}/admin-candidates`)).candidates,
+    addEventAdmin: async (id, userId) =>
+      (await requestJson<{ admins: ApiEventAdmin[] }>(baseUrl, `/events/${id}/admins`, {
+        method: "POST",
+        body: { userId },
+      })).admins,
+    removeEventAdmin: (id, userId) =>
+      requestJson<void>(baseUrl, `/events/${id}/admins/${userId}`, { method: "DELETE" }),
     listRulesets: (eventId) => requestJson<ApiRulesetDetail[]>(baseUrl, `/events/${eventId}/rulesets`),
     getRuleset: (id) => requestJson<ApiRulesetDetail>(baseUrl, `/rulesets/${id}`),
     createRuleset: (eventId, body) =>
