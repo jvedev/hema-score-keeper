@@ -76,9 +76,13 @@ workspace was identified in Competition-admin (imports, sync/backup, rules, figh
 links, ring links). The user decided to retain it as a separate Event component alongside
 database-mode tournaments. It is not the rating Competition or Event-admin database-mode
 Tournament, and must not be conflated with either. Updated wireframes now show separate
-component choices and workspaces. No code or schema changes have been made. Next, ask for
-review of the complete low-fidelity wireframes before drafting an implementation plan; the
-implementation plan must map existing spreadsheet records, permissions, and scheduling
-relationships without assuming they work like database-mode tournaments.
+component choices and workspaces. The user also decided that parent-Event administrators
+gain management access to an attached spreadsheet-mode tournament in addition to its current
+creator and `SYSTEM_ADMIN`. The low-fi wireframes are approved. A proposed implementation
+plan is in
+[`plans/2026-11-07-unified-event-admin-implementation.md`](plans/2026-11-07-unified-event-admin-implementation.md);
+no code or schema changes have been made. Before implementation, resolve its five listed
+decisions, especially the new Event-admin membership/bootstrap model, Competition
+cardinality, attachment lifecycle, planner boundary, and legacy sheet-workflow transition.
 
 This handoff was created on 2026-10-28. If the repository's plans or commit history have moved on, trust the newer repository evidence and update this file rather than following stale status here.

@@ -2,7 +2,8 @@
 
 Status: draft; event-first direction, Competition integration, attached-Competition permission
 union, standalone-or-linked Competition behavior, and retaining spreadsheet-mode tournaments
-as separate Event components approved; low-fidelity wireframes await review.
+as separate Event components approved; low-fidelity wireframes approved. Implementation plan
+is drafted and awaits review.
 
 Parent plan: [`2026-11-07-unified-event-admin-ux.md`](2026-11-07-unified-event-admin-ux.md).
 
@@ -301,6 +302,9 @@ Show tournament identity and source mode prominently.
 - For an attached Competition, combine parent event-admin and existing Competition-admin
   rights: either role can manage that component, and `SYSTEM_ADMIN` remains global. This
   permission union applies only to the attached component and must be enforced by the API.
+- For an attached spreadsheet-mode `LiveTournament`, the user decided parent Event
+  administrators can manage it in addition to its existing creator and `SYSTEM_ADMIN`.
+  Event-admin membership is not currently modeled and its bootstrap policy must be approved.
 - A standalone Competition continues to use its existing Competition-admin authorization;
   event-admin rights apply only after it is linked to an Event.
 - Re-check permission at the API boundary; visual hiding/disablement is not authorization.

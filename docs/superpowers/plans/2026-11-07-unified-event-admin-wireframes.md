@@ -1,7 +1,7 @@
 # Unified Event-admin: low-fidelity wireframes
 
-Status: draft; updated after the user chose to retain spreadsheet-mode tournaments as a
-separate Event component alongside database-mode tournaments; awaiting review.
+Status: approved low-fidelity design; updated to show spreadsheet-mode tournaments as a
+separate Event component alongside database-mode tournaments.
 
 Parent plan: [`2026-11-07-unified-event-admin-ux.md`](2026-11-07-unified-event-admin-ux.md).
 Interaction detail: [`2026-11-07-unified-event-admin-ux-detail.md`](2026-11-07-unified-event-admin-ux-detail.md).
@@ -183,7 +183,8 @@ Fighter identity links                         Ring links
 This is the existing sheet-mode `LiveTournament` workflow, kept as a distinct Event
 component. It does not show database-mode live results or correction controls. Import errors,
 sync failures, stale data, and unavailable backups have explicit error/status states; they
-must not appear as successful empty data.
+must not appear as successful empty data. Parent-Event administrators, the existing
+tournament creator, and `SYSTEM_ADMIN` can manage this component.
 
 ## 4. Competition workspace inside Event-admin
 

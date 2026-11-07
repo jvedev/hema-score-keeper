@@ -5,7 +5,7 @@ administered inside Event-admin. It can remain standalone or be linked to one Ev
 event-admin and Competition-admin rights combine for an attached Competition. The user also
 decided to retain the separate spreadsheet-mode `LiveTournament` workflow alongside
 database-mode as a distinct component under Event → Components. Full UX review remains
-pending.
+approved; the implementation plan is drafted for review.
 
 ## Goal
 
@@ -26,6 +26,9 @@ and screen concepts are approved.
 - An event can also contain a spreadsheet-mode tournament component, distinct from an
   Event-admin database-mode Tournament and from Competition. The user chose to place both
   tournament workflows under Event → Components.
+- Parent-Event administrators may manage an attached spreadsheet-mode tournament, in addition
+  to its existing creator and `SYSTEM_ADMIN`. The Event-admin membership model and bootstrap
+  policy are proposed in the implementation plan and remain to be approved.
 - The component model must leave room for later types such as workshops without forcing
   tournament-specific behavior onto every component.
 - Do not assume the separate Competition and Tournament domain models should be merged into a
@@ -183,20 +186,22 @@ in the path.
 
 1. **Done:** user approved the event-first hierarchy, optional tournaments, event-wide planner,
    and keeping live scoring in Score-keeper.
-2. **In progress:** user expanded event components to include the existing Competition-admin
+2. **Done:** user expanded event components to include the existing Competition-admin
    Competition, with direct administration inside the Event-admin shell. Competition may
    remain standalone or be linked to exactly one Event. For an attached Competition, event
    admins and Competition admins both retain management rights. The user also decided to keep
    spreadsheet-mode `LiveTournament` administration as its own Event component beside
-   database-mode Tournaments. The
+   database-mode Tournaments, managed by parent-Event administrators as well as its creator and
+   `SYSTEM_ADMIN`. The
    detailed concept is in
    [`2026-11-07-unified-event-admin-ux-detail.md`](2026-11-07-unified-event-admin-ux-detail.md);
    low-fidelity screen concepts are in
    [`2026-11-07-unified-event-admin-wireframes.md`](2026-11-07-unified-event-admin-wireframes.md).
    Standalone/attachment lifecycle remains to be clarified.
-3. **Implementation plan:** map the approved designs to routes/components/API needs, identify
-   any necessary database changes, and define migration/data-reset and verification approach.
-   Ask for approval before implementation.
+3. **In progress:** implementation plan drafted in
+    [`2026-11-07-unified-event-admin-implementation.md`](2026-11-07-unified-event-admin-implementation.md).
+    It maps routes, APIs, schema and migration work, but lists five decisions that must be
+    resolved before implementation.
 4. **Implementation:** deliver in small reviewable slices, preserving current behavior unless
    an approved design intentionally changes it; run targeted and workspace verification.
 
@@ -219,7 +224,9 @@ phase boundary.
 
 ## Open review points
 
-- Review the updated low-fidelity wireframes, including the spreadsheet-mode tournament
-  component, before drafting the implementation plan.
-- Decisions still to validate are listed in the detailed concept, including attach/detach
-  lifecycle, officials terminology, permission/read-only scope, and language selection behavior.
+- The low-fidelity wireframes are approved. Review the implementation plan before any product
+  code or schema changes.
+- Resolve the implementation plan's Event-admin membership bootstrap, Competition
+  cardinality, attach/detach behavior, spreadsheet-planner boundary, and legacy entry-point
+  transition. Other UX details such as officials terminology and localization behavior remain
+  part of implementation design.
