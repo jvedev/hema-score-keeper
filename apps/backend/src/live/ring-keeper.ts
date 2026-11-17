@@ -3,6 +3,7 @@ import type { FastifyRequest } from "fastify";
 import type { Selectable } from "kysely";
 import type { BackendDatabase, DbExecutor } from "../db.js";
 import { HttpError } from "../http.js";
+import { scoreboardSettingsOf } from "./ring-settings.js";
 
 type LiveRingRow = Selectable<BackendDatabase["LiveRing"]>;
 
@@ -37,7 +38,15 @@ export async function activeKeeperOf(db: DbExecutor, ring: Pick<LiveRingRow, "ac
 
 /** A public view of a ring: no keeper token, no device id. */
 export function publicRing(ring: LiveRingRow) {
-  return { id: ring.id, tournamentId: ring.tournamentId, name: ring.name, order: ring.order, leftColor: ring.leftColor, rightColor: ring.rightColor };
+  return {
+    id: ring.id,
+    tournamentId: ring.tournamentId,
+    name: ring.name,
+    order: ring.order,
+    leftColor: ring.leftColor,
+    rightColor: ring.rightColor,
+    scoreboard: scoreboardSettingsOf(ring),
+  };
 }
 
 export interface KeeperCheck {

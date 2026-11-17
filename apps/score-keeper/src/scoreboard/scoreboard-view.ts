@@ -1,4 +1,5 @@
 import type { BoutDisplay, SideScore } from "@hema/competition-domain";
+import type { ScoreboardSettings } from "../ring/live-client";
 import type { Translate } from "../ring/ring-texts";
 
 /** Kept free of @hema/ui (DOM components) so it is testable in Node; the page passes in `t`. */
@@ -16,7 +17,8 @@ interface BoutNames {
 export interface ScoreboardData {
   serverTime: string;
   tournamentName: string;
-  ring: { name: string; leftColor: string; rightColor: string };
+  /** `scoreboard` is set at the table; absent from an older backend (then: the defaults). */
+  ring: { name: string; leftColor: string; rightColor: string; scoreboard?: ScoreboardSettings };
   current: (BoutNames & { display: BoutDisplay }) | null;
   onDeck: BoutNames | null;
   after: BoutNames | null;
@@ -27,6 +29,18 @@ export interface ScoreboardData {
 }
 
 export type Connection = "ok" | "lost";
+
+/** How the scoreboard looks until the table changes it: today's dark board, medium text, the next bout shown, not mirrored. */
+export const DEFAULT_SCOREBOARD_SETTINGS: Readonly<ScoreboardSettings> = { mirrored: false, showNext: true, textSize: "MEDIUM", theme: "DARK" };
+
+export function settingsOf(data: ScoreboardData): ScoreboardSettings {
+  return { ...DEFAULT_SCOREBOARD_SETTINGS, ...(data.ring.scoreboard ?? {}) };
+}
+
+/** The classes of the scoreboard root for its theme and text size. */
+export function scoreboardClasses(settings: ScoreboardSettings): string {
+  return `scoreboard sb-theme-${settings.theme.toLowerCase()} sb-text-${settings.textSize.toLowerCase()}`;
+}
 
 /** The scoreboard path: `/scoreboard/<token>`. Null for any other path. */
 export function scoreboardTokenFromPath(pathname: string): string | null {
@@ -92,12 +106,13 @@ function fighterPanel(name: string, color: string, score: number, warnings: numb
     </section>`;
 }
 
-function renderBout(data: ScoreboardData, current: NonNullable<ScoreboardData["current"]>, flipped: boolean, elapsedMs: number, t: Translate): string {
+function renderBout(data: ScoreboardData, current: NonNullable<ScoreboardData["current"]>, settings: ScoreboardSettings, elapsedMs: number, t: Translate): string {
+  const flipped = settings.mirrored;
   const d = current.display;
   const left = fighterPanel(current.fighterLeft, data.ring.leftColor, d.score.left, d.warnings.left, d.roundsWon?.left ?? null, flipped ? "right" : "left", t);
   const right = fighterPanel(current.fighterRight, data.ring.rightColor, d.score.right, d.warnings.right, d.roundsWon?.right ?? null, flipped ? "left" : "right", t);
   const period = periodLabel(d, t);
-  const strip = data.onDeck
+  const strip = settings.showNext && data.onDeck
     ? `<footer class="sb-strip"><span class="sb-strip-label">${escapeHtml(t("scoreboard.onDeck"))}</span> ${vs(data.onDeck, flipped, t)}${
         data.after ? ` <span class="sb-then">· ${escapeHtml(t("scoreboard.then"))} ${vs(data.after, flipped, t)}</span>` : ""
       }</footer>`
@@ -122,15 +137,18 @@ function renderAlert(display: BoutDisplay, t: Translate): string {
   return lines.length === 0 ? "" : `<div class="sb-alert" role="alert">${lines.map((line) => `<span>${escapeHtml(line)}</span>`).join("")}</div>`;
 }
 
-function renderNext(data: ScoreboardData, flipped: boolean, t: Translate): string {
-  const next = data.onDeck
-    ? `<div class="sb-next"><span class="sb-next-label">${escapeHtml(t("scoreboard.next"))}</span><div class="sb-next-names">${vs(data.onDeck, flipped, t)}</div></div>`
-    : `<div class="sb-next"><span class="sb-next-label">${escapeHtml(t("scoreboard.noMoreBouts"))}</span></div>`;
+function renderNext(data: ScoreboardData, settings: ScoreboardSettings, t: Translate): string {
+  const flipped = settings.mirrored;
+  const next = !data.onDeck
+    ? `<div class="sb-next"><span class="sb-next-label">${escapeHtml(t("scoreboard.noMoreBouts"))}</span></div>`
+    : settings.showNext
+      ? `<div class="sb-next"><span class="sb-next-label">${escapeHtml(t("scoreboard.next"))}</span><div class="sb-next-names">${vs(data.onDeck, flipped, t)}</div></div>`
+      : "";
   const pool = data.pool
     ? `<h2 class="sb-pool-name">${escapeHtml(data.pool.name)}</h2>
       <ol class="sb-pool">${data.pool.bouts
         .map(
-          (bout) => `<li class="sb-pool-bout sb-pool-${bout.status.toLowerCase()}${bout.isNext ? " sb-pool-next" : ""}">
+          (bout) => `<li class="sb-pool-bout sb-pool-${bout.status.toLowerCase()}${bout.isNext && settings.showNext ? " sb-pool-next" : ""}">
             <span class="sb-pool-names">${escapeHtml(bout.fighterLeft)} <span class="sb-vs">${escapeHtml(t("scoreboard.vs"))}</span> ${escapeHtml(bout.fighterRight)}</span>
             <span class="sb-pool-result">${bout.result ? `${Number(bout.result.left)}–${Number(bout.result.right)}` : ""}</span>
           </li>`,
@@ -140,16 +158,20 @@ function renderNext(data: ScoreboardData, flipped: boolean, t: Translate): strin
   return `${next}${pool}`;
 }
 
-/** The header line (the header itself, with the flip button, is drawn once so the button is never replaced under a click). */
+/** The header line. */
 export function headerText(data: ScoreboardData): string {
   return `${data.tournamentName} · ${data.ring.name}`;
 }
 
-/** The scoreboard below the header. `elapsedMs`: time since the data arrived (a running clock counts on by it). */
-export function renderScoreboard(data: ScoreboardData, flipped: boolean, connection: Connection, elapsedMs: number, t: Translate): string {
+/**
+ * The scoreboard below the header, laid out by the ring's settings (mirrored, next bout shown or not).
+ * `elapsedMs`: time since the data arrived (a running clock counts on by it).
+ */
+export function renderScoreboard(data: ScoreboardData, connection: Connection, elapsedMs: number, t: Translate): string {
+  const settings = settingsOf(data);
   const lost = connection === "lost" ? `<div class="sb-lost" role="alert">${escapeHtml(t("scoreboard.connectionLost"))}</div>` : "";
   return `${lost}
-    <main class="sb-main">${data.current ? renderBout(data, data.current, flipped, elapsedMs, t) : renderNext(data, flipped, t)}</main>`;
+    <main class="sb-main">${data.current ? renderBout(data, data.current, settings, elapsedMs, t) : renderNext(data, settings, t)}</main>`;
 }
 
 export function renderMessage(text: string): string {

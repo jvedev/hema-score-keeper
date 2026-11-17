@@ -62,7 +62,7 @@ describe("baseline schema creates live tables", () => {
     expect(await columnNames("LiveTournament")).toEqual(["id", "name", "sourceTournamentId", "createdByUserId", "createdAt", "ruleset"]);
     expect(await columnNames("LiveRing")).toEqual([
       "id", "tournamentId", "sourceArenaId", "name", "order", "keeperToken", "activeDeviceId", "activeUserId", "activeSince",
-      "scoreboardToken", "leftColor", "rightColor",
+      "scoreboardToken", "leftColor", "rightColor", "scoreboardMirrored", "scoreboardShowNext", "scoreboardTextSize", "scoreboardTheme",
     ]);
     expect(await columnNames("LiveBout")).toEqual([
       "id", "tournamentId", "sourceMatchId", "scheduledPhaseId", "sourceScheduleSignature", "sourceResultSignature",

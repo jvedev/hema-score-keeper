@@ -7,13 +7,40 @@ body.scoreboard-page {
   overflow: hidden;
 }
 
+/* Theme and text size come from the ring's settings (set at the table). DARK is the original board. */
 .scoreboard {
+  --sb-bg: #0b0d10;
+  --sb-fg: #f2f5f7;
+  --sb-panel: #1a1f27;
+  --sb-line: #2a313c;
+  --sb-accent: #ff9f1a;
+  --sb-accent-fg: #0b0d10;
+  --sb-scale: 1;
+  background: var(--sb-bg);
+  color: var(--sb-fg);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 1.5vh;
   height: 100dvh;
   padding: 2vh 2vw;
+}
+
+.sb-theme-light {
+  --sb-bg: #f4f5f7;
+  --sb-fg: #0b0d10;
+  --sb-panel: #ffffff;
+  --sb-line: #c9ced6;
+  --sb-accent: #a14d00;
+  --sb-accent-fg: #ffffff;
+}
+
+.sb-text-small {
+  --sb-scale: 0.8;
+}
+
+.sb-text-large {
+  --sb-scale: 1.25;
 }
 
 .sb-body {
@@ -27,28 +54,17 @@ body.scoreboard-page {
 .sb-header {
   align-items: center;
   display: flex;
-  font-size: clamp(14px, 2.4vh, 28px);
+  font-size: calc(clamp(14px, 2.4vh, 28px) * var(--sb-scale));
   justify-content: space-between;
   opacity: 0.75;
 }
 
-.sb-flip {
-  background: none;
-  border: 1px solid #2a313c;
-  border-radius: 6px;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.7em;
-  letter-spacing: 0.08em;
-  padding: 4px 10px;
-  text-transform: uppercase;
-}
 
 .sb-lost {
   background: #b3261e;
+  color: #ffffff;
   border-radius: 6px;
-  font-size: clamp(16px, 3vh, 32px);
+  font-size: calc(clamp(16px, 3vh, 32px) * var(--sb-scale));
   font-weight: 600;
   padding: 0.6vh 1vw;
   text-align: center;
@@ -64,7 +80,7 @@ body.scoreboard-page {
 
 .sb-message {
   align-items: center;
-  font-size: clamp(20px, 5vh, 56px);
+  font-size: calc(clamp(20px, 5vh, 56px) * var(--sb-scale));
   justify-content: center;
   text-align: center;
 }
@@ -92,7 +108,7 @@ body.scoreboard-page {
 }
 
 .sb-name {
-  font-size: clamp(18px, 6vh, 72px);
+  font-size: calc(clamp(18px, 6vh, 72px) * var(--sb-scale));
   font-weight: 600;
   line-height: 1.1;
   overflow-wrap: anywhere;
@@ -107,7 +123,7 @@ body.scoreboard-page {
 
 .sb-extra {
   display: flex;
-  font-size: clamp(16px, 4.5vh, 52px);
+  font-size: calc(clamp(16px, 4.5vh, 52px) * var(--sb-scale));
   gap: 1.5vw;
   min-height: 1.2em;
 }
@@ -126,7 +142,7 @@ body.scoreboard-page {
 }
 
 .sb-round {
-  font-size: clamp(18px, 5vh, 60px);
+  font-size: calc(clamp(18px, 5vh, 60px) * var(--sb-scale));
   font-weight: 600;
 }
 
@@ -139,13 +155,13 @@ body.scoreboard-page {
 }
 
 .sb-period {
-  font-size: clamp(18px, 5vh, 60px);
+  font-size: calc(clamp(18px, 5vh, 60px) * var(--sb-scale));
   font-weight: 700;
   text-transform: uppercase;
 }
 
 .sb-tone-normal {
-  color: #f2f5f7;
+  color: var(--sb-fg);
 }
 
 .sb-tone-last {
@@ -156,8 +172,17 @@ body.scoreboard-page {
   color: #ff3b30;
 }
 
+/* Darker warning colours that still read on the light board. */
+.sb-theme-light .sb-tone-last {
+  color: #a14d00;
+}
+
+.sb-theme-light .sb-tone-overtime {
+  color: #c4001a;
+}
+
 .sb-doubles {
-  font-size: clamp(16px, 4vh, 48px);
+  font-size: calc(clamp(16px, 4vh, 48px) * var(--sb-scale));
   opacity: 0.85;
 }
 
@@ -193,9 +218,9 @@ body.scoreboard-page {
 }
 
 .sb-strip {
-  background: #1a1f27;
+  background: var(--sb-panel);
   border-radius: 1vh;
-  font-size: clamp(16px, 4.5vh, 52px);
+  font-size: calc(clamp(16px, 4.5vh, 52px) * var(--sb-scale));
   overflow: hidden;
   padding: 1vh 1.5vw;
   text-overflow: ellipsis;
@@ -203,7 +228,7 @@ body.scoreboard-page {
 }
 
 .sb-strip-label {
-  color: #ff9f1a;
+  color: var(--sb-accent);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -223,20 +248,20 @@ body.scoreboard-page {
 }
 
 .sb-next-label {
-  color: #ff9f1a;
-  font-size: clamp(20px, 6vh, 72px);
+  color: var(--sb-accent);
+  font-size: calc(clamp(20px, 6vh, 72px) * var(--sb-scale));
   font-weight: 700;
   text-transform: uppercase;
 }
 
 .sb-next-names {
-  font-size: clamp(28px, 11vh, 140px);
+  font-size: calc(clamp(28px, 11vh, 140px) * var(--sb-scale));
   font-weight: 600;
   line-height: 1.1;
 }
 
 .sb-pool-name {
-  font-size: clamp(16px, 3.5vh, 40px);
+  font-size: calc(clamp(16px, 3.5vh, 40px) * var(--sb-scale));
   margin: 0;
   opacity: 0.75;
 }
@@ -244,7 +269,7 @@ body.scoreboard-page {
 .sb-pool {
   column-count: 2;
   column-gap: 3vw;
-  font-size: clamp(14px, 3.6vh, 42px);
+  font-size: calc(clamp(14px, 3.6vh, 42px) * var(--sb-scale));
   list-style: none;
   margin: 0;
   padding: 0;
@@ -269,8 +294,8 @@ body.scoreboard-page {
 }
 
 .sb-pool-next {
-  background: #ff9f1a;
-  color: #0b0d10;
+  background: var(--sb-accent);
+  color: var(--sb-accent-fg);
   font-weight: 700;
   opacity: 1;
 }

@@ -26,6 +26,7 @@ import type {
   StageType,
 } from "./api-types.js";
 import { type BackendDatabase, type DbExecutor, fromSqliteBoolean } from "./db.js";
+import { loadEventColors } from "./events/event-colors.js";
 import { HttpError, type JsonValue, parseJsonValue, stringifyJsonValue } from "./http.js";
 
 type UserRow = Selectable<BackendDatabase["User"]>;
@@ -378,6 +379,7 @@ export async function loadEvents(executor: DbExecutor, eventIds?: readonly strin
   const rulesetById = new Map(rulesetRows.map((row) => [row.id, toApiRuleset(row)] as const));
   const rulesetsByEventId = groupBy(rulesetRows, (row) => row.eventId);
 
+  const colorsByEventId = await loadEventColors(executor, resolvedEventIds);
   const arenaRows = await executor
     .selectFrom("Arena")
     .selectAll()
@@ -775,6 +777,7 @@ export async function loadEvents(executor: DbExecutor, eventIds?: readonly strin
     tournaments: tournamentsByEventId.get(row.id) ?? [],
     arenas: (arenasByEventId.get(row.id) ?? []).map(toApiArena),
     rulesets: (rulesetsByEventId.get(row.id) ?? []).map(toApiRuleset),
+    colors: colorsByEventId.get(row.id) ?? [],
   }));
 }
 

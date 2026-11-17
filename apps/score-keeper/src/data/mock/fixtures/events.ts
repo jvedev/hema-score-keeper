@@ -195,6 +195,14 @@ const activeSchedule = {
   ],
 };
 
+/** The default palette of a new Event (red and blue). */
+function defaultColors(eventId: string): ApiEvent["colors"] {
+  return [
+    { id: `${eventId}-red`, eventId, name: null, preset: "RED", hex: "#d62828", order: 0 },
+    { id: `${eventId}-blue`, eventId, name: null, preset: "BLUE", hex: "#2f7dfa", order: 1 },
+  ];
+}
+
 export const events: readonly ApiEvent[] = [
   {
     id: "event-1",
@@ -205,6 +213,7 @@ export const events: readonly ApiEvent[] = [
     arenas: [ringOne, ringTwo],
     rulesets: [defaultRuleset],
     tournaments: [openTournament],
+    colors: defaultColors("event-1"),
   },
   {
     id: "event-2",
@@ -221,6 +230,7 @@ export const events: readonly ApiEvent[] = [
     ],
     rulesets: [],
     tournaments: [],
+    colors: defaultColors("event-2"),
   },
 ];
 

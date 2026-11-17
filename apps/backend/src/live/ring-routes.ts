@@ -8,8 +8,10 @@ import { displayOf, rulesOf, type RoundExchange } from "./bout-display.js";
 import { poolNameIn, poolNamesOf, sameBoutPool } from "./bout-pools.js";
 import { ringBouts } from "./bout-routes.js";
 import { requireTournamentAdmin } from "./live-routes.js";
+import { eventPalette, requirePaletteColors } from "../events/event-colors.js";
 import { requireLiveRingAccess } from "./ring-access.js";
 import { activeKeeperOf, newKeeperToken, publicRing } from "./ring-keeper.js";
+import { parseScoreboardSettings, ringEventId, scoreboardColumns, scoreboardSettingsOf } from "./ring-settings.js";
 
 async function ringByToken(db: DbExecutor, token: string) {
   const ring = await db.selectFrom("LiveRing").selectAll().where("keeperToken", "=", token).executeTakeFirst();
@@ -31,6 +33,36 @@ function isActiveDevice(activeDeviceId: string | null, header: string | string[]
   return typeof header === "string" && header !== "" && activeDeviceId !== null && header === activeDeviceId;
 }
 
+type SignedInUser = Awaited<ReturnType<typeof requireUser>>;
+
+/**
+ * A ring setting written from the table: only the device (`X-Device-Id`) and the user that hold the ring may write.
+ * Call it with the write's own transaction, so a takeover can't commit between the check and the write.
+ */
+async function requireRingHolder(trx: DbExecutor, token: string, user: SignedInUser, deviceHeader: string | string[] | undefined) {
+  const deviceId = typeof deviceHeader === "string" ? deviceHeader.trim() : "";
+  if (deviceId === "") throw new HttpError(400, "The X-Device-Id header is required.");
+  const ring = await ringByToken(trx, token);
+  await requireLiveRingAccess(trx, ring.id, user);
+  if (ring.activeDeviceId !== deviceId || ring.activeUserId !== user.id) {
+    throw new HttpError(409, "This ring is kept by another device.", undefined, { reason: "TAKEN_OVER", activeKeeper: await activeKeeperOf(trx, ring) });
+  }
+  return ring;
+}
+
+/** Both colours from the ring's event palette and different (400 otherwise). */
+async function saveRingColors(trx: DbExecutor, ringId: string, body: unknown) {
+  const object = ensureObject(body, "Colors");
+  const colors = await requirePaletteColors(trx, await ringEventId(trx, ringId), { leftColor: object.leftColor, rightColor: object.rightColor });
+  await trx.updateTable("LiveRing").set(colors).where("id", "=", ringId).execute();
+  return trx.selectFrom("LiveRing").selectAll().where("id", "=", ringId).executeTakeFirstOrThrow();
+}
+
+async function saveScoreboardSettings(trx: DbExecutor, ringId: string, body: unknown) {
+  await trx.updateTable("LiveRing").set(scoreboardColumns(parseScoreboardSettings(body))).where("id", "=", ringId).execute();
+  return trx.selectFrom("LiveRing").selectAll().where("id", "=", ringId).executeTakeFirstOrThrow();
+}
+
 export function registerRingRoutes(app: FastifyInstance, database: Kysely<BackendDatabase>): void {
   // Any signed-in account holding the ring link may open and claim the ring; the link alone (no sign-in) may not.
   app.get("/api/v1/live-rings/by-token/:token", async (request) => {
@@ -48,6 +80,8 @@ export function registerRingRoutes(app: FastifyInstance, database: Kysely<Backen
       rules: rulesOf(tournament.ruleset),
       bouts: await ringBouts(database, ring.id, app.now(), accessiblePhases ?? undefined),
       activeKeeper: await activeKeeperOf(database, ring),
+      // The colours the table may choose from for this ring.
+      palette: (await eventPalette(database, await ringEventId(database, ring.id))).map(({ id, name, preset, hex }) => ({ id, name, preset, hex })),
       // Whether the device asking (optional X-Device-Id) is the active keeper. The device id itself is never returned.
       youAreKeeper: isActiveDevice(ring.activeDeviceId, request.headers["x-device-id"]),
     };
@@ -82,6 +116,25 @@ export function registerRingRoutes(app: FastifyInstance, database: Kysely<Backen
     });
   });
 
+  // Ring colours and scoreboard settings from the table: only the holding device and user.
+  app.put("/api/v1/live-rings/by-token/:token/colors", async (request) => {
+    const user = await requireUser(request, database);
+    const token = requirePathParam(request, "token");
+    return database.transaction().execute(async (trx) => {
+      const ring = await requireRingHolder(trx, token, user, request.headers["x-device-id"]);
+      return { ring: publicRing(await saveRingColors(trx, ring.id, request.body)) };
+    });
+  });
+
+  app.put("/api/v1/live-rings/by-token/:token/scoreboard-settings", async (request) => {
+    const user = await requireUser(request, database);
+    const token = requirePathParam(request, "token");
+    return database.transaction().execute(async (trx) => {
+      const ring = await requireRingHolder(trx, token, user, request.headers["x-device-id"]);
+      return { ring: publicRing(await saveScoreboardSettings(trx, ring.id, request.body)) };
+    });
+  });
+
   // The scoreboard: view only, no sign-in. It shows what the backend works out and works nothing out itself.
   app.get("/api/v1/scoreboard/:token", async (request) => {
     const token = requirePathParam(request, "token");
@@ -101,11 +154,13 @@ export function registerRingRoutes(app: FastifyInstance, database: Kysely<Backen
   app.put("/api/v1/live-rings/:id/colors", async (request) => {
     const user = await requireUser(request, database);
     const ring = await adminRing(database, requirePathParam(request, "id"), user);
-    const body = ensureObject(request.body, "Colors");
-    const leftColor = requireColor(body.leftColor, "leftColor");
-    const rightColor = requireColor(body.rightColor, "rightColor");
-    await database.updateTable("LiveRing").set({ leftColor, rightColor }).where("id", "=", ring.id).execute();
-    return { ring: { ...publicRing(ring), leftColor, rightColor } };
+    return database.transaction().execute(async (trx) => ({ ring: publicRing(await saveRingColors(trx, ring.id, request.body)) }));
+  });
+
+  app.put("/api/v1/live-rings/:id/scoreboard-settings", async (request) => {
+    const user = await requireUser(request, database);
+    const ring = await adminRing(database, requirePathParam(request, "id"), user);
+    return database.transaction().execute(async (trx) => ({ ring: publicRing(await saveScoreboardSettings(trx, ring.id, request.body)) }));
   });
 
   // A new token makes the old link stop working. Nobody keeps the ring until it is claimed with the new link.
@@ -129,12 +184,7 @@ export function registerRingRoutes(app: FastifyInstance, database: Kysely<Backen
   });
 }
 
-function requireColor(value: unknown, label: string): string {
-  if (typeof value !== "string" || !/^#[0-9a-fA-F]{6}$/.test(value)) throw new HttpError(400, `${label} must be a colour like #21c15b.`);
-  return value.toLowerCase();
-}
-
-async function adminRing(database: Kysely<BackendDatabase>, ringId: string, user: Awaited<ReturnType<typeof requireUser>>) {
+async function adminRing(database: Kysely<BackendDatabase>, ringId: string, user: SignedInUser) {
   const ring = await database.selectFrom("LiveRing").selectAll().where("id", "=", ringId).executeTakeFirst();
   if (!ring) throw new HttpError(404, "Ring not found.");
   await requireTournamentAdmin(database, ring.tournamentId, user);
@@ -170,7 +220,7 @@ async function scoreboardView(database: Kysely<BackendDatabase>, ring: Scoreboar
   return {
     serverTime: now.toISOString(),
     tournamentName: tournament.name,
-    ring: { name: ring.name, leftColor: ring.leftColor, rightColor: ring.rightColor },
+    ring: { name: ring.name, leftColor: ring.leftColor, rightColor: ring.rightColor, scoreboard: scoreboardSettingsOf(ring) },
     current: current ? { ...names(current), display: display(current) } : null,
     onDeck: names(pending[0]),
     after: names(pending[1]),

@@ -25,7 +25,10 @@ is implemented and verified but uncommitted: `apps/backend/src/schema.ts` is the
 old databases are refused, and `npm run backend:db:reset` recreates and seeds the dev database
 (the existing `data/dev.db` must be reset once). After it:
 [`plans/2026-11-17-table-ring-and-scoreboard-settings.md`](plans/2026-11-17-table-ring-and-scoreboard-settings.md)
-(needs approval), then a reduced Phase 2 of the unified Event-admin plan. HTTPS,
+is implemented and verified but uncommitted (ring colours and scoreboard settings from the
+table, an Event colour palette that all colour choices pick from, default palette red/blue).
+**It changed the schema: the dev database must be reset (`npm run backend:db:reset`).** See its
+**Status / next**. Then a reduced Phase 2 of the unified Event-admin plan. HTTPS,
 Web Push and phone tests stay deferred to the end; GitHub Codespaces (HTTPS forwarded ports) is
 the intended place for them.
 

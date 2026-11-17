@@ -283,6 +283,21 @@ describe("ring mode", () => {
     expect(state().isKeeper).toBe(true);
   });
 
+  it("ring settings: the palette comes with the ring, a saved ring replaces it, a refused write turns read-only", async () => {
+    (api.ring as RingByToken).palette = [{ id: "c1", name: null, preset: "RED", hex: "#d62828" }, { id: "c2", name: null, preset: "BLUE", hex: "#2f7dfa" }];
+    const ring = controller();
+    await ring.open("tok");
+    expect(ring.ringToken).toBe("tok");
+    expect(state().palette.map((color) => color.hex)).toEqual(["#d62828", "#2f7dfa"]);
+    ring.ringChanged({ id: "r1", tournamentId: "t1", name: "Ring 1", order: 1, leftColor: "#2f7dfa", rightColor: "#d62828" });
+    expect(state().ring).toMatchObject({ leftColor: "#2f7dfa", rightColor: "#d62828" });
+    // An answer for another ring is ignored.
+    ring.ringChanged({ id: "other", tournamentId: "t1", name: "Ring 2", order: 2, leftColor: "#000000" });
+    expect(state().ring?.leftColor).toBe("#2f7dfa");
+    ring.ringTakenOver(keeper("Bob"));
+    expect(state()).toMatchObject({ isKeeper: false, readOnly: true, notice: { key: "ring.takenOver", params: { name: "Bob" } } });
+  });
+
   it("resume loads exchanges and paused clock", async () => {
     asKeeper();
     api.exchanges.b1 = [serverExchange("c1", 3, 0, 1), serverExchange("c2", 1, 1, 2), serverExchange("c3", -1, 0, 3)];

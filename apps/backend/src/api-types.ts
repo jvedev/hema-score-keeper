@@ -68,6 +68,32 @@ export interface ApiUser {
   skills?: ApiSkill[];
 }
 
+/** A built-in palette colour; its name is translated by the apps until an admin renames it. */
+export type EventColorPreset = "RED" | "BLUE";
+
+/** One colour of an Event's fighter palette. */
+export interface ApiEventColor {
+  id: string;
+  eventId: string;
+  /** Null: show the preset's translated name. */
+  name: string | null;
+  preset: EventColorPreset | null;
+  /** `#rrggbb`, lower case. */
+  hex: string;
+  order: number;
+}
+
+export type ScoreboardTextSize = "SMALL" | "MEDIUM" | "LARGE";
+export type ScoreboardTheme = "DARK" | "LIGHT";
+
+/** How a ring's scoreboard looks; set from the table or by tournament admins. */
+export interface ApiScoreboardSettings {
+  mirrored: boolean;
+  showNext: boolean;
+  textSize: ScoreboardTextSize;
+  theme: ScoreboardTheme;
+}
+
 export interface ApiArena {
   id: string;
   eventId: string;
@@ -231,6 +257,8 @@ export interface ApiEvent {
   tournaments: ApiTournament[];
   arenas: ApiArena[];
   rulesets: ApiRuleset[];
+  /** The event's fighter colour palette, in order. */
+  colors: ApiEventColor[];
 }
 
 export interface ApiEventMutationResult {

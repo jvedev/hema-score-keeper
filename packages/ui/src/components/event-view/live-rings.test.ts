@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  readRingColors,
+  readScoreboardSettings,
   ringKeeperLink,
   ringKeeperStatus,
   ringScoreboardLink,
@@ -41,12 +41,13 @@ describe("live ring links", () => {
     expect(rotateKeeperConfirmMessage({ name: "Ring 2", activeKeeper: null })).toContain("Make a new table link for Ring 2?");
   });
 
-  it("reads ring colours only when both are #rrggbb", () => {
+  it("reads the scoreboard settings: checkboxes and the fixed choices only", () => {
     const form = new FormData();
-    form.set("leftColor", "#AA0000");
-    form.set("rightColor", "#0000bb");
-    expect(readRingColors(form)).toEqual({ leftColor: "#AA0000", rightColor: "#0000bb" });
-    form.set("rightColor", "blue");
-    expect(readRingColors(form)).toBeNull();
+    form.set("mirrored", "on");
+    form.set("textSize", "SMALL");
+    form.set("theme", "LIGHT");
+    expect(readScoreboardSettings(form)).toEqual({ mirrored: true, showNext: false, textSize: "SMALL", theme: "LIGHT" });
+    form.set("theme", "GREY");
+    expect(readScoreboardSettings(form)).toBeNull();
   });
 });

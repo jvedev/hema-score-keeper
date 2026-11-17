@@ -1,6 +1,6 @@
 import { t } from "@hema/ui";
 import type { Translate } from "../ring/ring-texts";
-import { headerText, renderMessage, renderScoreboard, type Connection, type ScoreboardData } from "./scoreboard-view";
+import { DEFAULT_SCOREBOARD_SETTINGS, headerText, renderMessage, renderScoreboard, scoreboardClasses, settingsOf, type Connection, type ScoreboardData } from "./scoreboard-view";
 import "./scoreboard.css";
 
 /** The scoreboard asks the backend this often; the clock ticks on screen in between. */
@@ -9,7 +9,6 @@ const TICK_MS = 250;
 const REQUEST_TIMEOUT_MS = 4000;
 /** No answer for this long: "connection lost" (the last data stays on screen). */
 export const LOST_AFTER_MS = 5000;
-const FLIP_KEY = "hema-scoreboard.flipped";
 
 export interface ScoreboardOptions {
   baseUrl: string;
@@ -17,22 +16,22 @@ export interface ScoreboardOptions {
   root: HTMLElement;
   fetcher?: typeof fetch;
   now?: () => number;
-  storage?: Storage;
 }
 
-/** A ring's scoreboard on a monitor: view only, no sign-in. */
+/**
+ * A ring's scoreboard on a monitor: view only, no sign-in. How it looks (mirrored, next bout, text size, theme) is set
+ * at the table and arrives with each poll; the screen itself has no controls.
+ */
 export class Scoreboard {
-  readonly #options: Required<Omit<ScoreboardOptions, "fetcher" | "now" | "storage">>;
+  readonly #options: Required<Omit<ScoreboardOptions, "fetcher" | "now">>;
   readonly #title: HTMLElement;
   readonly #body: HTMLElement;
   readonly #fetch: typeof fetch;
   readonly #now: () => number;
-  readonly #storage: Storage;
   #data: ScoreboardData | null = null;
   #receivedAt = 0;
   #lastSuccess = 0;
   #invalid = false;
-  #flipped: boolean;
   #html = "";
   #timers: number[] = [];
   #inFlight = false;
@@ -41,26 +40,16 @@ export class Scoreboard {
     this.#options = { baseUrl: options.baseUrl, token: options.token, root: options.root };
     this.#fetch = options.fetcher ?? ((...args) => fetch(...args));
     this.#now = options.now ?? (() => Date.now());
-    this.#storage = options.storage ?? localStorage;
-    this.#flipped = this.#readFlip();
     this.#lastSuccess = this.#now();
-    // The header and its button are made once; only the part below is redrawn (every tick).
+    // The header is made once; only the part below is redrawn (every tick).
     const header = document.createElement("header");
     header.className = "sb-header";
     this.#title = document.createElement("span");
-    const flip = document.createElement("button");
-    flip.type = "button";
-    flip.className = "sb-flip";
-    flip.textContent = t("scoreboard.flip");
-    flip.addEventListener("click", () => this.flip());
-    header.append(this.#title, flip);
+    header.append(this.#title);
     this.#body = document.createElement("div");
     this.#body.className = "sb-body";
+    options.root.className = scoreboardClasses(DEFAULT_SCOREBOARD_SETTINGS);
     options.root.replaceChildren(header, this.#body);
-  }
-
-  get flipped(): boolean {
-    return this.#flipped;
   }
 
   start(): void {
@@ -72,17 +61,6 @@ export class Scoreboard {
   stop(): void {
     for (const timer of this.#timers) window.clearInterval(timer);
     this.#timers = [];
-  }
-
-  /** Swaps the sides on this screen (a scoreboard opposite the table sees the fighters the other way round). */
-  flip(): void {
-    this.#flipped = !this.#flipped;
-    try {
-      this.#storage.setItem(FLIP_KEY, this.#flipped ? "1" : "0");
-    } catch {
-      // Not remembered; the screen still flips.
-    }
-    this.render();
   }
 
   async poll(): Promise<void> {
@@ -118,20 +96,14 @@ export class Scoreboard {
       html = renderMessage(t(now - this.#lastSuccess > LOST_AFTER_MS ? "scoreboard.connectionLost" : "scoreboard.loading"));
     } else {
       const connection: Connection = now - this.#lastSuccess > LOST_AFTER_MS ? "lost" : "ok";
-      html = renderScoreboard(this.#data, this.#flipped, connection, now - this.#receivedAt, t as Translate);
+      html = renderScoreboard(this.#data, connection, now - this.#receivedAt, t as Translate);
     }
+    const classes = scoreboardClasses(this.#data ? settingsOf(this.#data) : DEFAULT_SCOREBOARD_SETTINGS);
+    if (this.#options.root.className !== classes) this.#options.root.className = classes;
     this.#title.textContent = this.#data ? headerText(this.#data) : "";
     if (html !== this.#html) {
       this.#body.innerHTML = html;
       this.#html = html;
-    }
-  }
-
-  #readFlip(): boolean {
-    try {
-      return this.#storage.getItem(FLIP_KEY) === "1";
-    } catch {
-      return false;
     }
   }
 }
@@ -140,7 +112,6 @@ export class Scoreboard {
 export function openScoreboard(baseUrl: string, token: string): Scoreboard {
   document.body.className = "scoreboard-page";
   const root = document.createElement("div");
-  root.className = "scoreboard";
   document.body.replaceChildren(root);
   const board = new Scoreboard({ baseUrl, token, root });
   board.start();

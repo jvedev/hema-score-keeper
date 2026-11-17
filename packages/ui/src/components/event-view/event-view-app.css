@@ -651,6 +651,46 @@ textarea.text-input {
   font-size: 12px;
 }
 
+.live-ring-colors .field-checkbox {
+  align-items: center;
+  flex-direction: row;
+  gap: 8px;
+  min-height: 36px;
+}
+
+/* Event colour palette editor (arenas tab). */
+.event-colors {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.event-color-list {
+  display: grid;
+  gap: 8px;
+}
+
+.event-color-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.event-color-row .text-input {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.event-color-hex {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  height: 36px;
+  padding: 2px;
+  width: 56px;
+}
+
 .live-ring-colors input[type="color"] {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -670,12 +710,14 @@ textarea.text-input {
   border-color: #ffb6b9;
 }
 
-.live-ring-notice {
+.live-ring-notice,
+.event-color-notice {
   color: #9be7b4;
   margin: 0;
 }
 
-.live-ring-error {
+.live-ring-error,
+.event-color-error {
   color: #ffb6b9;
   margin: 0;
 }

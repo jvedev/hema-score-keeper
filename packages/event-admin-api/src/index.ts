@@ -1,4 +1,6 @@
-import { ApiSession, type AuthResponse, type AuthUser, type Session, SessionExpiredError } from "@hema/api-session";
+import { ApiError, ApiSession, type AuthResponse, type AuthUser, type Session, SessionExpiredError } from "@hema/api-session";
+
+export { ApiError };
 
 export type StageType = "POOL" | "ELIMINATION" | "SEMI_FINAL" | "FINAL";
 export type EntryKind = "FIGHTER" | "VOLUNTEER" | "BOTH";
@@ -289,12 +291,25 @@ export interface ApiLiveRing {
   order: number;
   leftColor: string;
   rightColor: string;
+  scoreboard: ApiScoreboardSettings;
   keeperToken: string;
   scoreboardToken: string;
   activeKeeper: ApiLiveRingKeeper | null;
 }
 
-/** Colours a ring shows for the left and right fighter, as `#rrggbb`. */
+export type ApiScoreboardTextSize = "SMALL" | "MEDIUM" | "LARGE";
+export type ApiScoreboardTheme = "DARK" | "LIGHT";
+
+/** How a ring's scoreboard looks; set at the table or by tournament admins. */
+export interface ApiScoreboardSettings {
+  /** Left and right swapped on the scoreboard only (the colours stay with their fighter). */
+  mirrored: boolean;
+  showNext: boolean;
+  textSize: ApiScoreboardTextSize;
+  theme: ApiScoreboardTheme;
+}
+
+/** Colours a ring shows for the left and right fighter, as `#rrggbb` from the event palette. */
 export interface ApiLiveRingColors {
   leftColor: string;
   rightColor: string;
@@ -329,6 +344,21 @@ export interface ApiRingRules {
   format: ApiRingBoutFormat;
 }
 
+/** A built-in palette colour; its name is translated until an admin renames it. */
+export type ApiEventColorPreset = "RED" | "BLUE";
+
+/** One colour of an Event's fighter palette; arena and ring colours pick from it. */
+export interface ApiEventColor {
+  id: string;
+  eventId: string;
+  /** Null: show the preset's translated name. */
+  name: string | null;
+  preset: ApiEventColorPreset | null;
+  /** `#rrggbb`, lower case. */
+  hex: string;
+  order: number;
+}
+
 export interface ApiEvent {
   id: string;
   eventName: string;
@@ -338,6 +368,8 @@ export interface ApiEvent {
   tournaments: ApiTournament[];
   arenas: ApiArena[];
   rulesets: ApiRuleset[];
+  /** The event's fighter colour palette, in order (at least two). */
+  colors: ApiEventColor[];
 }
 
 export interface ApiEventMutationResult {
@@ -466,6 +498,14 @@ export interface ApiClient {
   /** A new scoreboard link: screens showing the old one stop updating. */
   rotateLiveRingScoreboardToken(ringId: string): Promise<void>;
   setLiveRingColors(ringId: string, colors: ApiLiveRingColors): Promise<ApiLiveRingColors>;
+  setLiveRingScoreboardSettings(ringId: string, settings: ApiScoreboardSettings): Promise<ApiScoreboardSettings>;
+  /** Event palette (event admins): each call answers the whole palette, in order. */
+  addEventColor(eventId: string, body: { name: string; hex: string }): Promise<ApiEventColor[]>;
+  updateEventColor(colorId: string, body: { name?: string; hex?: string }): Promise<ApiEventColor[]>;
+  /** Refused (409) for the last two colours or a colour an arena or ring uses. */
+  deleteEventColor(colorId: string): Promise<ApiEventColor[]>;
+  /** Every colour of the event once, in the new order. */
+  reorderEventColors(eventId: string, colorIds: string[]): Promise<ApiEventColor[]>;
   createArena(body: { eventId: string; name: string; order?: number; leftColor?: string; rightColor?: string }): Promise<ApiArena>;
   updateArena(
     id: string,
@@ -685,6 +725,19 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
       });
       return { leftColor: ring.leftColor, rightColor: ring.rightColor };
     },
+    setLiveRingScoreboardSettings: async (ringId, settings) =>
+      (await requestJson<{ ring: { scoreboard: ApiScoreboardSettings } }>(baseUrl, `/live-rings/${encodeURIComponent(ringId)}/scoreboard-settings`, {
+        method: "PUT",
+        body: settings,
+      })).ring.scoreboard,
+    addEventColor: async (eventId, body) =>
+      (await requestJson<{ colors: ApiEventColor[] }>(baseUrl, `/events/${encodeURIComponent(eventId)}/colors`, { method: "POST", body })).colors,
+    updateEventColor: async (colorId, body) =>
+      (await requestJson<{ colors: ApiEventColor[] }>(baseUrl, `/event-colors/${encodeURIComponent(colorId)}`, { method: "PATCH", body })).colors,
+    deleteEventColor: async (colorId) =>
+      (await requestJson<{ colors: ApiEventColor[] }>(baseUrl, `/event-colors/${encodeURIComponent(colorId)}`, { method: "DELETE" })).colors,
+    reorderEventColors: async (eventId, colorIds) =>
+      (await requestJson<{ colors: ApiEventColor[] }>(baseUrl, `/events/${encodeURIComponent(eventId)}/colors/order`, { method: "PUT", body: { colorIds } })).colors,
     createArena: (body) => requestJson<ApiArena>(baseUrl, "/arenas", { method: "POST", body }),
     updateArena: (id, body) => requestJson<ApiArena>(baseUrl, `/arenas/${id}`, { method: "PATCH", body }),
     listArenas: () => requestJson<ApiArena[]>(baseUrl, "/arenas"),
@@ -746,7 +799,7 @@ async function requestJson<T>(
   const response = await fetch(buildUrl(baseUrl, path), requestInit);
 
   if (!response.ok) {
-    throw new Error(await readErrorMessage(response));
+    throw await readError(response);
   }
 
   if (response.status === 204) {
@@ -762,15 +815,18 @@ function buildUrl(baseUrl: string, path: string): string {
   return `${normalizedBase}${normalizedPath}`;
 }
 
-async function readErrorMessage(response: Response): Promise<string> {
+/** The refusal as an `ApiError`, keeping the JSON body so callers can act on extra fields such as `reason`. */
+async function readError(response: Response): Promise<ApiError> {
   const fallback = `Request failed with status ${response.status}.`;
   const contentType = response.headers.get("content-type") ?? "";
 
   if (contentType.includes("application/json")) {
-    const body = (await response.json()) as { error?: string } | undefined;
-    return body?.error ? body.error : fallback;
+    const parsed: unknown = await response.json().catch(() => undefined);
+    const body = (typeof parsed === "object" && parsed !== null ? parsed : {}) as Record<string, unknown>;
+    const message = typeof body.error === "string" && body.error ? body.error : fallback;
+    return new ApiError(message, response.status, body.details, body);
   }
 
   const text = await response.text();
-  return text.trim().length > 0 ? text : fallback;
+  return new ApiError(text.trim().length > 0 ? text : fallback, response.status, undefined);
 }

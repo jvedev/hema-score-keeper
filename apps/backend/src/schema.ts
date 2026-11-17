@@ -19,6 +19,7 @@ export const BACKEND_TABLES = [
   "PasswordResetToken",
   "Skill",
   "Event",
+  "EventColor",
   "Ruleset",
   "EventAdmin",
   "EventSchedule",
@@ -150,6 +151,17 @@ CREATE TABLE "Event" (
   "allFightersAreVolunteers" INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE "EventColor" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "eventId" TEXT NOT NULL REFERENCES "Event" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "name" TEXT,
+  "preset" TEXT CHECK ("preset" IN ('RED', 'BLUE')),
+  "hex" TEXT NOT NULL CHECK ("hex" GLOB '#[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'),
+  "order" INTEGER NOT NULL,
+  CHECK ("name" IS NOT NULL OR "preset" IS NOT NULL)
+);
+CREATE UNIQUE INDEX "EventColor_eventId_hex_key" ON "EventColor" ("eventId", "hex");
+
 CREATE TABLE "Ruleset" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "eventId" TEXT NOT NULL REFERENCES "Event" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
@@ -193,7 +205,7 @@ CREATE TABLE "Arena" (
   "eventId" TEXT NOT NULL REFERENCES "Event" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
   "name" TEXT NOT NULL,
   "order" INTEGER NOT NULL DEFAULT 0,
-  "leftColor" TEXT NOT NULL DEFAULT '#21c15b',
+  "leftColor" TEXT NOT NULL DEFAULT '#d62828',
   "rightColor" TEXT NOT NULL DEFAULT '#2f7dfa'
 );
 CREATE INDEX "Arena_eventId_idx" ON "Arena" ("eventId");
@@ -484,8 +496,12 @@ CREATE TABLE "LiveRing" (
   "activeUserId" TEXT REFERENCES "User" ("id"),
   "activeSince" TEXT,
   "scoreboardToken" TEXT NOT NULL,
-  "leftColor" TEXT NOT NULL DEFAULT '#21c15b',
-  "rightColor" TEXT NOT NULL DEFAULT '#2f7dfa'
+  "leftColor" TEXT NOT NULL DEFAULT '#d62828',
+  "rightColor" TEXT NOT NULL DEFAULT '#2f7dfa',
+  "scoreboardMirrored" INTEGER NOT NULL DEFAULT 0 CHECK ("scoreboardMirrored" IN (0, 1)),
+  "scoreboardShowNext" INTEGER NOT NULL DEFAULT 1 CHECK ("scoreboardShowNext" IN (0, 1)),
+  "scoreboardTextSize" TEXT NOT NULL DEFAULT 'MEDIUM' CHECK ("scoreboardTextSize" IN ('SMALL', 'MEDIUM', 'LARGE')),
+  "scoreboardTheme" TEXT NOT NULL DEFAULT 'DARK' CHECK ("scoreboardTheme" IN ('DARK', 'LIGHT'))
 );
 CREATE UNIQUE INDEX "LiveRing_tournamentId_name_key" ON "LiveRing" ("tournamentId", "name");
 CREATE UNIQUE INDEX "LiveRing_tournamentId_sourceArenaId_key" ON "LiveRing" ("tournamentId", "sourceArenaId") WHERE "sourceArenaId" IS NOT NULL;

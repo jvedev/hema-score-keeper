@@ -4,9 +4,7 @@ import { LiveClient } from "./live-client";
 import { textColorFor } from "../scoreboard/scoreboard-view";
 import { boutRowText, loadRetryText, type Translate } from "./ring-texts";
 import { RingController, ringPenalties, type BoutScreen, type NotAppliedItem, type OpenBout, type PhaseView, type RingModeState, type RingView, type SendStatus } from "./ring-controller";
-
-const LEFT_COLOR = "#21c15b";
-const RIGHT_COLOR = "#2f7dfa";
+import { renderRingSettings, ringColors, RingSettingsPanel, scoreboardChange } from "./ring-settings";
 
 function fighterStyle(color: string) {
   return { backgroundColor: color, textColor: textColorFor(color) };
@@ -51,6 +49,7 @@ export interface RingElements {
 export class RingMode {
   #client: LiveClient | null = null;
   #controller: RingController | null = null;
+  #settings: RingSettingsPanel | null = null;
   #state: Readonly<RingModeState> | null = null;
   #active = false;
 
@@ -116,6 +115,15 @@ export class RingMode {
         view: this.#view(),
         boutScreen: this.#boutScreen(),
       });
+      const controller = this.#controller;
+      this.#settings = new RingSettingsPanel(this.#client, {
+        ringToken: () => controller.ringToken,
+        ring: () => controller.state.ring,
+        isKeeper: () => controller.state.isKeeper,
+        ringChanged: (ring) => controller.ringChanged(ring),
+        takenOver: (activeKeeper) => controller.ringTakenOver(activeKeeper),
+        render: () => this.#rerender(),
+      });
     }
     return this.#controller;
   }
@@ -144,8 +152,22 @@ export class RingMode {
         void controller.reload();
         break;
       case "open":
+        this.#settings?.close();
         void controller.openBout(target.dataset.bout ?? "");
         break;
+      case "ring-settings":
+        this.#settings?.toggle();
+        break;
+      case "ring-color":
+        if (target.dataset.side === "left" || target.dataset.side === "right") {
+          void this.#settings?.pickColor(target.dataset.side, target.dataset.hex ?? "");
+        }
+        break;
+      case "ring-scoreboard": {
+        const change = scoreboardChange(target.dataset.setting, target.dataset.value);
+        if (change) void this.#settings?.setScoreboard(change);
+        break;
+      }
       case "undo":
         controller.undo();
         break;
@@ -189,8 +211,9 @@ export class RingMode {
       open: async (bout: OpenBout) => {
         this.host.showFightScreen();
         const { rules, ring } = this.#controller!.state;
-        const leftStyle = fighterStyle(ring?.leftColor ?? LEFT_COLOR);
-        const rightStyle = fighterStyle(ring?.rightColor ?? RIGHT_COLOR);
+        const colors = ringColors(ring);
+        const leftStyle = fighterStyle(colors.leftColor);
+        const rightStyle = fighterStyle(colors.rightColor);
         const names = { fighterA: { name: bout.fighterLeft, ...leftStyle }, fighterB: { name: bout.fighterRight, ...rightStyle } };
         fightView.configureArena({
           name: bout.label,
@@ -260,7 +283,8 @@ export class RingMode {
     this.elements.loginError.hidden = !state.signInError;
     this.elements.loginError.textContent = state.signInError ?? "";
     // Only what changed is replaced, so a button is not swapped out under the keeper's finger on every status update.
-    replaceHtml(this.elements.body, renderRingBody(state));
+    const settings = this.#settings ? renderRingSettings(this.#settings.state, state.ring, state.palette, state.isKeeper, t as Translate, escapeHtml) : "";
+    replaceHtml(this.elements.body, renderRingBody(state, settings));
     replaceHtml(this.elements.bar, state.screen === "bout" ? renderBar(state) : "");
   }
 }
@@ -276,7 +300,7 @@ function replaceHtml(element: HTMLElement, html: string): void {
 
 // --- rendering (data is escaped, numbers coerced) ---
 
-function renderRingBody(state: Readonly<RingModeState>): string {
+function renderRingBody(state: Readonly<RingModeState>, settings: string): string {
   switch (state.screen) {
     case "loading":
       return `<p class="mode-copy">${escapeHtml(t("ring.loading"))}</p>`;
@@ -293,11 +317,12 @@ function renderRingBody(state: Readonly<RingModeState>): string {
         <div class="mode-actions"><button type="button" class="mode-button" data-action="retry">${escapeHtml(t("ring.retry"))}</button></div>`;
     case "ring":
     case "bout":
-      return renderRing(state);
+      return renderRing(state, settings);
   }
 }
 
-function renderRing(state: Readonly<RingModeState>): string {
+/** `settings`: the ring settings button and panel (keeper only), kept below the next-bout button and out of the way. */
+function renderRing(state: Readonly<RingModeState>, settings: string): string {
   const next = state.bouts.find((bout) => bout.id === state.nextBoutId);
   return `<p class="mode-eyebrow">${escapeHtml(state.tournamentName)}</p>
     <h1>${escapeHtml(state.ring?.name ?? "")}</h1>
@@ -313,11 +338,21 @@ function renderRing(state: Readonly<RingModeState>): string {
     }
     ${renderStatus(state.status)}
     ${renderNotApplied(state.notApplied)}
+    ${renderRingColors(state)}
+    ${settings}
     ${
       state.bouts.length === 0
         ? `<p class="mode-copy">${escapeHtml(t("ring.noBouts"))}</p>`
         : `<ol class="ring-bouts">${state.bouts.map((bout) => renderBoutRow(bout, state)).join("")}</ol>`
     }`;
+}
+
+/** The ring's two colours, so a change made in the settings shows at once. */
+function renderRingColors(state: Readonly<RingModeState>): string {
+  if (!state.ring) return "";
+  const colors = ringColors(state.ring);
+  const swatch = (color: string) => `<span class="ring-color-swatch" style="background:${escapeHtml(color)}"></span>`;
+  return `<p class="ring-colors" aria-hidden="true">${swatch(colors.leftColor)}${swatch(colors.rightColor)}</p>`;
 }
 
 function keeperLine(state: Readonly<RingModeState>): string {

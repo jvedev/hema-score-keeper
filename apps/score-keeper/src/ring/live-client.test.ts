@@ -89,6 +89,22 @@ describe("LiveClient writes", () => {
     expect(calls[0]!.headers.get("X-Ring-Token")).toBeNull();
   });
 
+  it("writes ring colours and scoreboard settings by the ring link with this device's id", async () => {
+    const client = new LiveClient("/api/v1", storage);
+    await client.setRingColors("t/k", { leftColor: "#2f7dfa", rightColor: "#d62828" });
+    await client.setScoreboardSettings("t/k", { mirrored: true, showNext: false, textSize: "LARGE", theme: "LIGHT" });
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "PUT /api/v1/live-rings/by-token/t%2Fk/colors",
+      "PUT /api/v1/live-rings/by-token/t%2Fk/scoreboard-settings",
+    ]);
+    expect(calls[0]!.body).toEqual({ leftColor: "#2f7dfa", rightColor: "#d62828" });
+    expect(calls[1]!.body).toEqual({ mirrored: true, showNext: false, textSize: "LARGE", theme: "LIGHT" });
+    for (const call of calls) {
+      expect(call.headers.get("X-Device-Id")).toBe(getDeviceId(storage));
+      expect(call.headers.get("Authorization")).toBe("Bearer a1");
+    }
+  });
+
   it("keeps the server's reason and active keeper on a refusal", async () => {
     const client = new LiveClient("/api/v1", storage);
     responses.push({ status: 409, body: { error: "Taken", reason: "TAKEN_OVER", activeKeeper: null } });

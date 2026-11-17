@@ -28,6 +28,32 @@ export interface ActiveKeeper {
   since: string;
 }
 
+export type ScoreboardTextSize = "SMALL" | "MEDIUM" | "LARGE";
+export type ScoreboardTheme = "DARK" | "LIGHT";
+
+/** How the ring's scoreboard looks; the table sets it, the scoreboard picks it up on its next poll. */
+export interface ScoreboardSettings {
+  /** Left and right swapped on the scoreboard only (the colours stay with their fighter). */
+  mirrored: boolean;
+  showNext: boolean;
+  textSize: ScoreboardTextSize;
+  theme: ScoreboardTheme;
+}
+
+/** One colour of the event palette the ring's colours are chosen from. */
+export interface PaletteColor {
+  id: string;
+  /** Null: a built-in colour, named by its preset. */
+  name: string | null;
+  preset: "RED" | "BLUE" | null;
+  hex: string;
+}
+
+export interface RingColors {
+  leftColor: string;
+  rightColor: string;
+}
+
 export interface LiveRing {
   id: string;
   tournamentId: string;
@@ -36,6 +62,8 @@ export interface LiveRing {
   /** The ring's fighter colours (#rrggbb); absent from an older backend. */
   leftColor?: string;
   rightColor?: string;
+  /** Absent from an older backend. */
+  scoreboard?: ScoreboardSettings;
 }
 
 export interface BoutClock {
@@ -105,6 +133,8 @@ export interface RingByToken {
   activeKeeper: ActiveKeeper | null;
   /** This device is the ring's active keeper (the server compares the X-Device-Id it was sent). */
   youAreKeeper: boolean;
+  /** The event's colours this ring may use (absent from an older backend). */
+  palette?: PaletteColor[];
 }
 
 export interface BoutDetail {
@@ -259,6 +289,13 @@ export class LiveClient implements LiveWriter {
     return result;
   }
 
+  /** The ring's fighter colours; only the device and user holding the ring may set them (409 TAKEN_OVER otherwise). */
+  setRingColors = (ringToken: string, colors: RingColors) =>
+    this.#api.send<{ ring: LiveRing }>("PUT", `/live-rings/by-token/${e(ringToken)}/colors`, colors, true, this.#holderOptions());
+  /** The ring's scoreboard settings; only the device and user holding the ring may set them. */
+  setScoreboardSettings = (ringToken: string, settings: ScoreboardSettings) =>
+    this.#api.send<{ ring: LiveRing }>("PUT", `/live-rings/by-token/${e(ringToken)}/scoreboard-settings`, settings, true, this.#holderOptions());
+
   startBout = (ringToken: string, boutId: string) => this.#write<unknown>("POST", `/live-bouts/${e(boutId)}/start`, ringToken, {});
   finishBout = (ringToken: string, boutId: string) => this.#write<unknown>("POST", `/live-bouts/${e(boutId)}/finish`, ringToken, {});
   setClock = (ringToken: string, boutId: string, clock: ClockReport) =>
@@ -267,6 +304,10 @@ export class LiveClient implements LiveWriter {
     this.#write<unknown>("POST", `/live-bouts/${e(boutId)}/undo`, ringToken, { expectedExchangeId });
   postExchange = (ringToken: string, boutId: string, exchange: ExchangeToSend) =>
     this.#write<AcknowledgedExchange>("POST", `/live-bouts/${e(boutId)}/exchanges`, ringToken, exchange);
+
+  #holderOptions() {
+    return { headers: { "X-Device-Id": this.deviceId }, timeoutMs: this.timeoutMs };
+  }
 
   #write<T>(method: string, path: string, ringToken: string, body: unknown): Promise<T> {
     return this.#api.send<T>(method, path, body, true, { headers: { "X-Ring-Token": ringToken, "X-Device-Id": this.deviceId }, timeoutMs: this.timeoutMs });

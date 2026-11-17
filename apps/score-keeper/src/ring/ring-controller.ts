@@ -23,6 +23,7 @@ import type {
   LiveRing,
   LiveSession,
   LiveWriter,
+  PaletteColor,
   RingByToken,
 } from "./live-client";
 import { getOutbox, type Outbox, type OutboxOp, type OutboxState, type OutboxTimers, type RejectedOp } from "./outbox";
@@ -143,6 +144,8 @@ export interface RingModeState {
   rules: RingRules;
   /** The open bout's round, period and warnings; null off the scoring screen. */
   phase: PhaseView | null;
+  /** The event colours the ring's fighter colours are chosen from. */
+  palette: PaletteColor[];
 }
 
 export interface RingView {
@@ -286,11 +289,17 @@ export class RingController {
       loadRetry: null,
       rules: parseRingRules(null),
       phase: null,
+      palette: [],
     };
   }
 
   get state(): Readonly<RingModeState> {
     return this.#state;
+  }
+
+  /** The ring link token this controller works with. */
+  get ringToken(): string {
+    return this.#token;
   }
 
   /** Opens the ring behind a link. Without a sign-in, shows the sign-in screen first. */
@@ -392,6 +401,21 @@ export class RingController {
       }
       void outbox.flush();
     }
+  }
+
+  /** The ring as the backend answered a settings write (colours, scoreboard settings). */
+  ringChanged(ring: LiveRing): void {
+    if (this.#state.ring?.id === ring.id) {
+      this.#update({ ring: { ...this.#state.ring, ...ring } });
+    }
+  }
+
+  /** A settings write was refused because another device or user holds the ring now. */
+  ringTakenOver(activeKeeper: ActiveKeeper | null): void {
+    if (activeKeeper) {
+      this.#takenOver = true;
+    }
+    this.#lose(activeKeeper ? { key: "ring.takenOver", params: { name: activeKeeper.userName } } : { key: "ring.notClaimed" }, activeKeeper);
   }
 
   /** A match event from the scoring screen (score, warning). Read-only, or not an exchange the backend takes: nothing is sent. */
@@ -614,6 +638,7 @@ export class RingController {
       ring: ring.ring,
       tournamentName: ring.tournament.name,
       rules: parseRingRules(ring.rules),
+      palette: ring.palette ?? [],
       bouts: ring.bouts,
       activeKeeper: ring.activeKeeper,
       isKeeper: keepsIt,

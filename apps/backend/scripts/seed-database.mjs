@@ -57,6 +57,9 @@ export function seedDatabase(database, backendTables) {
   const insertEvent = database.prepare(
     "INSERT INTO Event (id, eventName, rulesetId, allFightersAreVolunteers) VALUES (?, ?, ?, ?)",
   );
+  const insertEventColor = database.prepare(
+    'INSERT INTO EventColor (id, eventId, name, preset, hex, "order") VALUES (?, ?, ?, ?, ?, ?)',
+  );
   const insertEventSchedule = database.prepare(
     "INSERT INTO EventSchedule (id, eventId, startTimeMinutes, currentTimeSlotId) VALUES (?, ?, ?, ?)",
   );
@@ -225,6 +228,9 @@ export function seedDatabase(database, backendTables) {
 
       insertClub.run(ids.club, "Legacy Club", "legacy-club");
       insertEvent.run(ids.event, "HEMA Championship 2026", null, 1);
+      // The default palette of a new Event (see DEFAULT_EVENT_COLORS in src/events/event-colors.ts).
+      insertEventColor.run(crypto.randomUUID(), ids.event, null, "RED", "#d62828", 0);
+      insertEventColor.run(crypto.randomUUID(), ids.event, null, "BLUE", "#2f7dfa", 1);
       insertRuleset.run(ids.ruleset, ids.event, "Longsword Standard", 1, JSON.stringify({
         weaponClass: "",
         matchParameters: defaultRuleset.matchParameters,
@@ -246,8 +252,8 @@ export function seedDatabase(database, backendTables) {
       );
       database.prepare("UPDATE Tournament SET currentStageId = ? WHERE id = ?").run(ids.poolStage, ids.tournament);
 
-      insertArena.run(ids.arenaA, ids.event, "Arena A (Pool 1)", 0, "#21c15b", "#2f7dfa");
-      insertArena.run(ids.arenaB, ids.event, "Arena B (Pool 2)", 1, "#e06c75", "#e5c07b");
+      insertArena.run(ids.arenaA, ids.event, "Arena A (Pool 1)", 0, "#d62828", "#2f7dfa");
+      insertArena.run(ids.arenaB, ids.event, "Arena B (Pool 2)", 1, "#d62828", "#2f7dfa");
 
       insertEventSchedule.run(ids.schedule, ids.event, 540, null);
       insertScheduleTimeSlot.run(ids.slot1, ids.schedule, 0, 60, "Ronde 1 - Pools", null, 0);
@@ -270,6 +276,9 @@ export function seedDatabase(database, backendTables) {
         0,
         0,
       );
+      // Development-only system administrator for manual and browser checks (username "admin",
+      // password "zwaard", like the competition admin above). Never use the seed in production.
+      insertUser.run("user-dev-admin", ids.club, "Dev admin", "admin", hashPassword("zwaard"), null, "SYSTEM_ADMIN", "ACTIVE", 0, 0, 0, 0);
 
       for (const user of users) {
         insertUser.run(user.id, ids.club, user.name, user.username, null, null, "USER", "ACTIVE", 0, 0, 0, 0);

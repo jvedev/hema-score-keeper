@@ -431,11 +431,10 @@ async function reconcileRings(
     const ring = ringByArenaId.get(arenaId);
     if (ring) {
       await executor.updateTable("LiveRing")
+        // The ring keeps its own colours: the table or a tournament admin may have changed them since activation.
         .set({
           name: phase.arenaName,
           order: phase.arenaOrder,
-          leftColor: phase.leftColor,
-          rightColor: phase.rightColor,
         })
         .where("id", "=", ring.id)
         .execute();

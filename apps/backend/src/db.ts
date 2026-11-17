@@ -1,6 +1,6 @@
 import type BetterSqlite3 from "better-sqlite3";
 import { Kysely, SqliteDialect, type Generated, type Transaction } from "kysely";
-import type { EntryKind, ScheduleRole, StageOfficialRole, StageType } from "./api-types.js";
+import type { EntryKind, EventColorPreset, ScheduleRole, ScoreboardTextSize, ScoreboardTheme, StageOfficialRole, StageType } from "./api-types.js";
 import { DEFAULT_DATABASE_URL, openNativeDatabase, prepareNativeDatabase } from "./native-database.js";
 
 export { resolveDatabasePath } from "./native-database.js";
@@ -70,6 +70,18 @@ interface EventTable {
   eventName: string;
   rulesetId: string | null;
   allFightersAreVolunteers: SqliteBoolean;
+}
+
+/** One colour of an Event's fighter palette; arena and ring colours pick from it. */
+interface EventColorTable {
+  id: string;
+  eventId: string;
+  /** Null for a built-in colour that is still unnamed: the apps show the preset's translated name. */
+  name: string | null;
+  preset: EventColorPreset | null;
+  /** `#rrggbb`, lower case, unique per event. */
+  hex: string;
+  order: number;
 }
 
 interface EventAdminTable {
@@ -337,9 +349,15 @@ interface LiveRingTable {
   activeSince: string | null;
   /** Secret part of the scoreboard link (view only, no sign-in). */
   scoreboardToken: string;
-  /** The ring's fighter colours (#rrggbb), on the table and the scoreboard. */
+  /** The ring's fighter colours (#rrggbb, from the event palette), on the table and the scoreboard. */
   leftColor: Generated<string>;
   rightColor: Generated<string>;
+  /** Swap left and right on the scoreboard only (the colours stay with their fighter). */
+  scoreboardMirrored: Generated<SqliteBoolean>;
+  /** Show the next (on-deck) bout on the scoreboard. */
+  scoreboardShowNext: Generated<SqliteBoolean>;
+  scoreboardTextSize: Generated<ScoreboardTextSize>;
+  scoreboardTheme: Generated<ScoreboardTheme>;
 }
 
 interface LiveBoutTable {
@@ -442,6 +460,7 @@ export interface BackendDatabase {
   PasswordResetToken: PasswordResetTokenTable;
   Skill: SkillTable;
   Event: EventTable;
+  EventColor: EventColorTable;
   EventAdmin: EventAdminTable;
   EventSchedule: EventScheduleTable;
   ScheduleTimeSlot: ScheduleTimeSlotTable;

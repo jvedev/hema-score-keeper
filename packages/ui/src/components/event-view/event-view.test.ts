@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
-import type { ApiEntry, ApiEvent, ApiLiveRing, ApiRingRules, ApiUser } from "@hema/event-admin-api";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ApiEntry, ApiEvent, ApiEventColor, ApiLiveRing, ApiRingRules, ApiScoreboardSettings, ApiUser } from "@hema/event-admin-api";
 
 describe("event-view", () => {
   const originalFetch = globalThis.fetch;
@@ -9,6 +9,7 @@ describe("event-view", () => {
   const originalLang = document.documentElement.lang;
 
   afterEach(() => {
+    vi.useRealTimers();
     window.confirm = originalConfirm;
     document.documentElement.lang = originalLang;
     globalThis.fetch = originalFetch;
@@ -305,7 +306,7 @@ describe("event-view", () => {
     expect(mock.scheduledMatches).toEqual([{ id: "pool-match", scheduledPhaseId: "pool-phase", order: 3 }]);
   });
 
-  it("activates and refreshes database-mode scoring from the tournament tab", async () => {
+  it("activates and refreshes live scoring from the tournament tab", async () => {
     const mock = installEventViewMock();
     await import("./event-view");
     const element = document.createElement("event-view");
@@ -314,11 +315,11 @@ describe("event-view", () => {
 
     const liveTab = await waitForElement<HTMLButtonElement>(element, 'button[data-action="set-tournament-tab"][data-tab="live"]');
     liveTab.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
-    await waitForText(element, "Database-mode scoring");
+    await waitForText(element, "Live scoring");
 
     const activate = await waitForElement<HTMLButtonElement>(element, 'button[data-action="activate-database-live"]');
     activate.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
-    await waitForText(element, "Database-mode actief");
+    await waitForText(element, "Live scoring actief");
     expect(mock.databaseLiveStatus).toMatchObject({ active: true, liveTournamentId: "live-1", rings: 2, bouts: 3 });
 
     const project = await waitForElement<HTMLButtonElement>(element, 'button[data-action="project-database-live"]');
@@ -509,13 +510,206 @@ describe("event-view", () => {
     const element = await openLiveTab();
 
     const form = await waitForElement<HTMLFormElement>(element, 'form[data-action="live-ring-colors"][data-ring-id="ring-1"]');
-    form.querySelector<HTMLInputElement>('input[name="leftColor"]')!.value = "#aa0000";
-    form.querySelector<HTMLInputElement>('input[name="rightColor"]')!.value = "#0000bb";
+    const left = form.querySelector<HTMLSelectElement>('select[name="leftColor"]')!;
+    // Only the event's colours are offered, by name.
+    expect([...left.options].map((option) => [option.value, option.textContent])).toEqual([["#d62828", "Red"], ["#2f7dfa", "Blue"], ["#ffd400", "Yellow"]]);
+    expect(left.value).toBe("#d62828");
+    left.value = "#ffd400";
+    form.querySelector<HTMLSelectElement>('select[name="rightColor"]')!.value = "#d62828";
     form.requestSubmit();
 
     await waitForCondition(() => mock.liveRingCalls.colors.length === 1);
-    expect(mock.liveRingCalls.colors).toEqual([{ ringId: "ring-1", leftColor: "#aa0000", rightColor: "#0000bb" }]);
+    expect(mock.liveRingCalls.colors).toEqual([{ ringId: "ring-1", leftColor: "#ffd400", rightColor: "#d62828" }]);
     await waitForText(element, "Colours saved for Ring 1.");
+  });
+
+  it("refuses the same colour on both sides without asking the backend", async () => {
+    const mock = installEventViewMock();
+    activateLiveWithRings(mock);
+    const element = await openLiveTab();
+    const form = await waitForElement<HTMLFormElement>(element, 'form[data-action="live-ring-colors"][data-ring-id="ring-1"]');
+    form.querySelector<HTMLSelectElement>('select[name="leftColor"]')!.value = "#2f7dfa";
+    form.requestSubmit();
+    await waitForText(element, "Choose two different colours from the event's colours.");
+    expect(mock.liveRingCalls.colors).toEqual([]);
+  });
+
+  it("saves a ring's scoreboard settings", async () => {
+    const mock = installEventViewMock();
+    activateLiveWithRings(mock);
+    const element = await openLiveTab();
+    const form = await waitForElement<HTMLFormElement>(element, 'form[data-action="live-ring-scoreboard"][data-ring-id="ring-2"]');
+    expect(form.querySelector<HTMLInputElement>('input[name="showNext"]')!.checked).toBe(true);
+    form.querySelector<HTMLInputElement>('input[name="mirrored"]')!.checked = true;
+    form.querySelector<HTMLInputElement>('input[name="showNext"]')!.checked = false;
+    form.querySelector<HTMLSelectElement>('select[name="textSize"]')!.value = "LARGE";
+    form.querySelector<HTMLSelectElement>('select[name="theme"]')!.value = "LIGHT";
+    form.requestSubmit();
+
+    await waitForCondition(() => mock.liveRingCalls.scoreboard.length === 1);
+    expect(mock.liveRingCalls.scoreboard).toEqual([{ ringId: "ring-2", mirrored: true, showNext: false, textSize: "LARGE", theme: "LIGHT" }]);
+    await waitForText(element, "Scoreboard settings saved for Ring 2.");
+    const saved = await waitForElement<HTMLFormElement>(element, 'form[data-action="live-ring-scoreboard"][data-ring-id="ring-2"]');
+    expect(saved.querySelector<HTMLSelectElement>('select[name="theme"]')!.value).toBe("LIGHT");
+  });
+
+  it("event admins edit the event's colours on the arenas tab", async () => {
+    const mock = installEventViewMock();
+    const element = await openArenasTab();
+    const rows = () => [...element.querySelectorAll<HTMLFormElement>('form[data-action="event-color-save"]')];
+    // Between changes: the editor is not busy (its buttons are enabled again).
+    const idle = () => waitForCondition(() => element.querySelector('form[data-action="event-color-add"] button:not([disabled])') !== null);
+    expect(rows().map((row) => row.querySelector<HTMLInputElement>('input[name="name"]')!.value)).toEqual(["Red", "Blue", "Yellow"]);
+
+    // Add.
+    const add = element.querySelector<HTMLFormElement>('form[data-action="event-color-add"]')!;
+    add.querySelector<HTMLInputElement>('input[name="name"]')!.value = "White";
+    add.querySelector<HTMLInputElement>('input[name="hex"]')!.value = "#ffffff";
+    add.requestSubmit();
+    await waitForCondition(() => rows().length === 4);
+    expect(mock.colorCalls).toEqual([{ method: "POST", body: { name: "White", hex: "#ffffff" } }]);
+    await idle();
+
+    // Rename a preset: only the name is sent; an untouched row sends nothing.
+    rows()[0]!.querySelector<HTMLInputElement>('input[name="name"]')!.value = "Scarlet";
+    rows()[0]!.requestSubmit();
+    await waitForCondition(() => mock.colorCalls.length === 2);
+    expect(mock.colorCalls[1]).toEqual({ method: "PATCH", id: "color-red", body: { name: "Scarlet" } });
+    await idle();
+
+    // Move down.
+    clickElement(rows()[0]!.querySelector('[data-action="event-color-move"][data-direction="down"]')!);
+    await waitForCondition(() => mock.colorCalls.length === 3);
+    expect(mock.colorCalls[2]).toEqual({ method: "PUT", body: { colorIds: ["color-blue", "color-red", "color-yellow", "color-4"] } });
+    await waitForCondition(() => rows()[0]?.querySelector<HTMLInputElement>('input[name="name"]')!.value === "Blue");
+    await idle();
+
+    // Remove, after confirming.
+    window.confirm = () => true;
+    clickElement(rows()[3]!.querySelector('[data-action="event-color-remove"]')!);
+    await waitForCondition(() => rows().length === 3);
+    expect(mock.colorCalls[3]).toEqual({ method: "DELETE", id: "color-4" });
+  });
+
+  it("saving a ring form sends only the admin's changes on top of what the table set meanwhile", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const mock = installEventViewMock();
+    activateLiveWithRings(mock);
+    const element = await openLiveTab();
+    const scoreboardForm = await waitForElement<HTMLFormElement>(element, 'form[data-action="live-ring-scoreboard"][data-ring-id="ring-2"]');
+    const colorForm = await waitForElement<HTMLFormElement>(element, 'form[data-action="live-ring-colors"][data-ring-id="ring-2"]');
+
+    // The table changes the ring after the admin opened the tab (no refresh has run yet).
+    const ring = mock.liveRings.find((candidate) => candidate.id === "ring-2")!;
+    ring.scoreboard = { mirrored: true, showNext: true, textSize: "LARGE", theme: "LIGHT" };
+    ring.rightColor = "#ffd400";
+
+    // The stale form still shows the old values; the admin only turns "show next" off.
+    expect(scoreboardForm.querySelector<HTMLInputElement>('input[name="mirrored"]')!.checked).toBe(false);
+    scoreboardForm.querySelector<HTMLInputElement>('input[name="showNext"]')!.checked = false;
+    scoreboardForm.requestSubmit();
+    await waitForCondition(() => mock.liveRingCalls.scoreboard.length === 1);
+    expect(mock.liveRingCalls.scoreboard).toEqual([{ ringId: "ring-2", mirrored: true, showNext: false, textSize: "LARGE", theme: "LIGHT" }]);
+    await waitForText(element, "Scoreboard settings saved for Ring 2.");
+
+    // The colour form was re-rendered from the fresh rings by the save; make it stale again, then change left only.
+    ring.rightColor = "#d62828";
+    const freshColorForm = await waitForElement<HTMLFormElement>(element, 'form[data-action="live-ring-colors"][data-ring-id="ring-2"]');
+    expect(freshColorForm).not.toBe(colorForm);
+    expect(freshColorForm.querySelector<HTMLSelectElement>('select[name="rightColor"]')!.value).toBe("#ffd400");
+    freshColorForm.querySelector<HTMLSelectElement>('select[name="leftColor"]')!.value = "#2f7dfa";
+    freshColorForm.requestSubmit();
+    await waitForCondition(() => mock.liveRingCalls.colors.length === 1);
+    expect(mock.liveRingCalls.colors).toEqual([{ ringId: "ring-2", leftColor: "#2f7dfa", rightColor: "#d62828" }]);
+  });
+
+  it("refreshes the ring cards every few seconds but keeps a form the admin is editing", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const mock = installEventViewMock();
+    activateLiveWithRings(mock);
+    const element = await openLiveTab();
+    const scoreboard = (ringId: string) => element.querySelector<HTMLFormElement>(`form[data-action="live-ring-scoreboard"][data-ring-id="${ringId}"]`)!;
+
+    // The admin starts editing ring 1's scoreboard form (not saved).
+    scoreboard("ring-1").querySelector<HTMLSelectElement>('select[name="textSize"]')!.value = "SMALL";
+    // Meanwhile the tables change both rings, and someone starts scoring ring 2.
+    for (const ring of mock.liveRings) ring.scoreboard = { mirrored: true, showNext: true, textSize: "LARGE", theme: "LIGHT" };
+    mock.liveRings[1]!.activeKeeper = { userName: "Bob", since: "2026-11-17T11:00:00.000Z" };
+    const listsBefore = mock.liveRingCalls.list;
+
+    vi.advanceTimersByTime(5000);
+    await waitForCondition(() => scoreboard("ring-2").querySelector<HTMLInputElement>('input[name="mirrored"]')!.checked);
+    expect(mock.liveRingCalls.list).toBe(listsBefore + 1);
+    expect(scoreboard("ring-2").querySelector<HTMLSelectElement>('select[name="theme"]')!.value).toBe("LIGHT");
+    expect(element.querySelector('article.live-ring[data-ring-id="ring-2"] [data-ring-keeper]')?.textContent).toContain("Bob is scoring this ring");
+    // The form being edited keeps the admin's input and its old values.
+    expect(scoreboard("ring-1").querySelector<HTMLSelectElement>('select[name="textSize"]')!.value).toBe("SMALL");
+    expect(scoreboard("ring-1").querySelector<HTMLInputElement>('input[name="mirrored"]')!.checked).toBe(false);
+    // Its untouched colour form is refreshed independently.
+    mock.liveRings[0]!.leftColor = "#ffd400";
+    window.dispatchEvent(new Event("focus"));
+    await waitForCondition(() => element.querySelector<HTMLSelectElement>('form[data-action="live-ring-colors"][data-ring-id="ring-1"] select[name="leftColor"]')!.value === "#ffd400");
+    expect(scoreboard("ring-1").querySelector<HTMLSelectElement>('select[name="textSize"]')!.value).toBe("SMALL");
+  });
+
+  it("stops refreshing the rings when the view is removed or the live tab is left", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const mock = installEventViewMock();
+    activateLiveWithRings(mock);
+    const element = await openLiveTab();
+    expect(vi.getTimerCount()).toBe(1);
+
+    clickElement(await waitForElement(element, 'button[data-action="set-tournament-tab"][data-tab="entries"]'));
+    await flush();
+    expect(vi.getTimerCount()).toBe(0);
+
+    clickElement(await waitForElement(element, 'button[data-action="set-tournament-tab"][data-tab="live"]'));
+    await waitForElement(element, "article.live-ring");
+    expect(vi.getTimerCount()).toBe(1);
+
+    element.remove();
+    expect(vi.getTimerCount()).toBe(0);
+    const lists = mock.liveRingCalls.list;
+    vi.advanceTimersByTime(20000);
+    window.dispatchEvent(new Event("focus"));
+    await flush();
+    expect(mock.liveRingCalls.list).toBe(lists);
+  });
+
+  it("shows palette refusals in the palette editor, in the admin's language", async () => {
+    const mock = installEventViewMock();
+    const element = await openArenasTab();
+    window.confirm = () => true;
+    mock.colorRemoval.refusal = { status: 409, body: { error: "Server text in English.", reason: "COLOR_IN_USE" } };
+    const removeYellow = () => clickElement(element.querySelector('[data-action="event-color-remove"][data-color-id="color-yellow"]')!);
+
+    removeYellow();
+    const error = await waitForElement<HTMLElement>(element, "section.event-colors .event-color-error");
+    expect(error.textContent).toBe("This colour is used by an arena or ring. Choose another colour there first.");
+    expect(element.textContent).not.toContain("Server text in English.");
+    expect(element.querySelector(".live-ring-error")).toBeNull();
+
+    mock.colorRemoval.refusal = { status: 409, body: { error: "Server text in English.", reason: "TOO_FEW_COLORS" } };
+    await waitForCondition(() => element.querySelector('[data-action="event-color-remove"][data-color-id="color-yellow"]:not([disabled])') !== null);
+    removeYellow();
+    await waitForText(element, "An event keeps at least two colours.");
+
+    mock.colorRemoval.refusal = { status: 500, body: { error: "Internal details." } };
+    await waitForCondition(() => element.querySelector('[data-action="event-color-remove"][data-color-id="color-yellow"]:not([disabled])') !== null);
+    removeYellow();
+    await waitForText(element, "The colours could not be saved. Try again.");
+    expect(element.textContent).not.toContain("Internal details.");
+  });
+
+  it("the arena form offers the event's colours, red and blue first", async () => {
+    installEventViewMock();
+    const element = await openArenasTab();
+    clickElement(await waitForElement(element, 'button[data-action="open-editor"][data-editor="arena"]'));
+    const left = await waitForElement<HTMLSelectElement>(element, 'select[name="leftColor"]');
+    const right = await waitForElement<HTMLSelectElement>(element, 'select[name="rightColor"]');
+    expect(left.value).toBe("#d62828");
+    expect(right.value).toBe("#2f7dfa");
+    expect([...left.options].map((option) => option.value)).toEqual(["#d62828", "#2f7dfa", "#ffd400"]);
   });
 
   it("rejects invalid ring rules with feedback and saves valid ones", async () => {
@@ -629,8 +823,15 @@ function installEventViewMock() {
     rotateKeeper: [] as string[],
     rotateScoreboard: [] as string[],
     colors: [] as Array<{ ringId: string; leftColor: string; rightColor: string }>,
+    scoreboard: [] as Array<{ ringId: string } & ApiScoreboardSettings>,
     rules: [] as unknown[],
+    /** GET of the ring list (loads, refreshes, and the reload before a save). */
+    list: 0,
   };
+  /** When set, removing a colour is refused with this status and JSON body. */
+  const colorRemoval: { refusal: { status: number; body: Record<string, unknown> } | null } = { refusal: null };
+  const colorCalls: Array<{ method: string; id?: string; body?: unknown }> = [];
+  const colorsResponse = () => jsonResponse({ colors: event.colors.map((color, order) => ({ ...color, order })) });
 
   globalThis.fetch = async (input, init) => {
     const request = input instanceof Request ? input : new Request(input, init);
@@ -673,6 +874,7 @@ function installEventViewMock() {
 
     const liveRingsRoute = pathname.match(/^\/api\/v1\/live-tournaments\/([^/]+)\/rings$/);
     if (liveRingsRoute && request.method === "GET") {
+      liveRingCalls.list += 1;
       return jsonResponse({ rings: liveRings });
     }
 
@@ -689,7 +891,36 @@ function installEventViewMock() {
       return jsonResponse({ id: liveTournamentRoute[1], rules: liveRules, rings: [], bouts: [] });
     }
 
-    const liveRingAction = pathname.match(/^\/api\/v1\/live-rings\/([^/]+)\/(rotate-token|rotate-scoreboard-token|colors)$/);
+    const eventColors = pathname.match(/^\/api\/v1\/events\/([^/]+)\/colors(\/order)?$/);
+    if (eventColors && request.method === "POST" && !eventColors[2]) {
+      const body = await request.json() as { name: string; hex: string };
+      colorCalls.push({ method: "POST", body });
+      event.colors.push({ id: `color-${event.colors.length + 1}`, eventId, name: body.name, preset: null, hex: body.hex, order: event.colors.length });
+      return colorsResponse();
+    }
+    if (eventColors && request.method === "PUT" && eventColors[2]) {
+      const body = await request.json() as { colorIds: string[] };
+      colorCalls.push({ method: "PUT", body });
+      event.colors = body.colorIds.map((id) => event.colors.find((color) => color.id === id)!);
+      return colorsResponse();
+    }
+    const eventColor = pathname.match(/^\/api\/v1\/event-colors\/([^/]+)$/);
+    if (eventColor && request.method === "PATCH") {
+      const body = await request.json() as { name?: string; hex?: string };
+      colorCalls.push({ method: "PATCH", id: eventColor[1]!, body });
+      Object.assign(event.colors.find((color) => color.id === eventColor[1])!, body);
+      return colorsResponse();
+    }
+    if (eventColor && request.method === "DELETE") {
+      colorCalls.push({ method: "DELETE", id: eventColor[1]! });
+      if (colorRemoval.refusal) {
+        return new Response(JSON.stringify(colorRemoval.refusal.body), { status: colorRemoval.refusal.status, headers: { "content-type": "application/json" } });
+      }
+      event.colors = event.colors.filter((color) => color.id !== eventColor[1]);
+      return colorsResponse();
+    }
+
+    const liveRingAction = pathname.match(/^\/api\/v1\/live-rings\/([^/]+)\/(rotate-token|rotate-scoreboard-token|colors|scoreboard-settings)$/);
     if (liveRingAction) {
       const ring = liveRings.find((candidate) => candidate.id === liveRingAction[1]);
       if (!ring) return new Response(JSON.stringify({ error: "Ring not found." }), { status: 404, headers: { "content-type": "application/json" } });
@@ -708,6 +939,12 @@ function installEventViewMock() {
         const body = await request.json() as { leftColor: string; rightColor: string };
         liveRingCalls.colors.push({ ringId: ring.id, ...body });
         Object.assign(ring, body);
+        return jsonResponse({ ring });
+      }
+      if (liveRingAction[2] === "scoreboard-settings" && request.method === "PUT") {
+        const body = await request.json() as ApiScoreboardSettings;
+        liveRingCalls.scoreboard.push({ ringId: ring.id, ...body });
+        ring.scoreboard = body;
         return jsonResponse({ ring });
       }
     }
@@ -876,6 +1113,7 @@ function installEventViewMock() {
         },
       ],
       arenas: [],
+      colors: defaultColors(),
     };
   }
 
@@ -889,6 +1127,8 @@ function installEventViewMock() {
     liveRings,
     liveRules,
     liveRingCalls,
+    colorCalls,
+    colorRemoval,
     get databaseLiveProjectionCalls() {
       return databaseLiveProjectionCalls;
     },
@@ -907,6 +1147,28 @@ function installEventViewMock() {
 
 type EventViewMock = ReturnType<typeof installEventViewMock>;
 
+const DEFAULT_SCOREBOARD: ApiScoreboardSettings = { mirrored: false, showNext: true, textSize: "MEDIUM", theme: "DARK" };
+
+function defaultColors(): ApiEventColor[] {
+  return [
+    { id: "color-red", eventId: "event-1", name: null, preset: "RED", hex: "#d62828", order: 0 },
+    { id: "color-blue", eventId: "event-1", name: null, preset: "BLUE", hex: "#2f7dfa", order: 1 },
+    { id: "color-yellow", eventId: "event-1", name: "Yellow", preset: null, hex: "#ffd400", order: 2 },
+  ];
+}
+
+/** Mounts `<event-view>` (English) and opens the event's arenas tab. */
+async function openArenasTab(): Promise<HTMLElement> {
+  document.documentElement.lang = "en";
+  await import("./event-view");
+  const element = document.createElement("event-view");
+  document.body.appendChild(element);
+  await flush();
+  clickElement(await waitForElement(element, 'button[data-action="set-event-tab"][data-tab="arenas"]'));
+  await waitForElement(element, "section.event-colors");
+  return element;
+}
+
 function activateLiveWithRings(mock: EventViewMock): void {
   Object.assign(mock.databaseLiveStatus, { active: true, liveTournamentId: "live-1", rings: 2, bouts: 0 });
   mock.liveRings.push(
@@ -915,8 +1177,9 @@ function activateLiveWithRings(mock: EventViewMock): void {
       tournamentId: "live-1",
       name: "Ring 1",
       order: 0,
-      leftColor: "#21c15b",
+      leftColor: "#d62828",
       rightColor: "#2f7dfa",
+      scoreboard: { ...DEFAULT_SCOREBOARD },
       keeperToken: "keeper/one",
       scoreboardToken: "board-one",
       activeKeeper: { userName: "Alice", since: "2026-11-17T10:00:00.000Z" },
@@ -926,8 +1189,9 @@ function activateLiveWithRings(mock: EventViewMock): void {
       tournamentId: "live-1",
       name: "Ring 2",
       order: 1,
-      leftColor: "#21c15b",
+      leftColor: "#d62828",
       rightColor: "#2f7dfa",
+      scoreboard: { ...DEFAULT_SCOREBOARD },
       keeperToken: "keeper-two",
       scoreboardToken: "board-two",
       activeKeeper: null,

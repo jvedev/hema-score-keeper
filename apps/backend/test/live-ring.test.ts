@@ -318,7 +318,12 @@ describe("live ring keeper", () => {
     await ctx.database.updateTable("LiveRing").set({ scoreboardToken: "board-1" }).where("id", "=", ringOneId).execute();
     expect((await get("/api/v1/scoreboard/nope", null)).statusCode).toBe(404);
     const idle = (await get("/api/v1/scoreboard/board-1", null)).json();
-    expect(idle).toMatchObject({ ring: { name: "Ring 1", leftColor: "#21c15b", rightColor: "#2f7dfa" }, current: null, onDeck: { label: "Bout 1" }, after: { label: "Bout 2" } });
+    expect(idle).toMatchObject({
+      ring: { name: "Ring 1", leftColor: "#d62828", rightColor: "#2f7dfa", scoreboard: { mirrored: false, showNext: true, textSize: "MEDIUM", theme: "DARK" } },
+      current: null,
+      onDeck: { label: "Bout 1" },
+      after: { label: "Bout 2" },
+    });
     // The pool is the next bout's scheduled phase: its stage and time slot.
     expect(idle.pool.name).toBe("Bracket · Slot 1");
     expect(idle.pool.bouts.map((b: { label: string; isNext: boolean }) => [b.label, b.isNext])).toEqual([["Bout 1", true], ["Bout 2", false], ["Bout 3", false]]);
@@ -347,12 +352,32 @@ describe("live ring keeper", () => {
     expect((await get("/api/v1/scoreboard/board-1", null)).json().current.display.remainingSeconds).toBe(140);
   });
 
-  it("colours and a new scoreboard link: tournament admin only", async () => {
-    const put = (as: TestUser, payload: unknown) => ctx.app.inject({ method: "PUT", url: `/api/v1/live-rings/${ringOneId}/colors`, payload: payload as object, headers: bearer(as) });
-    expect((await put(alice, { leftColor: "#ff0000", rightColor: "#0000ff" })).statusCode).toBe(403);
-    expect((await put(creator, { leftColor: "red", rightColor: "#0000ff" })).statusCode).toBe(400);
-    expect((await put(creator, { leftColor: "#FF0000", rightColor: "#0000ff" })).json().ring).toMatchObject({ leftColor: "#ff0000", rightColor: "#0000ff" });
-    expect((await get(`/api/v1/live-rings/by-token/${TOKEN}`, alice)).json().ring).toMatchObject({ leftColor: "#ff0000" });
+  function putAs(url: string, as: TestUser | null, payload: unknown, headers: Record<string, string> = {}) {
+    return ctx.app.inject({ method: "PUT", url, payload: payload as object, headers: { ...(as ? bearer(as) : {}), ...headers } });
+  }
+
+  const RED = "#d62828";
+  const BLUE = "#2f7dfa";
+  const SETTINGS = { mirrored: true, showNext: false, textSize: "LARGE", theme: "LIGHT" } as const;
+
+  async function addPaletteColor(hex: string) {
+    const event = await ctx.database.selectFrom("EventColor").select("eventId").executeTakeFirstOrThrow();
+    await ctx.database.insertInto("EventColor").values({ id: `color-${hex}`, eventId: event.eventId, name: hex, preset: null, hex, order: 9 }).execute();
+  }
+
+  it("colours and a new scoreboard link: tournament admin only, colours from the event palette", async () => {
+    const put = (as: TestUser, payload: unknown) => putAs(`/api/v1/live-rings/${ringOneId}/colors`, as, payload);
+    await addPaletteColor("#ffd400");
+    expect((await put(alice, { leftColor: BLUE, rightColor: RED })).statusCode).toBe(403);
+    expect((await put(creator, { leftColor: "red", rightColor: BLUE })).statusCode).toBe(400);
+    // Not in the palette, the same colour twice, or missing.
+    expect((await put(creator, { leftColor: "#ff0000", rightColor: BLUE })).statusCode).toBe(400);
+    expect((await put(creator, { leftColor: BLUE, rightColor: BLUE })).statusCode).toBe(400);
+    expect((await put(creator, { leftColor: BLUE })).statusCode).toBe(400);
+    expect((await put(creator, { leftColor: "#FFD400", rightColor: RED })).json().ring).toMatchObject({ leftColor: "#ffd400", rightColor: RED });
+    expect((await get(`/api/v1/live-rings/by-token/${TOKEN}`, alice)).json().ring).toMatchObject({ leftColor: "#ffd400" });
+    const admin = await insertUser(ctx.database, { id: "sysadmin", role: "SYSTEM_ADMIN" });
+    expect((await put(admin, { leftColor: BLUE, rightColor: RED })).statusCode).toBe(200);
     const before = (await ring()).scoreboardToken;
     expect((await post(`/api/v1/live-rings/${ringOneId}/rotate-scoreboard-token`, alice)).statusCode).toBe(403);
     const rotated = (await post(`/api/v1/live-rings/${ringOneId}/rotate-scoreboard-token`, creator)).json().ring.scoreboardToken;
@@ -360,6 +385,81 @@ describe("live ring keeper", () => {
     expect((await ring()).keeperToken).toBe(TOKEN);
     const links = (await get(`/api/v1/live-tournaments/${tournamentId}/rings`, creator)).json().rings;
     expect(links[0].scoreboardToken).toBe(rotated);
+  });
+
+  it("the table view lists the event palette", async () => {
+    const view = (await get(`/api/v1/live-rings/by-token/${TOKEN}`, alice)).json();
+    expect(view.palette).toEqual([
+      { id: expect.any(String), name: null, preset: "RED", hex: RED },
+      { id: expect.any(String), name: null, preset: "BLUE", hex: BLUE },
+    ]);
+    expect(view.ring.scoreboard).toEqual({ mirrored: false, showNext: true, textSize: "MEDIUM", theme: "DARK" });
+  });
+
+  it("the table holding the ring sets its colours and scoreboard settings; nobody else can", async () => {
+    const colors = (as: TestUser | null, deviceId: string | null, payload: unknown = { leftColor: BLUE, rightColor: RED }) =>
+      putAs(`/api/v1/live-rings/by-token/${TOKEN}/colors`, as, payload, deviceId ? { "x-device-id": deviceId } : {});
+    const settings = (as: TestUser | null, deviceId: string | null, payload: unknown = SETTINGS) =>
+      putAs(`/api/v1/live-rings/by-token/${TOKEN}/scoreboard-settings`, as, payload, deviceId ? { "x-device-id": deviceId } : {});
+
+    // Nobody holds the ring yet.
+    expect((await colors(alice, "dev-a")).statusCode).toBe(409);
+    await claim(alice, "dev-a");
+
+    const savedColors = await colors(alice, "dev-a");
+    expect(savedColors.statusCode).toBe(200);
+    expect(savedColors.json().ring).toMatchObject({ leftColor: BLUE, rightColor: RED });
+    const savedSettings = await settings(alice, "dev-a");
+    expect(savedSettings.statusCode).toBe(200);
+    expect(savedSettings.json().ring.scoreboard).toEqual(SETTINGS);
+    expect(await ring()).toMatchObject({ scoreboardMirrored: 1, scoreboardShowNext: 0, scoreboardTextSize: "LARGE", scoreboardTheme: "LIGHT" });
+
+    // The scoreboard picks them up.
+    await ctx.database.updateTable("LiveRing").set({ scoreboardToken: "board-1" }).where("id", "=", ringOneId).execute();
+    expect((await get("/api/v1/scoreboard/board-1", null)).json().ring).toMatchObject({ leftColor: BLUE, rightColor: RED, scoreboard: SETTINGS });
+
+    // Other device, other user on the same device id, no device id, signed out, wrong link.
+    expect((await colors(alice, "dev-b")).statusCode).toBe(409);
+    expect((await settings(alice, "dev-b")).json()).toMatchObject({ reason: "TAKEN_OVER" });
+    expect((await colors(bob, "dev-a")).statusCode).toBe(409);
+    expect((await settings(bob, "dev-a")).statusCode).toBe(409);
+    expect((await colors(alice, null)).statusCode).toBe(400);
+    expect((await colors(null, "dev-a")).statusCode).toBe(401);
+    expect((await settings(null, "dev-a")).statusCode).toBe(401);
+    expect((await putAs("/api/v1/live-rings/by-token/nope/colors", alice, { leftColor: BLUE, rightColor: RED }, { "x-device-id": "dev-a" })).statusCode).toBe(404);
+
+    // After a takeover the old holder can no longer write.
+    await claim(bob, "dev-b", true);
+    expect((await settings(alice, "dev-a")).statusCode).toBe(409);
+    expect((await settings(bob, "dev-b", { ...SETTINGS, theme: "DARK" })).statusCode).toBe(200);
+
+    // Bad values are 400 for the holder too.
+    expect((await colors(bob, "dev-b", { leftColor: "#123456", rightColor: RED })).statusCode).toBe(400);
+    for (const bad of [
+      { ...SETTINGS, mirrored: "yes" },
+      { ...SETTINGS, showNext: 1 },
+      { ...SETTINGS, textSize: "HUGE" },
+      { ...SETTINGS, theme: "BLUE" },
+      { mirrored: true, showNext: true, textSize: "SMALL" },
+      { ...SETTINGS, extra: true },
+      [],
+    ]) {
+      expect((await settings(bob, "dev-b", bad)).statusCode, JSON.stringify(bad)).toBe(400);
+    }
+    expect((await ring()).scoreboardTheme).toBe("DARK");
+  });
+
+  it("scoreboard settings by admins: tournament admins and system admins only", async () => {
+    const put = (as: TestUser | null, payload: unknown = SETTINGS) => putAs(`/api/v1/live-rings/${ringOneId}/scoreboard-settings`, as, payload);
+    const admin = await insertUser(ctx.database, { id: "sysadmin", role: "SYSTEM_ADMIN" });
+    expect((await put(creator)).json().ring.scoreboard).toEqual(SETTINGS);
+    expect((await put(admin, { ...SETTINGS, textSize: "SMALL" })).json().ring.scoreboard.textSize).toBe("SMALL");
+    expect((await put(alice)).statusCode).toBe(403);
+    expect((await put(null)).statusCode).toBe(401);
+    expect((await put(creator, { ...SETTINGS, theme: "GREY" })).statusCode).toBe(400);
+    expect((await putAs("/api/v1/live-rings/nope/scoreboard-settings", creator, SETTINGS)).statusCode).toBe(404);
+    const links = (await get(`/api/v1/live-tournaments/${tournamentId}/rings`, creator)).json().rings;
+    expect(links[0].scoreboard).toEqual({ ...SETTINGS, textSize: "SMALL" });
   });
 
   it("ring links visible to tournament admins and system admins only", async () => {

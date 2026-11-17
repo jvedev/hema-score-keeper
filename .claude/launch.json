@@ -58,6 +58,30 @@
         "--strictPort"
       ],
       "port": 5181
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace", "@hema/backend"],
+      "port": 3001
+    },
+    {
+      "name": "event-admin-live",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--workspace",
+        "@hema/event-admin",
+        "--",
+        "--port",
+        "5182",
+        "--strictPort"
+      ],
+      "port": 5182,
+      "env": {
+        "VITE_SCORE_KEEPER_URL": "http://localhost:5180/score-keeper"
+      }
     }
   ]
 }

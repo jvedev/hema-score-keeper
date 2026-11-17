@@ -18,6 +18,8 @@ import { competitionBoutHistory, competitionStandings, standingsForViewer } from
 import { registerBoutRoutes as registerLiveBoutRoutes } from "./live/bout-routes.js";
 import { registerLiveRoutes } from "./live/live-routes.js";
 import { registerRingRoutes } from "./live/ring-routes.js";
+import { registerEventColorRoutes } from "./events/event-color-routes.js";
+import { defaultPaletteColors, insertDefaultEventColors, requirePaletteColors } from "./events/event-colors.js";
 import { startPushWorker } from "./live/push-notifications.js";
 import { appPaths, productionAppMounts, registerStaticApps, type StaticAppMount } from "./static-apps.js";
 import { registerClubRoutes } from "./club-routes.js";
@@ -308,6 +310,7 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   registerLiveRoutes(app, database);
   registerLiveBoutRoutes(app, database);
   registerRingRoutes(app, database);
+  registerEventColorRoutes(app, database);
   registerPeopleRoutes(app, database);
   registerCompetitionAdminRoutes(app, database);
   registerParticipantRoutes(app, database);
@@ -802,6 +805,7 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
         addedByUserId: creator.id,
         createdAt: app.now().toISOString(),
       }).execute();
+      await insertDefaultEventColors(trx, id);
     });
     return toEventMutationResult(await requireEventApi(database, id));
   });
@@ -1507,14 +1511,14 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
     const eventId = requireString(body.eventId, "Event ID");
     await requireEventAdmin(database, eventId, user);
     const id = generateId();
-    await database.insertInto("Arena").values({
-      id,
-      eventId,
-      name: requireString(body.name, "Arena name"),
-      order: body.order === undefined ? 0 : requirePositiveInteger(body.order, "Arena order"),
-      leftColor: body.leftColor === undefined ? "#21c15b" : requireString(body.leftColor, "Left arena color"),
-      rightColor: body.rightColor === undefined ? "#2f7dfa" : requireString(body.rightColor, "Right arena color"),
-    }).execute();
+    const name = requireString(body.name, "Arena name");
+    const order = body.order === undefined ? 0 : requirePositiveInteger(body.order, "Arena order");
+    const defaults = await defaultPaletteColors(database, eventId);
+    const colors = await requirePaletteColors(database, eventId, {
+      leftColor: body.leftColor ?? defaults.leftColor,
+      rightColor: body.rightColor ?? defaults.rightColor,
+    });
+    await database.insertInto("Arena").values({ id, eventId, name, order, ...colors }).execute();
     return requireArenaApi(database, id);
   });
 
@@ -1538,11 +1542,14 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
     if (body.order !== undefined) {
       changes.order = requirePositiveInteger(body.order, "Arena order");
     }
-    if (body.leftColor !== undefined) {
-      changes.leftColor = requireString(body.leftColor, "Left arena color");
-    }
-    if (body.rightColor !== undefined) {
-      changes.rightColor = requireString(body.rightColor, "Right arena color");
+    if (body.leftColor !== undefined || body.rightColor !== undefined || changes.eventId !== undefined) {
+      // Both colours must come from the (possibly new) event's palette and differ.
+      const colors = await requirePaletteColors(database, changes.eventId ?? existing.eventId, {
+        leftColor: body.leftColor ?? existing.leftColor,
+        rightColor: body.rightColor ?? existing.rightColor,
+      });
+      changes.leftColor = colors.leftColor;
+      changes.rightColor = colors.rightColor;
     }
 
     if (Object.keys(changes).length > 0) {

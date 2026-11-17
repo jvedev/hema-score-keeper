@@ -1,4 +1,5 @@
 import { expect } from "vitest";
+import { insertDefaultEventColors } from "../src/events/event-colors.js";
 import { bearer, type TestContext, type TestUser } from "./helpers.js";
 
 /** One ring of the fixture; it becomes an Event-admin Arena with one scheduled phase. */
@@ -86,6 +87,7 @@ function required<T>(value: T | undefined, label: string): T {
 async function seedSource(ctx: TestContext, input: LiveFixtureInput): Promise<void> {
   const { database } = ctx;
   await database.insertInto("Event").values({ id: EVENT_ID, eventName: "Fixture event", rulesetId: null, allFightersAreVolunteers: 0 }).execute();
+  await insertDefaultEventColors(database, EVENT_ID);
   await database.insertInto("Tournament").values({
     id: TOURNAMENT_ID, eventId: EVENT_ID, createdByUserId: input.admin.id, name: input.name ?? "Tournament",
     rulesetId: null, currentStageId: null, order: 0, color: "#5B8CFF",
@@ -101,7 +103,7 @@ async function seedSource(ctx: TestContext, input: LiveFixtureInput): Promise<vo
 
   for (const [index, ring] of input.rings.entries()) {
     await database.insertInto("Arena").values({
-      id: arenaIdOf(ring.key), eventId: EVENT_ID, name: ring.name, order: index + 1, leftColor: "#21c15b", rightColor: "#2f7dfa",
+      id: arenaIdOf(ring.key), eventId: EVENT_ID, name: ring.name, order: index + 1, leftColor: "#d62828", rightColor: "#2f7dfa",
     }).execute();
     await database.insertInto("ScheduledPhase").values({ id: phaseIdOf(ring.key), stageId: STAGE_ID, arenaId: arenaIdOf(ring.key), timeSlotId: SLOT_ID }).execute();
     for (const scorer of input.scorers ?? []) {

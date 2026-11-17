@@ -24,12 +24,26 @@ import "./event-view-app.css";
 import "../pool-results/pool-results.js";
 import { t } from "../../i18n/i18n.js";
 import {
-  readRingColors,
+  patchLiveRingCards,
+  readScoreboardSettings,
   renderLiveRings,
   rotateKeeperConfirmMessage,
   rotateScoreboardConfirmMessage,
   scoreKeeperBaseUrl,
+  type LiveRingCardView,
 } from "./live-rings.js";
+import { applyAdminChanges, formDefaults } from "./form-state.js";
+import {
+  defaultArenaColors,
+  eventColorChanges,
+  eventColorErrorMessage,
+  eventColorLabel,
+  movedColorIds,
+  readEventColorForm,
+  readPaletteColors,
+  renderColorSelect,
+  renderEventColors,
+} from "./event-colors.js";
 import {
   parseRingRulesForm,
   readRingRulesForm,
@@ -113,6 +127,8 @@ interface AppState {
   databaseLiveLoading: boolean;
   databaseLiveError: string | null;
   liveRingAdmin: LiveRingAdminState;
+  /** The event palette editor on the arenas tab. */
+  eventColors: { busy: boolean; notice: string | null; error: string | null };
   selectedEventId: string | null;
   selectedTournamentId: string | null;
   selectedStageId: string | null;
@@ -133,8 +149,11 @@ const api = createApiClient();
 let app: HTMLElement;
 let pendingScrollState: ScrollState | undefined;
 
-const defaultArenaLeftColor = "#21c15b";
-const defaultArenaRightColor = "#2f7dfa";
+/** How often the live tab reloads the rings, so changes made at the tables show up without reopening the tab. */
+export const LIVE_RING_REFRESH_MS = 5000;
+let liveRingRefreshTimer: ReturnType<typeof setInterval> | undefined;
+let liveRingRefreshInFlight = false;
+
 
 const state: AppState = {
   loading: true,
@@ -149,6 +168,7 @@ const state: AppState = {
   databaseLiveLoading: false,
   databaseLiveError: null,
   liveRingAdmin: emptyLiveRingAdmin(),
+  eventColors: { busy: false, notice: null, error: null },
   selectedEventId: null,
   selectedTournamentId: null,
   selectedStageId: null,
@@ -167,6 +187,7 @@ export function mountEventView(host: HTMLElement): void {
   app.addEventListener("change", onAppChange);
   app.addEventListener("submit", onAppSubmit);
   app.addEventListener("rulesets-changed", onRulesetsChanged);
+  window.addEventListener("focus", onWindowFocus);
   void bootstrap();
 }
 
@@ -175,6 +196,8 @@ export function unmountEventView(host: HTMLElement): void {
   host.removeEventListener("change", onAppChange);
   host.removeEventListener("submit", onAppSubmit);
   host.removeEventListener("rulesets-changed", onRulesetsChanged);
+  window.removeEventListener("focus", onWindowFocus);
+  stopLiveRingRefresh();
 }
 
 async function bootstrap(): Promise<void> {
@@ -253,6 +276,12 @@ function onAppClick(event: MouseEvent): void {
       return;
     case "rotate-live-ring-scoreboard-link":
       if (target.dataset.ringId) void rotateLiveRingScoreboardLink(target.dataset.ringId);
+      return;
+    case "event-color-move":
+      if (target.dataset.colorId) void moveEventColor(target.dataset.colorId, target.dataset.direction === "up" ? "up" : "down");
+      return;
+    case "event-color-remove":
+      if (target.dataset.colorId) void removeEventColor(target.dataset.colorId);
       return;
     case "add-live-correction-exchange": {
       const form = target.closest<HTMLFormElement>("[data-action=\"database-live-correction\"]");
@@ -352,7 +381,10 @@ function onAppSubmit(event: SubmitEvent): void {
     && form.dataset.action !== "match-schedule"
     && form.dataset.action !== "database-live-correction"
     && form.dataset.action !== "live-ring-colors"
+    && form.dataset.action !== "live-ring-scoreboard"
     && form.dataset.action !== "live-ring-rules"
+    && form.dataset.action !== "event-color-save"
+    && form.dataset.action !== "event-color-add"
   )) {
     return;
   }
@@ -368,6 +400,12 @@ function onAppSubmit(event: SubmitEvent): void {
     void submitDatabaseLiveCorrection(form);
   } else if (form.dataset.action === "live-ring-colors") {
     void submitLiveRingColors(form);
+  } else if (form.dataset.action === "live-ring-scoreboard") {
+    void submitLiveRingScoreboard(form);
+  } else if (form.dataset.action === "event-color-save") {
+    void saveEventColor(form);
+  } else if (form.dataset.action === "event-color-add") {
+    void addEventColor(form);
   } else if (form.dataset.action === "live-ring-rules") {
     void submitLiveRingRules(form);
   } else {
@@ -380,6 +418,11 @@ function onRulesetsChanged(): void {
 }
 
 function render(): void {
+  renderApp();
+  syncLiveRingRefresh();
+}
+
+function renderApp(): void {
   if (pendingScrollState === undefined) {
     pendingScrollState = captureScrollState();
   }
@@ -479,9 +522,9 @@ function renderArenaCreateForm(event: ApiEvent): string {
         ${renderTextFields([
           ["name", "Naam", "", "Bijv. Arena 1", true],
           ["order", "Volgorde", order, "", true, "number"],
-          ["leftColor", "Linker kleur", defaultArenaLeftColor, "", true, "color"],
-          ["rightColor", "Rechter kleur", defaultArenaRightColor, "", true, "color"],
         ])}
+        ${renderColorSelect("leftColor", "Linker kleur", event.colors, defaultArenaColors(event.colors).leftColor)}
+        ${renderColorSelect("rightColor", "Rechter kleur", event.colors, defaultArenaColors(event.colors).rightColor)}
         <div class="field-actions">
           <button type="submit" class="button">Arena toevoegen</button>
         </div>
@@ -999,12 +1042,14 @@ function renderEditorFields(
     }
     case "arena": {
       const item = event?.arenas.find((candidate) => candidate.id === editor.id);
+      const palette = event?.colors ?? [];
+      const defaults = defaultArenaColors(palette);
       return renderTextFields([
         ["name", "Naam", item?.name ?? "", "Bijv. Arena 1", true],
         ["order", "Volgorde", String(item?.order ?? event?.arenas.length ?? 0), "", true, "number"],
-        ["leftColor", "Linker kleur", item?.leftColor ?? defaultArenaLeftColor, "", true, "color"],
-        ["rightColor", "Rechter kleur", item?.rightColor ?? defaultArenaRightColor, "", true, "color"],
-      ]);
+      ])
+        + renderColorSelect("leftColor", "Linker kleur", palette, item?.leftColor ?? defaults.leftColor)
+        + renderColorSelect("rightColor", "Rechter kleur", palette, item?.rightColor ?? defaults.rightColor);
     }
     case "entry": {
       const item = findEntryInEvent(event, editor.id);
@@ -1081,7 +1126,7 @@ function renderEventTab(event: ApiEvent): string {
     case "tournaments":
       return renderTournamentList(event, currentTournament(event));
     case "arenas":
-      return renderArenaList(event, event.arenas);
+      return renderEventColors({ palette: event.colors, ...state.eventColors }) + renderArenaList(event, event.arenas);
     case "officials":
       return renderEventOfficials(event);
     case "rulesets":
@@ -1294,8 +1339,8 @@ function renderArenaList(event: ApiEvent, arenas: ApiArena[]): string {
               <div class="info-card-title">${escapeHtml(arena.name)}</div>
               <div class="info-card-subtitle">Volgorde ${arena.order + 1}</div>
               <div class="badge-row">
-              <span class="tournament-color" style="background-color: ${escapeHtml(arena.leftColor ?? defaultArenaLeftColor)}" title="Linker kleur"></span>
-              <span class="tournament-color" style="background-color: ${escapeHtml(arena.rightColor ?? defaultArenaRightColor)}" title="Rechter kleur"></span>
+              <span class="tournament-color" style="background-color: ${escapeHtml(arena.leftColor ?? "")}" title="Linker kleur"></span>
+              <span class="tournament-color" style="background-color: ${escapeHtml(arena.rightColor ?? "")}" title="Rechter kleur"></span>
             </div>
             <div class="badge-row">
               ${usages.length > 0
@@ -1743,7 +1788,7 @@ function renderMatchList(
                   <button type="submit" class="button">Volgorde opslaan</button>
                 </form>
               `
-              : `<div class="info-card-subtitle">De ringvolgorde wordt aangemaakt zodra database-mode wordt geactiveerd.</div>`}
+              : `<div class="info-card-subtitle">De ringvolgorde wordt aangemaakt zodra live scoring wordt geactiveerd.</div>`}
           </div>
         `;
       }).join("")}
@@ -2044,15 +2089,15 @@ function renderDatabaseLive(): string {
   if (!live.active) {
     return `
       <div class="info-card">
-        <div class="info-card-title">Database-mode scoring</div>
+        <div class="info-card-title">Live scoring</div>
         <div class="info-card-subtitle">Activeer live scoring op basis van dit toernooi en de huidige planning. Poolbouts zonder arena worden overgeslagen.</div>
-        <button type="button" class="button" data-action="activate-database-live">Database-mode activeren</button>
+        <button type="button" class="button" data-action="activate-database-live">Live scoring activeren</button>
       </div>
     `;
   }
   return `
     <div class="info-card">
-      <div class="info-card-title">Database-mode actief</div>
+      <div class="info-card-title">Live scoring actief</div>
       <div class="info-card-subtitle">${live.rings} ringen · ${live.bouts} bouts</div>
       <button type="button" class="button secondary" data-action="project-database-live">Planning veilig bijwerken</button>
     </div>
@@ -2303,14 +2348,65 @@ async function submitDatabaseLiveCorrection(form: HTMLFormElement): Promise<void
 function renderLiveRingAdmin(): string {
   const ringAdmin = state.liveRingAdmin;
   const rings = renderLiveRings({
+    ...liveRingCardView(),
     rings: ringAdmin.rings,
-    scoreKeeperUrl: scoreKeeperBaseUrl(app.getAttribute("score-keeper-url"), window.location.origin),
-    busy: ringAdmin.busy,
     notice: ringAdmin.notice,
     error: ringAdmin.error,
   });
   const rules = ringAdmin.rulesValues ? renderRingRulesForm(ringAdmin.rulesValues, ringAdmin.rulesFeedback, ringAdmin.busy) : "";
   return `${rings}${rules}`;
+}
+
+function liveRingCardView(): LiveRingCardView {
+  return {
+    palette: currentEvent()?.colors ?? [],
+    scoreKeeperUrl: scoreKeeperBaseUrl(app.getAttribute("score-keeper-url"), window.location.origin),
+    busy: state.liveRingAdmin.busy,
+  };
+}
+
+/** Keeps the ring refresh running exactly while ring cards are on screen (live tab of an activated tournament). */
+function syncLiveRingRefresh(): void {
+  const showingRings = app.isConnected && app.querySelector("section.live-rings") !== null;
+  if (showingRings && liveRingRefreshTimer === undefined) {
+    liveRingRefreshTimer = setInterval(() => void refreshLiveRings(), LIVE_RING_REFRESH_MS);
+  } else if (!showingRings) {
+    stopLiveRingRefresh();
+  }
+}
+
+function stopLiveRingRefresh(): void {
+  if (liveRingRefreshTimer !== undefined) clearInterval(liveRingRefreshTimer);
+  liveRingRefreshTimer = undefined;
+}
+
+function onWindowFocus(): void {
+  if (liveRingRefreshTimer !== undefined) void refreshLiveRings();
+}
+
+/**
+ * Reloads the rings and updates the cards in place (keeper, links, colours, scoreboard settings), leaving any form
+ * the admin is editing untouched. Skipped while a ring action runs; a failed reload just waits for the next tick.
+ */
+async function refreshLiveRings(): Promise<void> {
+  const tournamentId = currentTournament(currentEvent())?.id;
+  const liveTournamentId = state.databaseLiveStatus?.liveTournamentId;
+  if (!tournamentId || !liveTournamentId || state.liveRingAdmin.busy || liveRingRefreshInFlight) return;
+  liveRingRefreshInFlight = true;
+  let rings: ApiLiveRing[];
+  try {
+    rings = await api.liveRings(liveTournamentId);
+  } catch {
+    return;
+  } finally {
+    liveRingRefreshInFlight = false;
+  }
+  const stillShown = liveRingRefreshTimer !== undefined
+    && currentTournament(currentEvent())?.id === tournamentId
+    && state.databaseLiveStatus?.liveTournamentId === liveTournamentId;
+  if (!stillShown || state.liveRingAdmin.busy) return;
+  state.liveRingAdmin = { ...state.liveRingAdmin, rings };
+  patchLiveRingCards(app, rings, liveRingCardView());
 }
 
 /** Rings and ring rules together; a failure is kept in the ring section instead of hiding the whole live tab. */
@@ -2364,19 +2460,109 @@ function rotateLiveRingScoreboardLink(ringId: string): Promise<void> {
   });
 }
 
+/*
+ * The table can change a ring's colours and scoreboard settings at any time, so a ring form may be older than the
+ * server. Saving reloads the rings and puts only the fields the admin changed (against what the form showed) on
+ * the ring's current values; a field changed on both sides takes the admin's choice.
+ */
+
 function submitLiveRingColors(form: HTMLFormElement): Promise<void> {
   const ringId = form.dataset.ringId;
-  const colors = readRingColors(new FormData(form));
-  return runLiveRingAction(async () => {
-    const ring = state.liveRingAdmin.rings?.find((candidate) => candidate.id === ringId);
-    if (!ring) return { error: t("liveRings.ringGone") };
+  const palette = currentEvent()?.colors ?? [];
+  const colors = readPaletteColors(new FormData(form), palette);
+  const rendered = readPaletteColors(formDefaults(form), palette);
+  return runLiveRingAction(async (liveTournamentId) => {
     if (!colors) return { error: t("liveRings.invalidColor") };
-    const saved = await api.setLiveRingColors(ring.id, colors);
+    const fresh = await api.liveRings(liveTournamentId);
+    const ring = fresh.find((candidate) => candidate.id === ringId);
+    if (!ring) return { rings: fresh, error: t("liveRings.ringGone") };
+    const current = { leftColor: ring.leftColor, rightColor: ring.rightColor };
+    const merged = applyAdminChanges(current, rendered, colors);
+    if (merged.leftColor === merged.rightColor) return { rings: fresh, error: t("liveRings.invalidColor") };
+    const saved = await api.setLiveRingColors(ring.id, merged);
     return {
-      rings: (state.liveRingAdmin.rings ?? []).map((candidate) => (candidate.id === ring.id ? { ...candidate, ...saved } : candidate)),
+      rings: fresh.map((candidate) => (candidate.id === ring.id ? { ...candidate, ...saved } : candidate)),
       notice: t("liveRings.colorsSaved", { ring: ring.name }),
     };
   });
+}
+
+function submitLiveRingScoreboard(form: HTMLFormElement): Promise<void> {
+  const ringId = form.dataset.ringId;
+  const settings = readScoreboardSettings(new FormData(form));
+  const rendered = readScoreboardSettings(formDefaults(form));
+  return runLiveRingAction(async (liveTournamentId) => {
+    // The form only offers valid choices; nothing to send otherwise.
+    if (!settings) return {};
+    const fresh = await api.liveRings(liveTournamentId);
+    const ring = fresh.find((candidate) => candidate.id === ringId);
+    if (!ring) return { rings: fresh, error: t("liveRings.ringGone") };
+    const scoreboard = await api.setLiveRingScoreboardSettings(ring.id, applyAdminChanges(ring.scoreboard, rendered, settings));
+    return {
+      rings: fresh.map((candidate) => (candidate.id === ring.id ? { ...candidate, scoreboard } : candidate)),
+      notice: t("liveRings.scoreboardSaved", { ring: ring.name }),
+    };
+  });
+}
+
+/** What one palette change did: new colours, nothing (null), or input refused before asking the backend. */
+type EventColorOutcome = { colors: ApiEvent["colors"]; reload?: boolean } | { invalid: string } | null;
+
+/**
+ * Runs one palette change for the open event; a changed hex also changed arenas and rings, so everything is reloaded.
+ * Failures are shown in the palette editor, in the admin's language (by the backend's reason code).
+ */
+async function runEventColorAction(work: (eventId: string) => Promise<EventColorOutcome>): Promise<void> {
+  const event = currentEvent();
+  if (!event || state.eventColors.busy) return;
+  state.eventColors = { busy: true, notice: null, error: null };
+  render();
+  try {
+    const outcome = await work(event.id);
+    if (!outcome) {
+      state.eventColors = { busy: false, notice: null, error: null };
+    } else if ("invalid" in outcome) {
+      state.eventColors = { busy: false, notice: null, error: outcome.invalid };
+    } else {
+      state.events = state.events.map((candidate) => (candidate.id === event.id ? { ...candidate, colors: outcome.colors } : candidate));
+      state.eventColors = { busy: false, notice: t("eventColors.saved"), error: null };
+      if (outcome.reload) await bootstrap();
+    }
+  } catch (error) {
+    state.eventColors = { busy: false, notice: null, error: eventColorErrorMessage(error) };
+  }
+  render();
+}
+
+function saveEventColor(form: HTMLFormElement): Promise<void> {
+  const color = currentEvent()?.colors.find((candidate) => candidate.id === form.dataset.colorId);
+  const values = readEventColorForm(new FormData(form));
+  return runEventColorAction(async () => {
+    if (!color) return null;
+    if (!values) return { invalid: t("eventColors.nameRequired") };
+    const changes = eventColorChanges(color, values);
+    if (Object.keys(changes).length === 0) return null;
+    return { colors: await api.updateEventColor(color.id, changes), reload: changes.hex !== undefined };
+  });
+}
+
+function addEventColor(form: HTMLFormElement): Promise<void> {
+  const values = readEventColorForm(new FormData(form));
+  return runEventColorAction(async (eventId) => {
+    if (!values) return { invalid: t("eventColors.nameRequired") };
+    return { colors: await api.addEventColor(eventId, values) };
+  });
+}
+
+function moveEventColor(colorId: string, direction: "up" | "down"): Promise<void> {
+  const ids = movedColorIds(currentEvent()?.colors ?? [], colorId, direction);
+  return runEventColorAction(async (eventId) => (ids ? { colors: await api.reorderEventColors(eventId, ids) } : null));
+}
+
+function removeEventColor(colorId: string): Promise<void> {
+  const color = currentEvent()?.colors.find((candidate) => candidate.id === colorId);
+  if (!color || !window.confirm(t("eventColors.removeConfirm", { name: eventColorLabel(color) }))) return Promise.resolve();
+  return runEventColorAction(async () => ({ colors: await api.deleteEventColor(colorId) }));
 }
 
 async function submitLiveRingRules(form: HTMLFormElement): Promise<void> {
