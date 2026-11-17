@@ -1,7 +1,7 @@
 import { t } from "@hema/ui";
 import { href, type Route } from "./router";
 
-export type NavItem = "needs-you" | "competitions" | "tournaments";
+export type NavItem = "needs-you" | "competitions";
 
 export interface Shell {
   content: HTMLElement;
@@ -27,7 +27,6 @@ export function createShell(
         <nav class="nav" aria-label="Main">
           <a href="${href({ name: "needs-you" })}" data-nav="needs-you" hidden><span data-text="admin.needsYou"></span><span class="count"></span></a>
           <a href="${href({ name: "competitions" })}" data-nav="competitions"><span data-text="admin.competitions"></span></a>
-          <a href="${href({ name: "tournaments" })}" data-nav="tournaments"><span data-text="admin.tournaments"></span></a>
         </nav>
         <div class="account">
           <span class="user"></span>
@@ -41,7 +40,6 @@ export function createShell(
       <nav class="tabs" aria-label="Main">
         <a href="${href({ name: "needs-you" })}" data-nav="needs-you" hidden><span data-text="admin.needsYou"></span><span class="count"></span></a>
         <a href="${href({ name: "competitions" })}" data-nav="competitions"><span data-text="admin.competitions"></span></a>
-        <a href="${href({ name: "tournaments" })}" data-nav="tournaments"><span data-text="admin.tournaments"></span></a>
       </nav>
       <div class="toast" role="status" hidden></div>
     </div>`;

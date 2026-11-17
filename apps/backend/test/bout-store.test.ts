@@ -21,7 +21,6 @@ beforeEach(async () => {
       fighterAUserId: "f1",
       fighterBUserId: "f2",
       refereeUserId: "ref",
-      tableUserId: null,
       ring: null,
       startedAt: start.toISOString(),
       scoreA: 5,

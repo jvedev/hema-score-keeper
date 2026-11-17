@@ -13,7 +13,6 @@ import type {
 import { createEventRepository } from "./data/create-event-repository";
 import { createRuleSetRepository } from "./data/create-rule-set-repository";
 import { shouldUseMockApi } from "./data/use-mock-api";
-import { fetchSheetValues } from "./data/google-sheets-client";
 import { MatchStore, createMatchState, reduceMatchEvent, type RuleSet } from "@hema/match-engine";
 import { LOCALE_CHANGE_EVENT, t, type MessageKey } from "@hema/ui";
 import { CompetitionClient } from "./competition/competition-client";
@@ -52,12 +51,7 @@ interface CurrentSelection {
   timeSlotSelection: ActiveTimeSlotSelection | undefined;
 }
 
-interface GoogleSheetsSelection {
-  sourceSheetId?: string | undefined;
-  destSheetId?: string | undefined;
-}
-
-type AppRoute = "launcher" | "event" | "standalone" | "google-sheets" | "fight" | "competition" | "ring";
+type AppRoute = "launcher" | "event" | "standalone" | "fight" | "competition" | "ring";
 
 function requireElement<ElementType extends Element>(
   selector: string,
@@ -75,24 +69,11 @@ const fightView =
   requireElement<HTMLElementTagNameMap["fight-view"]>("#fight-view");
 const launcherScreen = requireElement<HTMLElement>("#launcher-screen");
 const standaloneScreen = requireElement<HTMLElement>("#standalone-screen");
-const googleSheetsScreen = requireElement<HTMLElement>("#google-sheets-screen");
 const standaloneButton =
   requireElement<HTMLButtonElement>("#standalone-button");
-const googleSheetsButton =
-  requireElement<HTMLButtonElement>("#google-sheets-button");
 const eventButton = requireElement<HTMLButtonElement>("#event-button");
 const standaloneBackButton =
   requireElement<HTMLButtonElement>("#standalone-back-button");
-const googleSheetsBackButton =
-  requireElement<HTMLButtonElement>("#google-sheets-back-button");
-const googleSheetsSourceInput =
-  requireElement<HTMLInputElement>("#google-sheets-source-input");
-const googleSheetsDestInput =
-  requireElement<HTMLInputElement>("#google-sheets-dest-input");
-const googleSheetsApplyButton =
-  requireElement<HTMLButtonElement>("#google-sheets-apply-button");
-const googleSheetsStatus =
-  requireElement<HTMLElement>("#google-sheets-status");
 const scoreView =
   requireElement<HTMLElementTagNameMap["score-view"]>("#score-view");
 const warningView =
@@ -109,7 +90,6 @@ const eventRepository = createEventRepository();
 const ruleSetRepository = createRuleSetRepository();
 const backendClient = shouldUseMockApi() ? undefined : createApiClient();
 const selectionStorageKey = "hema-score-keeper.start-selection";
-const googleSheetsSelectionStorageKey = "hema-score-keeper.google-sheets-selection";
 const defaultArenaLeftColor = "#21c15b";
 const defaultArenaRightColor = "#2f7dfa";
 
@@ -123,7 +103,6 @@ let wakeLockRequested = false;
 let eventsLoadPromise: Promise<void> | undefined;
 let eventsLoaded = false;
 const completedMatchIds = new Set<string>();
-let googleSheetsSelection: GoogleSheetsSelection = {};
 const APP_BASE = normalizeBase(import.meta.env.BASE_URL ?? "/");
 /** Which mode the fight screen belongs to: event fights save to the event, competition bouts to /bouts, ring bouts go live. */
 let fightMode: "event" | "competition" | "ring" = "event";
@@ -177,9 +156,6 @@ standaloneButton.addEventListener("click", () => {
   syncStandaloneUrl();
   showStandaloneScreen();
 });
-googleSheetsButton.addEventListener("click", () => {
-  enterGoogleSheetsMode();
-});
 eventButton.addEventListener("click", () => {
   void openEventMode();
 });
@@ -194,19 +170,6 @@ competitionBackButton.addEventListener("click", () => {
 standaloneBackButton.addEventListener("click", () => {
   syncLauncherUrl(true);
   showLauncherScreen();
-});
-googleSheetsBackButton.addEventListener("click", () => {
-  syncLauncherUrl(true);
-  showLauncherScreen();
-});
-googleSheetsApplyButton.addEventListener("click", () => {
-  googleSheetsSelection = {
-    sourceSheetId: googleSheetsSourceInput.value.trim() || undefined,
-    destSheetId: googleSheetsDestInput.value.trim() || undefined,
-  };
-  persistGoogleSheetsSelection();
-  syncGoogleSheetsUrl(true);
-  void logSourceSheetContents();
 });
 
 startScreenView.addEventListener("event-selected", (event) => {
@@ -298,11 +261,6 @@ async function initializeApp(): Promise<void> {
     return;
   }
 
-  if (route === "google-sheets") {
-    enterGoogleSheetsMode(true);
-    return;
-  }
-
   if (route === "competition") {
     await competitionMode.open();
     return;
@@ -314,13 +272,6 @@ async function initializeApp(): Promise<void> {
   }
 
   showLauncherScreen();
-}
-
-function enterGoogleSheetsMode(replaceUrl = false): void {
-  applyGoogleSheetsLocationSelection();
-  syncGoogleSheetsUrl(replaceUrl);
-  showGoogleSheetsScreen();
-  renderGoogleSheetsScreen();
 }
 
 async function openEventMode(): Promise<void> {
@@ -356,12 +307,6 @@ async function handleRoute(): Promise<void> {
   if (route === "standalone") {
     await exitFightMode();
     showStandaloneScreen();
-    return;
-  }
-
-  if (route === "google-sheets") {
-    await exitFightMode();
-    enterGoogleSheetsMode(true);
     return;
   }
 
@@ -426,11 +371,6 @@ async function loadEvents(): Promise<void> {
 
       if (route === "standalone") {
         showStandaloneScreen();
-        return;
-      }
-
-      if (route === "google-sheets") {
-        enterGoogleSheetsMode(true);
         return;
       }
     } catch (error) {
@@ -1095,88 +1035,6 @@ function syncStandaloneUrl(replaceUrl = false): void {
   syncModeUrl("/standalone", replaceUrl);
 }
 
-function syncGoogleSheetsUrl(replaceUrl = false): void {
-  const url = new URL(window.location.href);
-  url.pathname = "/google-sheets";
-  if (googleSheetsSelection.sourceSheetId) {
-    url.searchParams.set("sourceId", googleSheetsSelection.sourceSheetId);
-  } else {
-    url.searchParams.delete("sourceId");
-  }
-  if (googleSheetsSelection.destSheetId) {
-    url.searchParams.set("destId", googleSheetsSelection.destSheetId);
-  } else {
-    url.searchParams.delete("destId");
-  }
-  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
-  writeAppUrl(nextUrl, replaceUrl);
-}
-
-function applyGoogleSheetsLocationSelection(): void {
-  const params = new URLSearchParams(window.location.search);
-  const savedSelection = loadSavedGoogleSheetsSelection();
-  googleSheetsSelection = {
-    sourceSheetId: params.get("sourceId") ?? savedSelection?.sourceSheetId,
-    destSheetId: params.get("destId") ?? savedSelection?.destSheetId,
-  };
-  persistGoogleSheetsSelection();
-}
-
-function loadSavedGoogleSheetsSelection(): GoogleSheetsSelection | undefined {
-  try {
-    const raw = window.localStorage.getItem(googleSheetsSelectionStorageKey);
-    if (!raw) {
-      return undefined;
-    }
-    const parsed = JSON.parse(raw) as Partial<GoogleSheetsSelection>;
-    const savedSelection: GoogleSheetsSelection = {};
-    if (typeof parsed.sourceSheetId === "string") {
-      savedSelection.sourceSheetId = parsed.sourceSheetId;
-    }
-    if (typeof parsed.destSheetId === "string") {
-      savedSelection.destSheetId = parsed.destSheetId;
-    }
-    return savedSelection;
-  } catch (error) {
-    console.warn("Unable to read the saved Google Sheets selection.", error);
-    return undefined;
-  }
-}
-
-function persistGoogleSheetsSelection(): void {
-  try {
-    window.localStorage.setItem(
-      googleSheetsSelectionStorageKey,
-      JSON.stringify(googleSheetsSelection),
-    );
-  } catch (error) {
-    console.warn("Unable to save the Google Sheets selection.", error);
-  }
-}
-
-function renderGoogleSheetsScreen(): void {
-  googleSheetsSourceInput.value = googleSheetsSelection.sourceSheetId ?? "";
-  googleSheetsDestInput.value = googleSheetsSelection.destSheetId ?? "";
-  googleSheetsStatus.textContent = "";
-}
-
-async function logSourceSheetContents(): Promise<void> {
-  if (!googleSheetsSelection.sourceSheetId) {
-    return;
-  }
-
-  googleSheetsStatus.textContent = "Loading source sheet...";
-  try {
-    const values = await fetchSheetValues(googleSheetsSelection.sourceSheetId);
-    console.log("Source sheet contents:", values);
-    googleSheetsStatus.textContent = `Loaded ${values.length} row(s) — see the browser console.`;
-  } catch (error) {
-    console.error("Unable to read the source sheet.", error);
-    googleSheetsStatus.textContent =
-      error instanceof Error ? error.message : "Unable to read the source sheet.";
-  }
-}
-
 function syncModeUrl(pathname: string, replaceUrl: boolean): void {
   const url = new URL(window.location.href);
   url.pathname = pathname;
@@ -1289,9 +1147,6 @@ function resolveRoute(): AppRoute {
   if (pathname === "/standalone") {
     return "standalone";
   }
-  if (pathname === "/google-sheets") {
-    return "google-sheets";
-  }
   if (pathname === "/competition") {
     return "competition";
   }
@@ -1312,7 +1167,6 @@ function resolveRoute(): AppRoute {
 function showLauncherScreen(): void {
   launcherScreen.hidden = false;
   standaloneScreen.hidden = true;
-  googleSheetsScreen.hidden = true;
   startScreenView.hidden = true;
   fightView.hidden = true;
   competitionScreen.hidden = true;
@@ -1323,7 +1177,6 @@ function showLauncherScreen(): void {
 function showEventScreen(): void {
   launcherScreen.hidden = true;
   standaloneScreen.hidden = true;
-  googleSheetsScreen.hidden = true;
   startScreenView.hidden = false;
   fightView.hidden = true;
   competitionScreen.hidden = true;
@@ -1334,7 +1187,6 @@ function showEventScreen(): void {
 function showStandaloneScreen(): void {
   launcherScreen.hidden = true;
   standaloneScreen.hidden = false;
-  googleSheetsScreen.hidden = true;
   startScreenView.hidden = true;
   fightView.hidden = true;
   competitionScreen.hidden = true;
@@ -1342,21 +1194,9 @@ function showStandaloneScreen(): void {
   document.body.dataset.mode = "standalone";
 }
 
-function showGoogleSheetsScreen(): void {
-  launcherScreen.hidden = true;
-  standaloneScreen.hidden = true;
-  googleSheetsScreen.hidden = false;
-  startScreenView.hidden = true;
-  fightView.hidden = true;
-  competitionScreen.hidden = true;
-  ringScreen.hidden = true;
-  document.body.dataset.mode = "google-sheets";
-}
-
 function showCompetitionScreen(): void {
   launcherScreen.hidden = true;
   standaloneScreen.hidden = true;
-  googleSheetsScreen.hidden = true;
   startScreenView.hidden = true;
   fightView.hidden = true;
   competitionScreen.hidden = false;
@@ -1367,7 +1207,6 @@ function showCompetitionScreen(): void {
 function showRingScreen(): void {
   launcherScreen.hidden = true;
   standaloneScreen.hidden = true;
-  googleSheetsScreen.hidden = true;
   startScreenView.hidden = true;
   fightView.hidden = true;
   competitionScreen.hidden = true;
@@ -1378,7 +1217,6 @@ function showRingScreen(): void {
 function showFightScreen(): void {
   launcherScreen.hidden = true;
   standaloneScreen.hidden = true;
-  googleSheetsScreen.hidden = true;
   startScreenView.hidden = true;
   fightView.hidden = false;
   competitionScreen.hidden = true;

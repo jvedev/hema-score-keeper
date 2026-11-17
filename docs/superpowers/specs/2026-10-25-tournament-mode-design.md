@@ -2,6 +2,14 @@
 
 Status: draft for the user's review (brainstormed 2026-10-25). Builds on the competition platform (phases 1–7, see `2026-10-19-competition-admin-design.md` §4.10, "future tournament mode").
 
+> **Superseded in part (user decision 2026-11-17).** Spreadsheet (sheet) mode is dropped: the
+> spreadsheet is no longer a source, backup, or sync target, and Google Sheets/xlsx import,
+> sync, and backup are removed. SQLite is the only source of truth; live tournaments exist only
+> as database-mode projections of an Event-admin Tournament. Nothing is in production, so no
+> data, migrations, or API compatibility are preserved. Everything below about the spreadsheet
+> (goals 5–6, the shadow run, §8a–8b, sheet layout, sync worker) is historical. The removal is
+> planned in `../plans/2026-11-17-remove-spreadsheet-mode.md`.
+
 ## 1. Intent and why
 
 On a tournament day the club runs everything from a spreadsheet on a laptop: the spreadsheet holds the schedule, people type every exchange into it, and its formulas produce the eliminations and finals. It works, but it is slow (downloading a participant list "takes forever") and nobody away from the laptop can see what is happening.
@@ -109,7 +117,7 @@ Existing Event-admin tournaments without a recorded creator or administrator rem
 
 ## 8. What exists today (recon 2026-10-25, Google Sheets code not read)
 
-- **event-admin:** real API (`packages/event-admin-api`, backend `server.ts` ~759–1560). It covers events, tournaments, arenas (order, left/right colour), stages (POOL), entries, rulesets and the schedule (time slots, scheduled phases stage+arena+slot, assignments judge/jury/table/fighter). Tables are in `apps/backend/sql/migrations/*` (Prisma-style), not in `schema-migrations.ts`.
+- **event-admin:** real API (`packages/event-admin-api`, backend `server.ts` ~759–1560). It covers events, tournaments, arenas (order, left/right colour), stages (POOL), entries, rulesets and the schedule (time slots, scheduled phases stage+arena+slot, assignments judge/jury/table/fighter). Tables are in the baseline schema `apps/backend/src/schema.ts` (since 2026-11-17; previously Prisma-style `sql/migrations/*`).
 - **tournament-admin:** only `<stage-view>`, in memory, with no persistence (a first draft, open to change).
 - **score-keeper:** the launcher offers Stand alone / Google Sheets / Event / Competition bout.
   - Event mode picks event + arena and finds the active bout from `schedule.currentTimeSlotId` + stage placement (`main.ts` ~800).

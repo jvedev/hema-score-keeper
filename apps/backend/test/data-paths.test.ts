@@ -2,15 +2,13 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { appDataDir } from "../src/app-root.js";
 import { resolveDatabasePath } from "../src/db.js";
-import { liveDataDir } from "../src/live/data-dir.js";
 
 describe("persistent application data paths", () => {
-  it("uses APP_DATA_DIR for default database and live files", () => {
+  it("uses APP_DATA_DIR for the default database", () => {
     const dataDir = path.resolve("test-data", "portable-app");
     const env = { APP_DATA_DIR: dataDir } as NodeJS.ProcessEnv;
     expect(appDataDir(env)).toBe(dataDir);
     expect(resolveDatabasePath("file:./venue.db", env)).toBe(path.join(dataDir, "venue.db"));
-    expect(liveDataDir(env)).toBe(path.join(dataDir, "live"));
   });
 
   it("keeps memory and explicit database paths intact", () => {

@@ -16,13 +16,15 @@ Put shared rules in this file, not in the tool-specific files, so all agents beh
 - Ask for permission before installing npm packages.
 - On Windows, run scripts and checks with Bash (Git Bash), `cmd.exe`, Node.js, or Python; do not use PowerShell or PowerShell scripts.
 - Do not run broad service stop/kill scripts without checking their exact effects first.
+- Database schema: `apps/backend/src/schema.ts` is the single baseline (version in `PRAGMA user_version`). Until the first production release, change the schema by editing that file (and `BackendDatabase` in `src/db.ts`), then recreate the dev database with `npm run backend:db:reset`; do not add migrations or repair code. Real migrations keyed on `user_version` come only once production data must be kept.
 
 # Current work and resume point
 
 - Start with `docs/superpowers/agent-session-context.md`: project summary, decisions to preserve, and the current resume point. Do not rely on status lines elsewhere being up to date.
 - Approved tournament-mode design: `docs/superpowers/specs/2026-10-25-tournament-mode-design.md`.
 - Phase plans live in `docs/superpowers/plans/`; read the active plan's "Status / next" section before continuing it.
-- Do not read `apps/backend/src/google-sheets.ts` or `packages/sheets-client` for tournament mode; the user explicitly asked to keep that legacy integration out of scope.
+- Spreadsheet mode is dropped (user decision 2026-11-17): SQLite is the only source of truth. Do not add new Google Sheets/xlsx functionality. The removal work is planned in `docs/superpowers/plans/2026-11-17-remove-spreadsheet-mode.md`; reading the spreadsheet code is allowed only to remove it.
+- Nothing is in production yet: no data, schema migrations, or API compatibility needs to be preserved between commits unless the user says otherwise. The local development database may be discarded and reseeded.
 
 # Working with plans and session context
 

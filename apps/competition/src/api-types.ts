@@ -75,7 +75,8 @@ export interface LiveTournamentSummary {
 export interface LiveTournamentBout {
   id: string;
   label: string;
-  sheetName: string;
+  /** The bout's pool, "stage · time slot" (the same name as its entry in `pools`). */
+  poolName: string;
   order: number;
   status: "PENDING" | "RUNNING" | "DONE";
   fighterLeft: string;

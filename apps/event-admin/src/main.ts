@@ -24,6 +24,8 @@ function renderRoute(): void {
   }
 
   const view = document.createElement(tagName);
+  const scoreKeeperUrl = import.meta.env.VITE_SCORE_KEEPER_URL?.trim();
+  if (tagName === "event-view" && scoreKeeperUrl) view.setAttribute("score-keeper-url", scoreKeeperUrl);
   const sessionBar = app.querySelector(".event-admin-session-bar");
   app.replaceChildren(...(sessionBar ? [sessionBar, view] : [view]));
 }

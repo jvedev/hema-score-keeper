@@ -124,7 +124,6 @@ export interface RingModeState {
   error: string | null;
   ring: LiveRing | null;
   tournamentName: string;
-  tournamentMode: "SHEET" | "DATABASE";
   bouts: LiveBoutRow[];
   activeKeeper: ActiveKeeper | null;
   /** This device keeps the ring (as far as it knows; a TAKEN_OVER answer says otherwise). */
@@ -176,10 +175,10 @@ interface HistoryEntry {
 }
 
 /**
- * The sheet's rule, as the backend counts it: an exchange where both fighters score is a double and counts 0 for both;
+ * The live bout score rule, as the backend counts it: an exchange where both fighters score is a double and counts 0 for both;
  * a deduction is negative points for one fighter. The ruleset's own switches do not apply in ring mode.
  */
-export function sheetScore(exchanges: readonly { kind: "EXCHANGE" | "DEDUCTION"; leftPoints: number; rightPoints: number }[]): BoutScore {
+export function liveBoutScore(exchanges: readonly { kind: "EXCHANGE" | "DEDUCTION"; leftPoints: number; rightPoints: number }[]): BoutScore {
   const score: BoutScore = { left: 0, right: 0, doubles: 0 };
   for (const exchange of exchanges) {
     if (exchange.kind === "EXCHANGE" && exchange.leftPoints > 0 && exchange.rightPoints > 0) {
@@ -192,7 +191,7 @@ export function sheetScore(exchanges: readonly { kind: "EXCHANGE" | "DEDUCTION";
   return score;
 }
 
-/** Warnings in ring mode: the sheet has no place for a disqualification, so it is not offered (and a warning that only disqualifies goes). */
+/** Warnings in ring mode: a live bout has no place for a disqualification, so it is not offered (and a warning that only disqualifies goes). */
 export function ringPenalties<P extends { description: string; penalties: number[]; disqualify: boolean }>(penalties: readonly P[]): P[] {
   return penalties.filter((penalty) => penalty.penalties.length > 0).map((penalty) => ({ ...penalty, penalties: [...penalty.penalties], disqualify: false }));
 }
@@ -274,7 +273,6 @@ export class RingController {
       error: null,
       ring: null,
       tournamentName: "",
-      tournamentMode: "SHEET",
       bouts: [],
       activeKeeper: null,
       isKeeper: false,
@@ -396,7 +394,7 @@ export class RingController {
     }
   }
 
-  /** A match event from the scoring screen (score, warning). Read-only, or not an exchange the sheet takes: nothing is sent. */
+  /** A match event from the scoring screen (score, warning). Read-only, or not an exchange the backend takes: nothing is sent. */
   matchEvent(event: MatchEventDetail): void {
     const outbox = this.#currentOutbox();
     if (!outbox || this.#state.readOnly) {
@@ -615,7 +613,6 @@ export class RingController {
       screen: this.#state.screen === "bout" ? "bout" : "ring",
       ring: ring.ring,
       tournamentName: ring.tournament.name,
-      tournamentMode: ring.tournament.mode,
       rules: parseRingRules(ring.rules),
       bouts: ring.bouts,
       activeKeeper: ring.activeKeeper,
@@ -902,7 +899,7 @@ export class RingController {
     return history;
   }
 
-  /** The server's score once nothing is waiting to be sent (so the screen and the sheet agree), else the sheet rule over what this device has. */
+  /** The server's score once nothing is waiting to be sent (so the screen and the server agree), else the live bout score rule over what this device has. */
   #displayScore(): BoutScore {
     const boutId = this.#state.boutId;
     if (this.#state.rules.format.rounds > 1) {
@@ -911,12 +908,12 @@ export class RingController {
     if (boutId && this.#serverScore && this.#pendingFor(boutId) === 0 && !this.#stopped(boutId)) {
       return this.#serverScore;
     }
-    return sheetScore(this.#history.map((entry) => entry.exchange));
+    return liveBoutScore(this.#history.map((entry) => entry.exchange));
   }
 
-  /** One round's score by the sheet rule, from what this device has (an exchange without a round is round 1). */
+  /** One round's score by the live bout score rule, from what this device has (an exchange without a round is round 1). */
   #roundScore(round: number): BoutScore {
-    return sheetScore(this.#history.filter((entry) => (entry.exchange.round ?? 1) === round).map((entry) => entry.exchange));
+    return liveBoutScore(this.#history.filter((entry) => (entry.exchange.round ?? 1) === round).map((entry) => entry.exchange));
   }
 
   // --- rounds, break and overtime ---

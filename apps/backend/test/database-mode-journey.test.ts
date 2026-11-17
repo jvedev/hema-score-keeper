@@ -140,7 +140,7 @@ describe("database-mode scoring journey", () => {
 
     const ringRead = await ctx.app.inject({ method: "GET", url: ringUrl, headers: bearer(organizer) });
     expect(ringRead.statusCode).toBe(200);
-    expect(ringRead.json().tournament).toMatchObject({ id: liveTournament.id, mode: "DATABASE" });
+    expect(ringRead.json().tournament).toEqual({ id: liveTournament.id, name: "Journey Tournament" });
 
     const deviceId = "journey-device";
     const claim = await ctx.app.inject({

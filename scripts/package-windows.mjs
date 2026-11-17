@@ -157,7 +157,6 @@ async function verifyPackageNode(nodePath, serverDirectory) {
       ...process.env,
       APP_DATA_DIR: tempData,
       DATABASE_URL: "file:./dev.db",
-      LIVE_DATA_DIR: path.join(tempData, "live"),
       AUTH_SECRET: "deployment-smoke-test-secret-not-for-production",
       HOST: "127.0.0.1",
       PORT: String(port),

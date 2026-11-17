@@ -27,7 +27,8 @@
     "backend:dev": "npm run dev --workspace @hema/backend",
     "backend:build": "npm run build --workspace @hema/backend",
     "backend:db:seed": "npm run db:seed --workspace @hema/backend",
-    "test:database-mode:smoke": "npm run test --workspace @hema/backend -- test/database-mode-journey.test.ts test/schema-migrations.test.ts"
+    "backend:db:reset": "npm run db:reset --workspace @hema/backend",
+    "test:database-mode:smoke": "npm run test --workspace @hema/backend -- test/database-mode-journey.test.ts test/schema.test.ts"
   },
   "engines": {
     "node": ">=22",

@@ -6,8 +6,6 @@ export type Route =
   | { name: "fighter"; competitionId: string; participantId: string }
   | { name: "bout"; competitionId: string; boutId: string }
   | { name: "settings"; competitionId: string }
-  | { name: "tournaments" }
-  | { name: "tournament"; tournamentId: string }
   | { name: "objection"; boutId: string };
 
 export const APP_BASE = normalizeBase(import.meta.env.BASE_URL ?? "/");
@@ -21,14 +19,6 @@ export function parseRoute(pathname: string): Route {
   }
   if (first === "objections" && id && parts.length === 2) {
     return { name: "objection", boutId: id };
-  }
-  if (first === "tournaments") {
-    if (parts.length === 1) {
-      return { name: "tournaments" };
-    }
-    if (id && parts.length === 2) {
-      return { name: "tournament", tournamentId: id };
-    }
   }
   if (first === "competitions") {
     if (parts.length === 1) {
@@ -74,12 +64,6 @@ export function href(route: Route): string {
       break;
     case "settings":
       path = `competitions/${e(route.competitionId)}/settings`;
-      break;
-    case "tournaments":
-      path = "tournaments";
-      break;
-    case "tournament":
-      path = `tournaments/${e(route.tournamentId)}`;
       break;
     case "objection":
       path = `objections/${e(route.boutId)}`;

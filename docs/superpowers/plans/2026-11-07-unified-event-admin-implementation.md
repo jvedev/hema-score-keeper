@@ -23,8 +23,17 @@ pre-implementation decisions below are approved.
 
 ## Decisions recorded from the user
 
+> **2026-11-17 — spreadsheet mode dropped.** The user dropped spreadsheet mode entirely and works
+> with SQLite only; nothing is in production, so no data, migrations, legacy rows, or API
+> compatibility need preserving. This overrides every spreadsheet-mode decision below: there is
+> no spreadsheet-mode component, no attach path for legacy sheet tournaments, and Phase 6 is
+> cancelled. Phase 2 shrinks to the rating Competition relationship. Unowned-Event bootstrap
+> and runtime migrations may be simplified. The removal runs first, as its own phase:
+> `2026-11-17-remove-spreadsheet-mode.md`.
+
 - An Event does not require any component and may contain multiple components.
-- The spreadsheet-mode `LiveTournament` workflow remains supported beside database mode.
+- ~~The spreadsheet-mode `LiveTournament` workflow remains supported beside database mode.~~
+  Superseded 2026-11-17 (see above).
 - Spreadsheet-mode tournaments appear under the parent Event's **Components** as a separate
   component type, not as the database-mode Tournament or rating Competition.
 - Event administrators of the parent Event gain management access to an attached

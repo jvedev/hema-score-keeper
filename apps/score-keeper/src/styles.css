@@ -95,11 +95,6 @@ fight-view[hidden] {
   line-height: 1.5;
 }
 
-.mode-fields {
-  display: grid;
-  gap: 12px;
-}
-
 .mode-field {
   display: grid;
   gap: 6px;

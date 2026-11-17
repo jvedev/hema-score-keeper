@@ -155,11 +155,8 @@ export async function queueOnDeckNotifications(db: Kysely<BackendDatabase>, now:
       .selectFrom("LiveTournamentFighter")
       .select(["id", "userId", "name"])
       .where("id", "in", fighterIds)
-      .where("userId", "is not", null)
-      .where("ambiguous", "=", 0)
       .execute();
     for (const fighter of linked) {
-      if (!fighter.userId) continue;
       const subscriptions = await db
         .selectFrom("LivePushSubscription")
         .select("id")
@@ -307,7 +304,6 @@ async function isStillOnDeckForSubscriber(
     .select("id")
     .where("id", "in", fighterIds)
     .where("userId", "=", subscription.userId)
-    .where("ambiguous", "=", 0)
     .executeTakeFirst();
   if (!linked) return false;
   const earlier = await db

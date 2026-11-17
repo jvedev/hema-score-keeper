@@ -14,6 +14,21 @@ This is the concise, repository-owned handoff for an AI agent starting a new ses
 
 ## Current project: tournament mode
 
+**Direction change 2026-11-17 (overrides older notes below):** spreadsheet mode is dropped; SQLite
+is the only source of truth. Nothing is in production, so no data, migrations, or API
+compatibility need preserving, and the dev database may be discarded. All earlier work is now on
+`master`. The removal phase in
+[`plans/2026-11-17-remove-spreadsheet-mode.md`](plans/2026-11-17-remove-spreadsheet-mode.md) is
+implemented and verified but uncommitted; see its **Status / next** for open items. The
+baseline schema ([`plans/2026-11-17-baseline-database-schema.md`](plans/2026-11-17-baseline-database-schema.md))
+is implemented and verified but uncommitted: `apps/backend/src/schema.ts` is the only schema,
+old databases are refused, and `npm run backend:db:reset` recreates and seeds the dev database
+(the existing `data/dev.db` must be reset once). After it:
+[`plans/2026-11-17-table-ring-and-scoreboard-settings.md`](plans/2026-11-17-table-ring-and-scoreboard-settings.md)
+(needs approval), then a reduced Phase 2 of the unified Event-admin plan. HTTPS,
+Web Push and phone tests stay deferred to the end; GitHub Codespaces (HTTPS forwarded ports) is
+the intended place for them.
+
 The approved design is [`specs/2026-10-25-tournament-mode-design.md`](specs/2026-10-25-tournament-mode-design.md). Phases 1–3 are complete. Phase 4 fighter phones is implemented and committed on `co-pilot`; automated verification passed. Real HTTPS/Web Push checks on a phone are intentionally deferred until the end of the project. Read [`plans/2026-10-28-tournament-fighter-phones.md`](plans/2026-10-28-tournament-fighter-phones.md) and `.superpowers/sdd/2026-10-28-tournament-fighter-phones/progress.md`.
 
 ### Product direction and decisions to preserve

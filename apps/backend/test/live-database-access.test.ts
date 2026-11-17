@@ -14,6 +14,9 @@ describe("database-mode ring access", () => {
   let otherPhaseOfficial: TestUser;
   let outsider: TestUser;
   let systemAdmin: TestUser;
+  let ringId: string;
+  let boutOne: string;
+  let boutTwo: string;
 
   beforeEach(async () => {
     ctx = await createTestContext();
@@ -118,60 +121,16 @@ describe("database-mode ring access", () => {
       { id: "assignment-other-phase", scheduledPhaseId: "phase-two", userId: otherPhaseOfficial.id, role: "TABLE" },
     ]).execute();
 
-    await ctx.database.insertInto("LiveTournament").values({
-      id: "live-tournament",
-      name: "Open",
-      mode: "DATABASE",
-      sourceTournamentId: "source-tournament",
-      layoutVersion: "v3",
-      googleSpreadsheetId: null,
-      createdByUserId: admin.id,
-      createdAt: "2026-11-07T10:00:00.000Z",
-    }).execute();
-    await ctx.database.insertInto("LiveRing").values({
-      id: "ring-one",
-      tournamentId: "live-tournament",
-      sourceArenaId: "arena-one",
-      name: "Ring 1",
-      order: 1,
-      keeperToken: RING_TOKEN,
-    }).execute();
-    await ctx.database.insertInto("LiveBout").values([
-      {
-        id: "bout-one",
-        tournamentId: "live-tournament",
-        sourceMatchId: "match-one",
-        scheduledPhaseId: "phase-one",
-        sourceScheduleSignature: "signature-one",
-        ringId: "ring-one",
-        order: 1,
-        label: "Bout 1",
-        sheetName: "Pool 1",
-        headerCell: "B25",
-        fighterLeft: "Left",
-        fighterRight: "Right",
-        status: "PENDING",
-        startedAt: null,
-        finishedAt: null,
-      },
-      {
-        id: "bout-two",
-        tournamentId: "live-tournament",
-        sourceMatchId: "match-two",
-        scheduledPhaseId: "phase-two",
-        sourceScheduleSignature: "signature-two",
-        ringId: "ring-one",
-        order: 2,
-        label: "Bout 2",
-        sheetName: "Final",
-        headerCell: "B26",
-        fighterLeft: "Left",
-        fighterRight: "Right",
-        status: "PENDING",
-        startedAt: null,
-        finishedAt: null,
-      },
-    ]).execute();
+    await ctx.database.insertInto("ScheduledMatch").values({ matchId: "match-two", scheduledPhaseId: "phase-two", order: 2 }).execute();
+
+    const activation = await post("/api/v1/tournaments/source-tournament/live", admin);
+    expect(activation.statusCode, activation.body).toBe(200);
+    await ctx.database.updateTable("LiveRing").set({ keeperToken: RING_TOKEN }).where("sourceArenaId", "=", "arena-one").execute();
+    ringId = (await ctx.database.selectFrom("LiveRing").select("id").where("sourceArenaId", "=", "arena-one").executeTakeFirstOrThrow()).id;
+    const boutIdOf = async (matchId: string) =>
+      (await ctx.database.selectFrom("LiveBout").select("id").where("sourceMatchId", "=", matchId).executeTakeFirstOrThrow()).id;
+    boutOne = await boutIdOf("match-one");
+    boutTwo = await boutIdOf("match-two");
   });
 
   afterEach(async () => {
@@ -190,35 +149,29 @@ describe("database-mode ring access", () => {
     return ctx.app.inject({ method: "POST", url, payload: payload as object | undefined, headers });
   }
 
-  async function assign(user: TestUser, role: "TABLE" | "JUDGE" | "JURY" | "FIGHTER") {
-    return ctx.database.insertInto("ScheduledAssignment")
-      .values({ id: `phase-two-${user.id}`, scheduledPhaseId: "phase-two", userId: user.id, role })
-      .execute();
-  }
-
   it("allows TABLE, JUDGE, JURY, tournament admins and system admins, but not FIGHTER or unassigned users", async () => {
     for (const official of [table, judge, jury]) {
       const ring = await get(`/api/v1/live-rings/by-token/${RING_TOKEN}`, official);
       expect(ring.statusCode).toBe(200);
-      expect((ring.json().bouts as { id: string }[]).map((bout) => bout.id)).toEqual(["bout-one"]);
-      expect((await get("/api/v1/live-rings/ring-one/bouts", official)).json().bouts).toHaveLength(1);
-      expect((await get("/api/v1/live-bouts/bout-one", official)).statusCode).toBe(200);
-      expect((await get("/api/v1/live-bouts/bout-two", official)).statusCode).toBe(403);
+      expect((ring.json().bouts as { id: string }[]).map((bout) => bout.id)).toEqual([boutOne]);
+      expect((await get(`/api/v1/live-rings/${ringId}/bouts`, official)).json().bouts).toHaveLength(1);
+      expect((await get(`/api/v1/live-bouts/${boutOne}`, official)).statusCode).toBe(200);
+      expect((await get(`/api/v1/live-bouts/${boutTwo}`, official)).statusCode).toBe(403);
     }
 
     expect((await get(`/api/v1/live-rings/by-token/${RING_TOKEN}`, fighter)).statusCode).toBe(403);
     expect((await post(`/api/v1/live-rings/by-token/${RING_TOKEN}/claim`, fighter, { deviceId: "fighter-device" })).statusCode).toBe(403);
     expect((await get(`/api/v1/live-rings/by-token/${RING_TOKEN}`, outsider)).statusCode).toBe(403);
 
-    await assign(otherPhaseOfficial, "TABLE");
+    // otherPhaseOfficial is the TABLE official of phase two (assignment-other-phase).
     const phaseTwoRing = await get(`/api/v1/live-rings/by-token/${RING_TOKEN}`, otherPhaseOfficial);
     expect(phaseTwoRing.statusCode).toBe(200);
-    expect((phaseTwoRing.json().bouts as { id: string }[]).map((bout) => bout.id)).toEqual(["bout-two"]);
-    expect((await get("/api/v1/live-bouts/bout-two", otherPhaseOfficial)).statusCode).toBe(200);
-    expect((await get("/api/v1/live-bouts/bout-one", otherPhaseOfficial)).statusCode).toBe(403);
+    expect((phaseTwoRing.json().bouts as { id: string }[]).map((bout) => bout.id)).toEqual([boutTwo]);
+    expect((await get(`/api/v1/live-bouts/${boutTwo}`, otherPhaseOfficial)).statusCode).toBe(200);
+    expect((await get(`/api/v1/live-bouts/${boutOne}`, otherPhaseOfficial)).statusCode).toBe(403);
 
-    expect((await get("/api/v1/live-bouts/bout-two", admin)).statusCode).toBe(200);
-    expect((await get("/api/v1/live-bouts/bout-two", systemAdmin)).statusCode).toBe(200);
+    expect((await get(`/api/v1/live-bouts/${boutTwo}`, admin)).statusCode).toBe(200);
+    expect((await get(`/api/v1/live-bouts/${boutTwo}`, systemAdmin)).statusCode).toBe(200);
   });
 
   it("rechecks live assignments before every scoring write and rejects role changes", async () => {
@@ -226,7 +179,7 @@ describe("database-mode ring access", () => {
     const headers = { "x-ring-token": RING_TOKEN, "x-device-id": DEVICE_ID };
     const exchange = await ctx.app.inject({
       method: "POST",
-      url: "/api/v1/live-bouts/bout-one/exchanges",
+      url: `/api/v1/live-bouts/${boutOne}/exchanges`,
       headers: { ...bearer(table), ...headers },
       payload: { clientExchangeId: "first", kind: "EXCHANGE", leftPoints: 1, rightPoints: 0 },
     });
@@ -234,11 +187,11 @@ describe("database-mode ring access", () => {
 
     await ctx.database.updateTable("ScheduledAssignment").set({ role: "FIGHTER" }).where("id", "=", "assignment-table").execute();
     const revokedWrites = [
-      ["/api/v1/live-bouts/bout-one/exchanges", { clientExchangeId: "second", kind: "EXCHANGE", leftPoints: 1, rightPoints: 0 }],
-      ["/api/v1/live-bouts/bout-one/undo", { expectedExchangeId: exchange.json().exchange.id }],
-      ["/api/v1/live-bouts/bout-one/start", undefined],
-      ["/api/v1/live-bouts/bout-one/finish", undefined],
-      ["/api/v1/live-bouts/bout-one/clock", { seconds: 10, running: true }],
+      [`/api/v1/live-bouts/${boutOne}/exchanges`, { clientExchangeId: "second", kind: "EXCHANGE", leftPoints: 1, rightPoints: 0 }],
+      [`/api/v1/live-bouts/${boutOne}/undo`, { expectedExchangeId: exchange.json().exchange.id }],
+      [`/api/v1/live-bouts/${boutOne}/start`, undefined],
+      [`/api/v1/live-bouts/${boutOne}/finish`, undefined],
+      [`/api/v1/live-bouts/${boutOne}/clock`, { seconds: 10, running: true }],
     ] as const;
     for (const [url, payload] of revokedWrites) {
       const response = await ctx.app.inject({
@@ -249,7 +202,7 @@ describe("database-mode ring access", () => {
       });
       expect(response.statusCode, url).toBe(403);
     }
-    expect((await ctx.database.selectFrom("LiveExchange").selectAll().where("boutId", "=", "bout-one").execute())).toHaveLength(1);
+    expect((await ctx.database.selectFrom("LiveExchange").selectAll().where("boutId", "=", boutOne).execute())).toHaveLength(1);
   });
 
   it("allows tournament admins and system admins to claim and score any scheduled phase", async () => {
@@ -265,7 +218,7 @@ describe("database-mode ring access", () => {
       expect(claimed.statusCode).toBe(200);
       const response = await ctx.app.inject({
         method: "POST",
-        url: "/api/v1/live-bouts/bout-two/exchanges",
+        url: `/api/v1/live-bouts/${boutTwo}/exchanges`,
         headers: {
           ...bearer(user),
           "x-ring-token": RING_TOKEN,

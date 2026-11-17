@@ -6,8 +6,10 @@ import {
   type ApiEntry,
   type ApiEvent,
   type ApiEventMutationResult,
+  type ApiLiveRing,
   type ApiMatch,
   type ApiRound,
+  type ApiRingRules,
   type ApiRuleset,
   type ApiUser,
   type ApiSkill,
@@ -20,6 +22,22 @@ import {
 } from "@hema/event-admin-api";
 import "./event-view-app.css";
 import "../pool-results/pool-results.js";
+import { t } from "../../i18n/i18n.js";
+import {
+  readRingColors,
+  renderLiveRings,
+  rotateKeeperConfirmMessage,
+  rotateScoreboardConfirmMessage,
+  scoreKeeperBaseUrl,
+} from "./live-rings.js";
+import {
+  parseRingRulesForm,
+  readRingRulesForm,
+  renderRingRulesForm,
+  ringRulesFormValues,
+  type RingRulesFeedback,
+  type RingRulesFormValues,
+} from "./ring-rules-form.js";
 
 type EventTab = "tournaments" | "arenas" | "officials" | "rulesets";
 type TournamentTab = "entries" | "officials" | "stages" | "admins" | "live";
@@ -59,6 +77,23 @@ function restoreScrollState(scrollState: ScrollState): void {
   }
 }
 
+/** Ring links, colours and ring rules of the activated live tournament (live tab). */
+interface LiveRingAdminState {
+  /** Null while loading, or when loading failed (`error` says why). */
+  rings: ApiLiveRing[] | null;
+  rules: ApiRingRules | null;
+  /** What the rules form shows: the saved rules, or the admin's rejected input. */
+  rulesValues: RingRulesFormValues | null;
+  rulesFeedback: RingRulesFeedback | null;
+  busy: boolean;
+  notice: string | null;
+  error: string | null;
+}
+
+function emptyLiveRingAdmin(): LiveRingAdminState {
+  return { rings: null, rules: null, rulesValues: null, rulesFeedback: null, busy: false, notice: null, error: null };
+}
+
 interface VolunteerViewState {
   scope: "event" | "tournament";
   eventId: string;
@@ -77,6 +112,7 @@ interface AppState {
   databaseLiveResults: ApiDatabaseLiveResult[] | null;
   databaseLiveLoading: boolean;
   databaseLiveError: string | null;
+  liveRingAdmin: LiveRingAdminState;
   selectedEventId: string | null;
   selectedTournamentId: string | null;
   selectedStageId: string | null;
@@ -112,6 +148,7 @@ const state: AppState = {
   databaseLiveResults: null,
   databaseLiveLoading: false,
   databaseLiveError: null,
+  liveRingAdmin: emptyLiveRingAdmin(),
   selectedEventId: null,
   selectedTournamentId: null,
   selectedStageId: null,
@@ -211,6 +248,12 @@ function onAppClick(event: MouseEvent): void {
     case "project-database-live":
       void projectDatabaseLive();
       return;
+    case "rotate-live-ring-keeper-link":
+      if (target.dataset.ringId) void rotateLiveRingKeeperLink(target.dataset.ringId);
+      return;
+    case "rotate-live-ring-scoreboard-link":
+      if (target.dataset.ringId) void rotateLiveRingScoreboardLink(target.dataset.ringId);
+      return;
     case "add-live-correction-exchange": {
       const form = target.closest<HTMLFormElement>("[data-action=\"database-live-correction\"]");
       form?.querySelector("[data-correction-exchanges]")?.insertAdjacentHTML("beforeend", renderCorrectionExchangeRow({
@@ -308,6 +351,8 @@ function onAppSubmit(event: SubmitEvent): void {
     && form.dataset.action !== "tournament-admin-add"
     && form.dataset.action !== "match-schedule"
     && form.dataset.action !== "database-live-correction"
+    && form.dataset.action !== "live-ring-colors"
+    && form.dataset.action !== "live-ring-rules"
   )) {
     return;
   }
@@ -321,6 +366,10 @@ function onAppSubmit(event: SubmitEvent): void {
     void submitMatchSchedule(form);
   } else if (form.dataset.action === "database-live-correction") {
     void submitDatabaseLiveCorrection(form);
+  } else if (form.dataset.action === "live-ring-colors") {
+    void submitLiveRingColors(form);
+  } else if (form.dataset.action === "live-ring-rules") {
+    void submitLiveRingRules(form);
   } else {
     void submitTournamentAdminAdd(form);
   }
@@ -1908,6 +1957,7 @@ function selectTournament(id?: string): void {
   state.databaseLiveResults = null;
   state.databaseLiveLoading = false;
   state.databaseLiveError = null;
+  state.liveRingAdmin = emptyLiveRingAdmin();
   render();
   if (state.tournamentTab === "admins") void loadTournamentAdmins();
   if (state.tournamentTab === "live") void loadDatabaseLiveStatus();
@@ -1953,6 +2003,7 @@ function setTournamentTab(tab: TournamentTab): void {
   state.tournamentTab = tab;
   state.tournamentAdminError = null;
   state.databaseLiveError = null;
+  state.liveRingAdmin = { ...state.liveRingAdmin, notice: null, error: null, rulesFeedback: null };
   render();
   if (tab === "admins") void loadTournamentAdmins();
   if (tab === "live") void loadDatabaseLiveStatus();
@@ -2005,6 +2056,7 @@ function renderDatabaseLive(): string {
       <div class="info-card-subtitle">${live.rings} ringen · ${live.bouts} bouts</div>
       <button type="button" class="button secondary" data-action="project-database-live">Planning veilig bijwerken</button>
     </div>
+    ${renderLiveRingAdmin()}
     ${renderDatabaseLiveResults()}
   `;
 }
@@ -2093,10 +2145,14 @@ async function loadDatabaseLiveStatus(): Promise<void> {
   render();
   try {
     const status = await api.databaseLiveStatus(tournament.id);
-    const results = status.active ? await api.databaseLiveResults(tournament.id) : [];
+    const liveTournamentId = status.active ? status.liveTournamentId : null;
+    const [results, ringAdmin]: [ApiDatabaseLiveResult[], LiveRingAdminState] = liveTournamentId
+      ? await Promise.all([api.databaseLiveResults(tournament.id), fetchLiveRingAdmin(liveTournamentId)])
+      : [[], emptyLiveRingAdmin()];
     if (currentTournament(currentEvent())?.id !== tournament.id) return;
     state.databaseLiveStatus = status;
     state.databaseLiveResults = results;
+    state.liveRingAdmin = ringAdmin;
   } catch (error) {
     if (currentTournament(currentEvent())?.id !== tournament.id) return;
     state.databaseLiveError = toErrorMessage(error);
@@ -2116,7 +2172,9 @@ async function activateDatabaseLive(): Promise<void> {
   render();
   try {
     const result = await api.activateDatabaseLive(tournament.id);
+    const ringAdmin = await fetchLiveRingAdmin(result.id);
     if (currentTournament(currentEvent())?.id !== tournament.id) return;
+    state.liveRingAdmin = ringAdmin;
     state.databaseLiveStatus = {
       active: true,
       liveTournamentId: result.id,
@@ -2145,8 +2203,9 @@ async function projectDatabaseLive(): Promise<void> {
   try {
     const projection = await api.projectDatabaseLive(liveTournamentId);
     if (currentTournament(currentEvent())?.id !== tournamentId) return;
-    const results = await api.databaseLiveResults(tournamentId);
+    const [results, rings] = await Promise.all([api.databaseLiveResults(tournamentId), api.liveRings(liveTournamentId)]);
     if (currentTournament(currentEvent())?.id !== tournamentId) return;
+    state.liveRingAdmin = { ...state.liveRingAdmin, rings, error: null };
     state.databaseLiveStatus = {
       active: true,
       liveTournamentId,
@@ -2239,6 +2298,111 @@ async function submitDatabaseLiveCorrection(form: HTMLFormElement): Promise<void
       render();
     }
   }
+}
+
+function renderLiveRingAdmin(): string {
+  const ringAdmin = state.liveRingAdmin;
+  const rings = renderLiveRings({
+    rings: ringAdmin.rings,
+    scoreKeeperUrl: scoreKeeperBaseUrl(app.getAttribute("score-keeper-url"), window.location.origin),
+    busy: ringAdmin.busy,
+    notice: ringAdmin.notice,
+    error: ringAdmin.error,
+  });
+  const rules = ringAdmin.rulesValues ? renderRingRulesForm(ringAdmin.rulesValues, ringAdmin.rulesFeedback, ringAdmin.busy) : "";
+  return `${rings}${rules}`;
+}
+
+/** Rings and ring rules together; a failure is kept in the ring section instead of hiding the whole live tab. */
+async function fetchLiveRingAdmin(liveTournamentId: string): Promise<LiveRingAdminState> {
+  try {
+    const [rings, rules] = await Promise.all([api.liveRings(liveTournamentId), api.liveRingRules(liveTournamentId)]);
+    return { ...emptyLiveRingAdmin(), rings, rules, rulesValues: ringRulesFormValues(rules) };
+  } catch (error) {
+    return { ...emptyLiveRingAdmin(), error: toErrorMessage(error) };
+  }
+}
+
+type LiveRingActionOutcome = Partial<Pick<LiveRingAdminState, "rings" | "notice" | "error">>;
+
+/** Runs one ring action with the ring section busy; drops the outcome when another tournament was opened meanwhile. */
+async function runLiveRingAction(work: (liveTournamentId: string) => Promise<LiveRingActionOutcome>): Promise<void> {
+  const tournamentId = currentTournament(currentEvent())?.id;
+  const liveTournamentId = state.databaseLiveStatus?.liveTournamentId;
+  if (!tournamentId || !liveTournamentId || state.liveRingAdmin.busy) return;
+  state.liveRingAdmin = { ...state.liveRingAdmin, busy: true, notice: null, error: null, rulesFeedback: null };
+  render();
+  let outcome: LiveRingActionOutcome;
+  try {
+    outcome = await work(liveTournamentId);
+  } catch (error) {
+    outcome = { error: toErrorMessage(error) };
+  }
+  if (currentTournament(currentEvent())?.id !== tournamentId) return;
+  state.liveRingAdmin = { ...state.liveRingAdmin, ...outcome, busy: false };
+  render();
+}
+
+function rotateLiveRingKeeperLink(ringId: string): Promise<void> {
+  return runLiveRingAction(async (liveTournamentId) => {
+    // Confirm against fresh rings, so the message names whoever keeps the ring now.
+    const fresh = await api.liveRings(liveTournamentId);
+    const ring = fresh.find((candidate) => candidate.id === ringId);
+    if (!ring) return { rings: fresh, error: t("liveRings.ringGone") };
+    if (!window.confirm(rotateKeeperConfirmMessage(ring))) return { rings: fresh };
+    await api.rotateLiveRingKeeperToken(ring.id);
+    return { rings: await api.liveRings(liveTournamentId), notice: t("liveRings.newLinkMade", { ring: ring.name }) };
+  });
+}
+
+function rotateLiveRingScoreboardLink(ringId: string): Promise<void> {
+  const ring = state.liveRingAdmin.rings?.find((candidate) => candidate.id === ringId);
+  if (!ring || state.liveRingAdmin.busy || !window.confirm(rotateScoreboardConfirmMessage(ring))) return Promise.resolve();
+  return runLiveRingAction(async (liveTournamentId) => {
+    await api.rotateLiveRingScoreboardToken(ring.id);
+    return { rings: await api.liveRings(liveTournamentId), notice: t("liveRings.newLinkMade", { ring: ring.name }) };
+  });
+}
+
+function submitLiveRingColors(form: HTMLFormElement): Promise<void> {
+  const ringId = form.dataset.ringId;
+  const colors = readRingColors(new FormData(form));
+  return runLiveRingAction(async () => {
+    const ring = state.liveRingAdmin.rings?.find((candidate) => candidate.id === ringId);
+    if (!ring) return { error: t("liveRings.ringGone") };
+    if (!colors) return { error: t("liveRings.invalidColor") };
+    const saved = await api.setLiveRingColors(ring.id, colors);
+    return {
+      rings: (state.liveRingAdmin.rings ?? []).map((candidate) => (candidate.id === ring.id ? { ...candidate, ...saved } : candidate)),
+      notice: t("liveRings.colorsSaved", { ring: ring.name }),
+    };
+  });
+}
+
+async function submitLiveRingRules(form: HTMLFormElement): Promise<void> {
+  const tournamentId = currentTournament(currentEvent())?.id;
+  const liveTournamentId = state.databaseLiveStatus?.liveTournamentId;
+  const current = state.liveRingAdmin.rules;
+  if (!tournamentId || !liveTournamentId || !current || state.liveRingAdmin.busy) return;
+  const values = readRingRulesForm(new FormData(form));
+  const parsed = parseRingRulesForm(values, current);
+  if (!parsed.ok) {
+    state.liveRingAdmin = { ...state.liveRingAdmin, rulesValues: values, rulesFeedback: { kind: "invalid", fields: parsed.invalidFields } };
+    render();
+    return;
+  }
+  state.liveRingAdmin = { ...state.liveRingAdmin, rulesValues: values, rulesFeedback: null, notice: null, error: null, busy: true };
+  render();
+  let update: Partial<LiveRingAdminState>;
+  try {
+    const rules = await api.saveLiveRingRules(liveTournamentId, parsed.rules);
+    update = { rules, rulesValues: ringRulesFormValues(rules), rulesFeedback: { kind: "saved" } };
+  } catch (error) {
+    update = { rulesFeedback: { kind: "error", message: toErrorMessage(error) } };
+  }
+  if (currentTournament(currentEvent())?.id !== tournamentId) return;
+  state.liveRingAdmin = { ...state.liveRingAdmin, ...update, busy: false };
+  render();
 }
 
 async function submitTournamentAdminAdd(form: HTMLFormElement): Promise<void> {

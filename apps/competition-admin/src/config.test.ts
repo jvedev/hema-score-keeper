@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { apiBaseUrl, scoreKeeperAppUrl } from "./config";
+import { apiBaseUrl } from "./config";
 
 describe("apiBaseUrl", () => {
   it("uses the configured API URL", () => {
@@ -14,20 +14,5 @@ describe("apiBaseUrl", () => {
 
   it("ignores surrounding whitespace", () => {
     expect(apiBaseUrl(" /backend/api/v1 ")).toBe("/backend/api/v1");
-  });
-});
-
-describe("scoreKeeperAppUrl", () => {
-  it("uses the configured URL without trailing slashes", () => {
-    expect(scoreKeeperAppUrl(" https://keep.example.org/ ", false, "https://admin.example.org")).toBe("https://keep.example.org");
-  });
-
-  it("falls back to the score keeper dev app path", () => {
-    expect(scoreKeeperAppUrl(undefined, true, "http://localhost:5175")).toBe("http://localhost:5180/score-keeper");
-    expect(scoreKeeperAppUrl("  ", true, "http://localhost:5175")).toBe("http://localhost:5180/score-keeper");
-  });
-
-  it("falls back to this site's score keeper path in a build", () => {
-    expect(scoreKeeperAppUrl(undefined, false, "https://admin.example.org")).toBe("https://admin.example.org/score-keeper");
   });
 });

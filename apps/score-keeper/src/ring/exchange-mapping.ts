@@ -19,7 +19,7 @@ export interface LiveExchangeInput {
  * Fighter A is the ring's left fighter and fighter B the right one.
  *
  * - `hit`, `double`, `afterblow`: the points the operator picked for each fighter, as they are. Which rule applies
- *   (is a double worth anything, is the afterblow counted) is left to the sheet, which counts a both-score exchange as a
+ *   (is a double worth anything, is the afterblow counted) is left to the backend, which counts a both-score exchange as a
  *   double. An afterblow also carries who hit first.
  * - 0/0 (`no-score`, or any exchange where nobody got points) is not registered.
  * - `warning` with points deducted: a `DEDUCTION`, negative points for that fighter. A warning without a deduction stays local.

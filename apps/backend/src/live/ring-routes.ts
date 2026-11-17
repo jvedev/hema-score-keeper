@@ -5,6 +5,7 @@ import { requireUser } from "../bouts/bout-routes.js";
 import type { BackendDatabase, DbExecutor } from "../db.js";
 import { ensureObject, HttpError, requireString } from "../http.js";
 import { displayOf, rulesOf, type RoundExchange } from "./bout-display.js";
+import { poolNameIn, poolNamesOf, sameBoutPool } from "./bout-pools.js";
 import { ringBouts } from "./bout-routes.js";
 import { requireTournamentAdmin } from "./live-routes.js";
 import { requireLiveRingAccess } from "./ring-access.js";
@@ -38,12 +39,12 @@ export function registerRingRoutes(app: FastifyInstance, database: Kysely<Backen
     const accessiblePhases = await requireLiveRingAccess(database, ring.id, user);
     const tournament = await database
       .selectFrom("LiveTournament")
-      .select(["id", "name", "mode", "ruleset"])
+      .select(["id", "name", "ruleset"])
       .where("id", "=", ring.tournamentId)
       .executeTakeFirstOrThrow();
     return {
       ring: publicRing(ring),
-      tournament: { id: tournament.id, name: tournament.name, mode: tournament.mode },
+      tournament: { id: tournament.id, name: tournament.name },
       rules: rulesOf(tournament.ruleset),
       bouts: await ringBouts(database, ring.id, app.now(), accessiblePhases ?? undefined),
       activeKeeper: await activeKeeperOf(database, ring),
@@ -164,6 +165,7 @@ async function scoreboardView(database: Kysely<BackendDatabase>, ring: Scoreboar
   const current = bouts.find((bout) => bout.status === "RUNNING");
   const pending = bouts.filter((bout) => bout.status === "PENDING");
   const poolOf = pending[0] ?? current;
+  const poolNames = await poolNamesOf(database, poolOf ? [poolOf] : []);
   const hasRounds = rules.format.rounds > 1;
   return {
     serverTime: now.toISOString(),
@@ -174,9 +176,9 @@ async function scoreboardView(database: Kysely<BackendDatabase>, ring: Scoreboar
     after: names(pending[1]),
     pool: poolOf
       ? {
-          name: poolOf.sheetName,
+          name: poolNameIn(poolNames, poolOf),
           bouts: bouts
-            .filter((bout) => bout.sheetName === poolOf.sheetName)
+            .filter((bout) => sameBoutPool(bout, poolOf))
             .map((bout) => {
               const shown = bout.status === "PENDING" ? null : display(bout);
               const result = shown ? (hasRounds ? shown.roundsWon : shown.score) : null;

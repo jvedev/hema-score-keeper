@@ -1,10 +1,8 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { sql } from "kysely";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { scoreOf } from "../src/live/bout-score.js";
 import { bearer, createTestContext, insertUser, YieldAfterEachQuery, type TestContext, type TestUser } from "./helpers.js";
+import { createLiveTournament, type LiveFixture } from "./live-fixtures.js";
 
 describe("scoreOf", () => {
   it("scoreOf counts doubles as zero", () => {
@@ -35,26 +33,27 @@ const DEVICE_ID = "device-1";
 describe("live bouts", () => {
   let ctx: TestContext;
   let user: TestUser;
+  let live: LiveFixture;
   let boutId: string;
   let ringId: string;
 
-  async function setup(plugins: YieldAfterEachQuery[] = [], googleSpreadsheetId: string | null = null): Promise<void> {
+  async function setup(plugins: YieldAfterEachQuery[] = []): Promise<void> {
     ctx = await createTestContext({ plugins });
+    const admin = await insertUser(ctx.database, { id: "organizer", role: "USER" });
     user = await insertUser(ctx.database, { id: "scorer", role: "USER" });
-    await ctx.database
-      .insertInto("LiveTournament")
-      .values({ id: "T", name: "T", mode: "SHEET", layoutVersion: "v3", googleSpreadsheetId, createdByUserId: user.id, createdAt: "2026-10-25T10:00:00.000Z" })
-      .execute();
-    ringId = "R";
-    await ctx.database.insertInto("LiveRing").values({ id: ringId, tournamentId: "T", name: "Ring 1", order: 1, keeperToken: RING_TOKEN }).execute();
-    boutId = "B1";
-    await ctx.database
-      .insertInto("LiveBout")
-      .values({
-        id: boutId, tournamentId: "T", ringId, order: 1, label: "Match 1", sheetName: "Pool_1", headerCell: "B25",
-        fighterLeft: "Ronald", fighterRight: "Diego", status: "PENDING", startedAt: null, finishedAt: null,
-      })
-      .execute();
+    const ronald = await insertUser(ctx.database, { id: "ronald", role: "USER", name: "Ronald" });
+    const diego = await insertUser(ctx.database, { id: "diego", role: "USER", name: "Diego" });
+    live = await createLiveTournament(ctx, {
+      admin,
+      rings: [{ key: "one", name: "Ring 1", keeperToken: RING_TOKEN }],
+      bouts: [
+        { key: "main", ring: "one", left: ronald, right: diego },
+        { key: "next", ring: "one", left: diego, right: ronald },
+      ],
+      scorers: [user],
+    });
+    ringId = live.ringId("one");
+    boutId = live.boutId("main");
     // Writes need the ring's keeper: claim the ring with this device, then every write sends the headers.
     const claimed = await ctx.app.inject({
       method: "POST", url: `/api/v1/live-rings/by-token/${RING_TOKEN}/claim`, payload: { deviceId: DEVICE_ID }, headers: bearer(user),
@@ -63,12 +62,10 @@ describe("live bouts", () => {
   }
 
   beforeEach(async () => {
-    process.env.LIVE_DATA_DIR = mkdtempSync(path.join(tmpdir(), "live-bouts-"));
     await setup();
   });
 
   afterEach(async () => {
-    delete process.env.LIVE_DATA_DIR;
     await ctx.app.close();
   });
 
@@ -192,42 +189,11 @@ describe("live bouts", () => {
     expect(await rows()).toHaveLength(0);
   });
 
-  it("exchange enqueues sync", async () => {
-    await exchange("c1", 1, 0);
-    const jobs = await ctx.database.selectFrom("LiveSyncJob").selectAll().where("boutId", "=", boutId).execute();
-    expect(jobs.map((job) => [job.target, job.status])).toEqual([["LOCAL", "PENDING"]]);
-  });
-
-  it("exchange and undo enqueue sync, including GOOGLE when configured", async () => {
-    await ctx.app.close();
-    await setup([], "sheet-id");
-    const pending = async () =>
-      (await ctx.database.selectFrom("LiveSyncJob").select(["target", "status"]).where("boutId", "=", boutId).orderBy("target").execute()).length;
-    const clear = () => ctx.database.deleteFrom("LiveSyncJob").execute();
-    await exchange("c1", 1, 0);
-    expect(await pending()).toBe(2);
-    await clear();
-    expect((await undo()).statusCode).toBe(200);
-    expect(await pending()).toBe(2);
-  });
-
-  it("start and finish create no sync job (the sheet depends only on exchanges)", async () => {
-    await ctx.app.close();
-    await setup([], "sheet-id");
-    const jobs = () => ctx.database.selectFrom("LiveSyncJob").selectAll().execute();
-    expect((await post(`/api/v1/live-bouts/${boutId}/start`)).statusCode).toBe(200);
-    expect(await jobs()).toEqual([]);
-    expect((await post(`/api/v1/live-bouts/${boutId}/finish`)).statusCode).toBe(200);
-    expect(await jobs()).toEqual([]);
-    const bout = await ctx.database.selectFrom("LiveBout").selectAll().where("id", "=", boutId).executeTakeFirstOrThrow();
-    expect(bout.status).toBe("DONE");
-  });
-
-  it("a failed write leaves no exchange and no sync job", async () => {
-    await ctx.database.deleteFrom("LiveTournament").execute().catch(() => undefined);
+  it("a write to a removed tournament is a 404 and stores nothing", async () => {
+    await ctx.database.deleteFrom("LiveTournament").execute();
     // Bout is gone with the tournament (cascade): the request is a 404 and nothing is stored.
     expect((await exchange("c1", 1, 0)).statusCode).toBe(404);
-    expect(await ctx.database.selectFrom("LiveSyncJob").selectAll().execute()).toHaveLength(0);
+    expect(await ctx.database.selectFrom("LiveExchange").selectAll().execute()).toHaveLength(0);
   });
 
   it("an exchange on a pending bout starts it", async () => {
@@ -292,26 +258,20 @@ describe("live bouts", () => {
   });
 
   it("lists a ring's bouts in order with score and status, and the tournament view carries scores", async () => {
-    await ctx.database
-      .insertInto("LiveBout")
-      .values({
-        id: "B0", tournamentId: "T", ringId, order: 0, label: "First", sheetName: "Pool_1", headerCell: "H25",
-        fighterLeft: "A", fighterRight: "B", status: "PENDING", startedAt: null, finishedAt: null,
-      })
-      .execute();
+    const nextId = live.boutId("next");
     await exchange("c1", 2, 0);
     await exchange("c2", 0, 1);
     const list = await ctx.app.inject({ method: "GET", url: `/api/v1/live-rings/${ringId}/bouts`, headers: bearer(user) });
     const bouts = list.json().bouts as { id: string; status: string; score: unknown }[];
-    expect(bouts.map((bout) => bout.id)).toEqual(["B0", "B1"]);
-    expect(bouts[1]).toMatchObject({ status: "RUNNING", score: { left: 2, right: 1, doubles: 0 } });
+    expect(bouts.map((bout) => bout.id)).toEqual([boutId, nextId]);
+    expect(bouts[0]).toMatchObject({ status: "RUNNING", score: { left: 2, right: 1, doubles: 0 } });
     // An unscored bout has a null score, on both routes; a scored one the same { left, right, doubles } shape.
-    expect(bouts[0]!.score).toBeNull();
-    const view = await ctx.app.inject({ method: "GET", url: "/api/v1/live-tournaments/T", headers: bearer(user) });
+    expect(bouts[1]!.score).toBeNull();
+    const view = await ctx.app.inject({ method: "GET", url: `/api/v1/live-tournaments/${live.liveTournamentId}`, headers: bearer(user) });
     const viewBouts = view.json().bouts as Record<string, unknown>[];
     const byId = new Map(viewBouts.map((bout) => [bout.id, bout]));
-    expect(byId.get("B1")!.score).toEqual({ left: 2, right: 1, doubles: 0 });
-    expect(byId.get("B0")!.score).toBeNull();
+    expect(byId.get(boutId)!.score).toEqual({ left: 2, right: 1, doubles: 0 });
+    expect(byId.get(nextId)!.score).toBeNull();
     expect(viewBouts.every((bout) => !("scoreLeft" in bout) && !("scoreRight" in bout))).toBe(true);
   });
 
@@ -336,10 +296,11 @@ describe("live bouts", () => {
     expect(await rows()).toHaveLength(1);
   });
 
-  it("a failure after the exchange insert rolls back the exchange and the bout status", async () => {
-    await sql`DROP TABLE LiveSyncJob`.execute(ctx.database);
+  it("a failure while storing the exchange rolls back the bout status", async () => {
+    await sql`CREATE TRIGGER fail_exchange AFTER INSERT ON LiveExchange BEGIN SELECT RAISE(ABORT, 'boom'); END`.execute(ctx.database);
     const response = await exchange("c1", 1, 0);
-    expect(response.statusCode).toBeGreaterThanOrEqual(500);
+    // The trigger's abort is a constraint error, which the API reports as a conflict.
+    expect(response.statusCode).toBe(409);
     expect(await rows()).toHaveLength(0);
     const bout = await ctx.database.selectFrom("LiveBout").selectAll().where("id", "=", boutId).executeTakeFirstOrThrow();
     expect(bout.status).toBe("PENDING");

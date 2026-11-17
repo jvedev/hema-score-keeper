@@ -1,19 +1,12 @@
-import type { RingRules } from "@hema/competition-domain";
 import type {
   AdminUser,
   BoutResponse,
   Club,
   CompetitionAdminEntry,
   AdminCompetitionDetail,
-  AmbiguousBoutIdentity,
   CompetitionDetail,
   CompetitionSummary,
   HistoryBout,
-  ImportReport,
-  LiveRingLink,
-  LiveTournamentDetail,
-  LiveTournamentFighterLink,
-  LiveTournamentSummary,
   NeedsYouResponse,
   NewInvite,
   ObjectionResolution,
@@ -21,7 +14,6 @@ import type {
   PersonSearchResult,
   SignupDecisionResult,
   StandingRow,
-  SyncTarget,
 } from "./api-types";
 import { ApiSession, type AuthResponse, type Session as ApiSessionState } from "@hema/api-session";
 
@@ -84,40 +76,6 @@ export class AdminClient {
   transferOwnership = (id: string, userId: string) => this.#send<CompetitionAdminEntry[]>("POST", `/competitions/${e(id)}/owner`, { userId });
   searchPeople = (query: string) => this.#send<PersonSearchResult[]>("GET", `/people?q=${e(query)}`);
   clubs = () => this.#send<Club[]>("GET", "/clubs");
-
-  liveTournaments = async () => (await this.#send<{ tournaments: LiveTournamentSummary[] }>("GET", "/live-tournaments")).tournaments;
-  createLiveTournament = (input: { name: string; googleSpreadsheetId?: string }) => this.#send<{ id: string }>("POST", "/live-tournaments", input);
-  liveTournament = (id: string) => this.#send<LiveTournamentDetail>("GET", `/live-tournaments/${e(id)}`);
-  liveFighters = async (id: string) =>
-    (await this.#send<{ fighters: LiveTournamentFighterLink[] }>("GET", `/live-tournaments/${e(id)}/fighters`)).fighters;
-  ambiguousLiveBouts = async (id: string) =>
-    (await this.#send<{ bouts: AmbiguousBoutIdentity[] }>("GET", `/live-tournaments/${e(id)}/ambiguous-bouts`)).bouts;
-  createLiveFighterIdentity = async (id: string, name: string) =>
-    (await this.#send<{ fighter: LiveTournamentFighterLink }>("POST", `/live-tournaments/${e(id)}/fighters/identities`, { name })).fighter;
-  assignLiveBoutFighter = (tournamentId: string, boutId: string, side: "LEFT" | "RIGHT", fighterId: string | null) =>
-    this.#send<{ fighterId: string | null; ambiguous: boolean }>(
-      "PUT",
-      `/live-tournaments/${e(tournamentId)}/bouts/${e(boutId)}/sides/${side}/identity`,
-      { fighterId },
-    );
-  linkLiveFighter = async (tournamentId: string, fighterId: string, userId: string | null) =>
-    (await this.#send<{ fighter: LiveTournamentFighterLink }>(
-      "PUT",
-      `/live-tournaments/${e(tournamentId)}/fighters/${e(fighterId)}/account`,
-      { userId },
-    )).fighter;
-  saveLiveRules = async (id: string, rules: RingRules) => (await this.#send<{ rules: RingRules }>("PUT", `/live-tournaments/${e(id)}/rules`, rules)).rules;
-  /** Sends the .xlsx as the raw request body. */
-  importWorkbook = (id: string, file: Blob) => this.#send<ImportReport>("POST", `/live-tournaments/${e(id)}/import/xlsx`, file);
-  importGoogle = (id: string) => this.#send<ImportReport>("POST", `/live-tournaments/${e(id)}/import/google`);
-  syncStatus = async (id: string) => (await this.#send<{ targets: SyncTarget[] }>("GET", `/live-tournaments/${e(id)}/sync`)).targets;
-  /** The backup needs the sign-in header, so it is fetched (not linked) and saved from the blob. */
-  downloadBackup = (id: string) => this.#api.send<Blob>("GET", `/live-tournaments/${e(id)}/backup.xlsx`, undefined, true, { responseType: "blob" });
-  liveRings = async (id: string) => (await this.#send<{ rings: LiveRingLink[] }>("GET", `/live-tournaments/${e(id)}/rings`)).rings;
-  rotateScoreboardToken = async (ringId: string) => (await this.#send<{ ring: LiveRingLink }>("POST", `/live-rings/${e(ringId)}/rotate-scoreboard-token`)).ring;
-  setRingColors = async (ringId: string, colors: { leftColor: string; rightColor: string }) =>
-    (await this.#send<{ ring: LiveRingLink }>("PUT", `/live-rings/${e(ringId)}/colors`, colors)).ring;
-  rotateRingToken = async (ringId: string) => (await this.#send<{ ring: LiveRingLink }>("POST", `/live-rings/${e(ringId)}/rotate-token`)).ring;
 
   #send<T>(method: string, path: string, body?: unknown, authenticated = true): Promise<T> {
     return this.#api.send<T>(method, path, body, authenticated);

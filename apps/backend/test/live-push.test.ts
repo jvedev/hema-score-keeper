@@ -1,62 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { bearer, createTestContext, insertUser, type TestContext, type TestUser } from "./helpers.js";
+import { createLiveTournament } from "./live-fixtures.js";
 import { queueOnDeckNotifications, runPushOnce, type PushSender } from "../src/live/push-notifications.js";
 
 describe("live tournament push notifications", () => {
   let ctx: TestContext;
   let account: TestUser;
-  let tournamentId: string;
+  let boutId: string;
 
   beforeEach(async () => {
     ctx = await createTestContext();
-    account = await insertUser(ctx.database, { id: "fighter-account", role: "USER" });
-    const response = await ctx.app.inject({
-      method: "POST",
-      url: "/api/v1/live-tournaments",
-      headers: bearer(account),
-      payload: { name: "Open" },
+    const admin = await insertUser(ctx.database, { id: "organizer", role: "USER" });
+    account = await insertUser(ctx.database, { id: "fighter-account", role: "USER", name: "Eva" });
+    const opponent = await insertUser(ctx.database, { id: "opponent", role: "USER", name: "Opponent" });
+    const live = await createLiveTournament(ctx, {
+      admin,
+      rings: [{ key: "a", name: "Ring A" }],
+      bouts: [{ key: "first", ring: "a", left: account, right: opponent }],
     });
-    tournamentId = (response.json() as { id: string }).id;
-    await ctx.database.insertInto("LiveRing").values({
-      id: "ring-1",
-      tournamentId,
-      name: "Ring A",
-      order: 1,
-      keeperToken: "keeper-token",
-      activeDeviceId: null,
-      activeUserId: null,
-      activeSince: null,
-      scoreboardToken: "scoreboard-token",
-      leftColor: "#21c15b",
-      rightColor: "#2f7dfa",
-    }).execute();
-    await ctx.database.insertInto("LiveTournamentFighter").values({
-      id: "fighter-1",
-      tournamentId,
-      name: "Eva",
-      nameKey: "eva",
-      userId: account.id,
-      active: 1,
-      ambiguous: 0,
-      createdAt: "2026-10-28T10:00:00.000Z",
-      updatedAt: "2026-10-28T10:00:00.000Z",
-    }).execute();
-    await ctx.database.insertInto("LiveBout").values({
-      id: "bout-1",
-      tournamentId,
-      ringId: "ring-1",
-      order: 1,
-      label: "Match 1",
-      sheetName: "Pool_1",
-      headerCell: "B25",
-      fighterLeft: "Eva",
-      fighterRight: "Opponent",
-      fighterLeftId: "fighter-1",
-      fighterRightId: null,
-      status: "PENDING",
-      startedAt: null,
-      finishedAt: null,
-    }).execute();
+    boutId = live.boutId("first");
     await ctx.database.insertInto("LivePushSubscription").values({
       id: "subscription-1",
       userId: account.id,
@@ -88,7 +50,7 @@ describe("live tournament push notifications", () => {
     });
     expect(JSON.parse(send.mock.calls[0]?.[1] ?? "{}")).toMatchObject({
       title: "You're on deck",
-      tag: "on-deck-bout-1",
+      tag: `on-deck-${boutId}`,
     });
     const repeated = await runPushOnce(ctx.database, { send }, now);
     expect(repeated.sent).toBe(0);
@@ -162,7 +124,7 @@ describe("live tournament push notifications", () => {
   it("does not deliver an on-deck alert after that bout is no longer next", async () => {
     const now = new Date("2026-10-28T10:10:00.000Z");
     await queueOnDeckNotifications(ctx.database, now);
-    await ctx.database.updateTable("LiveBout").set({ status: "RUNNING" }).where("id", "=", "bout-1").execute();
+    await ctx.database.updateTable("LiveBout").set({ status: "RUNNING" }).where("id", "=", boutId).execute();
     const send = vi.fn<PushSender["send"]>().mockResolvedValue();
     const result = await runPushOnce(ctx.database, { send }, now);
     expect(result.sent).toBe(0);

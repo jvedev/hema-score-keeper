@@ -47,7 +47,6 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
           fighterAUserId: input.fighterAUserId,
           fighterBUserId: input.fighterBUserId,
           refereeUserId: input.refereeUserId,
-          tableUserId: null,
           ring: input.ring,
           startedAt: input.startedAt,
           scoreA: input.scoreA,

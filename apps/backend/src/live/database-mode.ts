@@ -78,16 +78,13 @@ export async function activateDatabaseTournament(
     .select("id")
     .where("sourceTournamentId", "=", sourceTournamentId)
     .executeTakeFirst();
-  if (existing) throw new HttpError(409, "Database-mode scoring is already active for this tournament.");
+  if (existing) throw new HttpError(409, "Live scoring is already active for this tournament.");
 
   const id = randomUUID();
   await executor.insertInto("LiveTournament").values({
     id,
     name: source.name,
-    mode: "DATABASE",
     sourceTournamentId,
-    layoutVersion: "v3",
-    googleSpreadsheetId: null,
     createdByUserId: userId,
     createdAt: now,
   }).execute();
@@ -103,13 +100,10 @@ export async function projectDatabaseTournament(
 ): Promise<DatabaseProjectionResult> {
   const liveTournament = await executor
     .selectFrom("LiveTournament")
-    .select(["id", "mode", "sourceTournamentId"])
+    .select(["id", "sourceTournamentId"])
     .where("id", "=", liveTournamentId)
     .executeTakeFirst();
   if (!liveTournament) throw new HttpError(404, "Live tournament not found.");
-  if (liveTournament.mode !== "DATABASE" || liveTournament.sourceTournamentId === null) {
-    throw new HttpError(409, "Only a linked database-mode tournament can be projected.");
-  }
 
   const sourceTournamentId = liveTournament.sourceTournamentId;
   const sourceTournament = await executor
@@ -386,12 +380,12 @@ async function populateFighterIdentities(
     .where("tournamentId", "=", liveTournamentId)
     .where("userId", "in", [...fighterEntries.keys()])
     .execute();
-  const identityByUserId = new Map(existing.filter((row) => row.userId !== null).map((row) => [row.userId!, row.id] as const));
+  const identityByUserId = new Map(existing.map((row) => [row.userId, row.id] as const));
   for (const [userId, fighter] of fighterEntries) {
     const identityId = identityByUserId.get(userId);
     if (identityId) {
       await executor.updateTable("LiveTournamentFighter")
-        .set({ name: fighter.name, nameKey: fighterNameKey(fighter.name), updatedAt: now })
+        .set({ name: fighter.name, updatedAt: now })
         .where("id", "=", identityId)
         .execute();
       continue;
@@ -401,10 +395,7 @@ async function populateFighterIdentities(
       id,
       tournamentId: liveTournamentId,
       name: fighter.name,
-      nameKey: fighterNameKey(fighter.name),
       userId,
-      active: 1,
-      ambiguous: 0,
       createdAt: now,
       updatedAt: now,
     }).execute();
@@ -482,16 +473,13 @@ async function reconcileBouts(
   const existing = await executor.selectFrom("LiveBout")
     .selectAll()
     .where("tournamentId", "=", liveTournamentId)
-    .where("sourceMatchId", "is not", null)
     .execute();
-  const existingByMatchId = new Map(existing
-    .filter((bout) => bout.sourceMatchId !== null)
-    .map((bout) => [bout.sourceMatchId!, bout] as const));
+  const existingByMatchId = new Map(existing.map((bout) => [bout.sourceMatchId, bout] as const));
   const desiredIds = new Set(desired.map((bout) => bout.matchId));
   let removed = 0;
 
   for (const bout of existing) {
-    if (!bout.sourceMatchId || desiredIds.has(bout.sourceMatchId)) continue;
+    if (desiredIds.has(bout.sourceMatchId)) continue;
     await requireUnscored(executor, bout.id, bout.status, "A scheduled match was removed from live scoring.");
     await executor.deleteFrom("LiveBout").where("id", "=", bout.id).execute();
     removed += 1;
@@ -527,8 +515,6 @@ async function reconcileBouts(
       ringId,
       order: source.order,
       label: `Bout ${source.order}`,
-      sheetName: "DATABASE",
-      headerCell: source.matchId,
       fighterLeft: source.entryAName ?? "",
       fighterRight: source.entryBName ?? "",
       fighterLeftId: source.fighterLeftId,
@@ -589,8 +575,4 @@ function sourceSignature(source: ProjectedBout): string {
     entryBUserId: source.entryBUserId,
     entryBName: source.entryBName,
   });
-}
-
-function fighterNameKey(value: string): string {
-  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("en");
 }

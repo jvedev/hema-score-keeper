@@ -12,7 +12,6 @@ import { renderLogin } from "./screens/login";
 import { renderNeedsYouScreen } from "./screens/needs-you";
 import { renderObjectionScreen } from "./screens/objection";
 import { renderSettingsScreen } from "./screens/settings";
-import { renderTournamentScreen, renderTournamentsScreen } from "./screens/tournaments";
 import { createShell, type Shell } from "./shell";
 
 const root = document.querySelector<HTMLElement>("#app");
@@ -24,14 +23,6 @@ const client = new AdminClient(apiBaseUrl());
 
 let shell: Shell | null = null;
 let renderToken = 0;
-/** Cleans up the screen on show (e.g. stops its refresh timer); runs when another screen replaces it. */
-let leaveScreen: (() => void) | null = null;
-
-function stopScreen(): void {
-  const leave = leaveScreen;
-  leaveScreen = null;
-  leave?.();
-}
 
 const context: AppContext = {
   client,
@@ -57,7 +48,6 @@ if (existing) {
 }
 
 function showLogin(): void {
-  stopScreen();
   shell = null;
   renderLogin(appRoot, client, start);
 }
@@ -87,7 +77,6 @@ async function showRoute(route: Route): Promise<void> {
     return;
   }
   const token = ++renderToken;
-  stopScreen();
   const content = shell.content;
   content.innerHTML = `<p class="loading">${t("admin.loading")}</p>`;
   try {
@@ -100,10 +89,7 @@ async function showRoute(route: Route): Promise<void> {
       return;
     }
     void context.refreshNeedsYou().catch(() => undefined);
-    shell.setActive(
-      route.name === "needs-you" || route.name === "objection" ? "needs-you" : route.name === "tournaments" || route.name === "tournament" ? "tournaments" : "competitions",
-    );
-    let leave: (() => void) | undefined;
+    shell.setActive(route.name === "needs-you" || route.name === "objection" ? "needs-you" : "competitions");
     const screen = document.createElement("div");
     screen.className = "screen";
     switch (route.name) {
@@ -124,18 +110,9 @@ async function showRoute(route: Route): Promise<void> {
       case "settings":
         await renderSettingsScreen(screen, context, route.competitionId);
         break;
-      case "tournaments":
-        await renderTournamentsScreen(screen, context);
-        break;
-      case "tournament":
-        leave = await renderTournamentScreen(screen, context, route.tournamentId);
-        break;
     }
     if (token === renderToken) {
       content.replaceChildren(screen);
-      leaveScreen = leave ?? null;
-    } else {
-      leave?.();
     }
   } catch (error) {
     if (error instanceof SessionExpiredError) {

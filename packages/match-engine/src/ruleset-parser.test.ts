@@ -15,7 +15,7 @@ const validMatchParameters = {
 };
 
 describe("parseRuleSet", () => {
-  it("synthesizes id, name, and version when the sheet JSON doesn't include them", () => {
+  it("synthesizes id, name, and version when the ruleset JSON doesn't include them", () => {
     const ruleSet = parseRuleSet(
       { id: "competition-1", name: "Autumn Longsword Open" },
       { weaponClass: "Longsword", matchParameters: validMatchParameters },
@@ -28,7 +28,7 @@ describe("parseRuleSet", () => {
     expect(ruleSet.matchParameters.scores).toEqual([1, 2, 3, 4]);
   });
 
-  it("honors explicit id, name, and version when the sheet JSON provides them", () => {
+  it("honors explicit id, name, and version when the ruleset JSON provides them", () => {
     const ruleSet = parseRuleSet(
       { id: "competition-1", name: "Autumn Longsword Open" },
       {

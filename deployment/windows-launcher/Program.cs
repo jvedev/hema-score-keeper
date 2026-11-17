@@ -51,7 +51,6 @@ child.StartInfo.ArgumentList.Add($"--env-file={envPath}");
 child.StartInfo.ArgumentList.Add(serverEntry);
 child.StartInfo.Environment["APP_DATA_DIR"] = dataRoot;
 child.StartInfo.Environment["DATABASE_URL"] = "file:./dev.db";
-child.StartInfo.Environment["LIVE_DATA_DIR"] = Path.Combine(dataRoot, "live");
 child.StartInfo.Environment["HOST"] = "0.0.0.0";
 child.StartInfo.Environment["PORT"] = port.ToString();
 child.StartInfo.Environment["NODE_ENV"] = "production";

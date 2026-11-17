@@ -13,6 +13,7 @@ test-results/
 /packages/ui/src/components/fight-view/__screenshots__/fight-view.test.ts/fight-view-renders-the-fight-controls-1.png
 /apps/backend/dev.db
 /apps/backend/data/dev.db
+/apps/backend/data/dev.db.bak-*
 
 # Brainstorm mockups and plan-execution scratch
 .superpowers/

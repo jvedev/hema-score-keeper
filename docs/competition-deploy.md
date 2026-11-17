@@ -47,6 +47,12 @@ the password is requested interactively and is not included in the command line.
 Set `HEMASCORE_DATA_DIR` before launch to use a different persistent data directory; keep the
 same value between starts and backups.
 
+On the first start the server creates the SQLite database (`dev.db` in the data directory)
+from the baseline schema in `apps/backend/src/schema.ts`. Databases are not upgraded between
+schema versions yet: a database made by an older build is refused at startup with a message
+to recreate it. Until the first production release, move the old `dev.db` aside and start
+again (this loses its data).
+
 The package has passed automated checks for app roots, deep links, API availability, and
 preserving a disposable database and generated secret across a launcher restart. For the
 manual desktop check, use a throwaway data directory (do not point this test at tournament
@@ -88,16 +94,16 @@ not in committed files:
 ```text
 APP_DATA_DIR=/home/<account>/data/hema-score-keeper
 DATABASE_URL=file:./dev.db
-LIVE_DATA_DIR=/home/<account>/data/hema-score-keeper/live
 AUTH_SECRET=<long-random-secret>
 ```
 
-Create the data directory first and ensure the site user can write to it. Keep the same
-`APP_DATA_DIR`, `DATABASE_URL`, and `LIVE_DATA_DIR` across deployments so the SQLite database
-and live workbook files survive release replacement. Set a stable random `AUTH_SECRET`
-before the first use; changing it signs users out. Optional Google Sheets credentials and
-Web Push VAPID values are described in the environment example, but are not required for
-local scoring.
+Create the data directory first and ensure the site user can write to it. The first start
+creates the database there from the baseline schema; an existing database from an older
+schema version is refused (move it aside to start with a fresh one). Keep the same
+`APP_DATA_DIR` and `DATABASE_URL` across deployments so the SQLite database survives release
+replacement. Set a stable random `AUTH_SECRET`
+before the first use; changing it signs users out. Optional Web Push VAPID values are described in the
+environment example, but are not required for local scoring.
 
 Run the first administrator command from the repository root, with the same environment
 variables as the server:
@@ -115,11 +121,21 @@ The Windows package is built on Windows because `better-sqlite3` contains native
 Alwaysdata installs Linux-native dependencies on its own platform. Source, app paths, and
 application behavior are otherwise shared.
 
+## Development database
+
+`npm run backend:db:reset` (from the repository root) builds the backend, moves the current
+database aside as `dev.db.bak-<timestamp>`, creates a fresh one from the baseline schema and
+fills it with sample data. Stop the backend first. It uses the same `DATABASE_URL` and
+`APP_DATA_DIR` as the server (default `apps/backend/data/dev.db`).
+`npm run backend:db:seed` only replaces all data in the existing database with the sample data.
+Until the first production release, schema changes edit `apps/backend/src/schema.ts` directly
+and developers reset their database; there are no migrations.
+
 ## GitHub Pages: participant app only
 
 The participant app (`apps/competition`) is also published as a static site at
 `<origin>/hema-score-keeper/competition/`. It has no server of its own and needs a separately
-hosted backend API. Google Sheets, Apps Script and Google sign-in are no longer used (phase 7).
+hosted backend API.
 
 ## GitHub Pages
 
@@ -181,16 +197,6 @@ apps are published on the same site. Set it at build time when they are not. The
 API address is `VITE_COMPETITION_API_URL` (default `/api/v1`). Both are listed in
 `apps/competition-admin/.env.example`.
 
-## Admin app: ring links (Tournaments screen)
-
-The Tournaments screen builds each ring link as `<score-keeper app>/ring/<token>` (with a QR
-code). It finds The score-keeper app through `VITE_SCORE_KEEPER_URL` (no trailing slash, e.g.
-`https://<site>/score-keeper`). Its ring page is under `/score-keeper/ring/<token>`. When all
-apps share one origin, the configured same-origin path works for local Windows and
-Alwaysdata. If the score-keeper is hosted separately, set the full URL at build time. In dev
-it defaults to `http://localhost:5180`, where `.claude/launch.json` runs the score-keeper.
-It is listed in `apps/competition-admin/.env.example`.
-
 ## On-deck push notifications
 
 The fighter portal can show on-deck alerts while closed using Web Push. In `apps/backend/.env`,
@@ -242,9 +248,8 @@ everyone out (and changes email hashes unless `AUTH_EMAIL_PEPPER` is set separat
 Work through this in order on the day (or the evening before). Everything runs on one laptop on the venue's
 Wi-Fi; phones only need a browser.
 
-1. **Backend on the laptop.** In `apps/backend/.env` (or the shell) set `AUTH_SECRET` (a long random value),
-   `DATABASE_URL` (for example `file:./venue.db`) and `LIVE_DATA_DIR` (where the live tournament files go,
-   for example `./data/venue-live`). Build once (`npm run build --workspace @hema/backend`), then run
+1. **Backend on the laptop.** In `apps/backend/.env` (or the shell) set `AUTH_SECRET` (a long random value)
+   and `DATABASE_URL` (for example `file:./venue.db`). Build once (`npm run build --workspace @hema/backend`), then run
    `npm run start:env --workspace @hema/backend`. It listens on `0.0.0.0:3001` (`PORT` changes the port), so
    add a Windows firewall inbound rule for TCP port 3001 (Private network profile), or phones cannot connect.
 2. **First admin.** `npm run create-admin:env --workspace @hema/backend -- --username <username> --name "<Full name>"`
@@ -256,80 +261,15 @@ Wi-Fi; phones only need a browser.
    `npm run build --workspace @hema/score-keeper && npm run preview --workspace @hema/score-keeper -- --host --port 5180`
    (`vite preview` falls back to `index.html` for unknown paths). Check it:
    `curl -i http://<laptop-ip>:5180/ring/test` must answer `200` with the app's HTML, not `404`. Allow TCP port 5180 in the firewall too.
-4. **Admin app.** Build or run it with `VITE_COMPETITION_API_URL=http://<laptop-ip>:3001/api/v1` and
-   `VITE_SCORE_KEEPER_URL=http://<laptop-ip>:5180`. The ring links the admin shows use `VITE_SCORE_KEEPER_URL`;
-   the default `http://localhost:5180` only works on the laptop itself, so a phone scanning that QR code gets nothing.
+4. **Admin app.** Build or run it with `VITE_COMPETITION_API_URL=http://<laptop-ip>:3001/api/v1`. Ring links
+   must point at `http://<laptop-ip>:5180/ring/<token>`; a `localhost` link only works on the laptop itself, so a
+   phone scanning that QR code gets nothing.
 5. **No mixed content.** A score-keeper served over HTTPS (for example GitHub Pages) cannot call an HTTP backend
    on the LAN: the browser blocks it. Serve the score-keeper and the backend both over plain HTTP on the LAN, or both over HTTPS.
-6. **Final check.** Open a ring link from the admin app on a phone on the venue Wi-Fi. You should see the
+6. **Final check.** Open a ring link on a phone on the venue Wi-Fi. You should see the
    sign-in screen. If not, check the laptop's IP, the firewall rules and that both URLs above use that IP.
 
-## Tournament schedule sheet
-
-A sheet-mode tournament (`/api/v1/live-tournaments`) is imported from a workbook with a sheet named
-`Schedule`. Row 1 holds headers; bouts start at row 2:
-
-| Column | Header | Meaning |
-| --- | --- | --- |
-| A | Ring | Ring name; rings are created by name, in order of first appearance |
-| B | Order | Whole number; the bout's position in the ring |
-| C | Sheet | Name of the sheet that holds the bout, for example `Pool_1` |
-| D | Cell | The bout's header cell, for example `B25` (the "Match 1" label cell) |
-| E | Label | Optional; defaults to the header cell's value |
-
-`G1` holds "Last sync" and `H1` is written by the sync. Fighter names are read from the
-calculated values of the cells next to the header (layout `v3`: header column +1 and +3). An empty
-cell or `0` imports as an empty name, so elimination bouts appear before the pools finish.
-
-Upload the `.xlsx` as the raw request body (`application/octet-stream`, up to 20 MB) to
-`POST /api/v1/live-tournaments/:id/import/xlsx`. The file is also kept as the local backup base under
-`LIVE_DATA_DIR` (default `apps/backend/data/live`, next to the database; a relative value is used as given,
-from the working directory) as `<id>/backup.xlsx`. Importing again updates ring, order,
-label and fighters of bouts without exchanges, and removes such bouts when they leave the schedule.
-Bouts that have exchanges are never changed; they are listed as `skipped` in the report. Schedule rows
-with a problem (unknown sheet, bad cell, bad order, an empty match header cell, or an exchange block, rows
-+1 to +15 of the input columns, that overlaps another scheduled bout's block) are listed in `errors`; the other
-rows still import, and an existing bout on an error row is left as it is.
-
-Starting or finishing a bout does not write to the sheets; only exchanges and undos do. A bout scored by
-hand in the sheet (for example when a phone fails) is therefore not wiped by a start or finish in the app.
-
-> **Stale values in a downloaded backup.** `backup.xlsx` (downloaded with `GET .../backup.xlsx`) holds the
-> exchange results, but its cached formula results (pool rankings, the fighter names in the eliminations)
-> are those of the original upload. The import reads cached values. Before re-uploading a downloaded backup
-> to import the eliminations, **open it in Excel or Google Sheets and save it**, so the formulas are
-> recalculated. Otherwise the import reads stale names.
-
-### Google Sheet target and sync status
-
-A tournament created with a `googleSpreadsheetId` is mirrored into that Google Sheet as well as into the
-local backup file. The backend signs in as a service account with the existing
-`GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` (the key may contain escaped `\n`).
-**Share the spreadsheet with the service account's email address, with edit access.** Without these
-variables the Google target is skipped: jobs stay pending and the status shows `NOT_CONFIGURED`.
-
-Where the variables go: set them in the environment of the backend process, or put them in
-`apps/backend/.env` (copy `apps/backend/.env.example`) and start the backend with `npm run start:env
---workspace @hema/backend`, which runs `node --env-file=.env dist/server.js` (Node 20.6 or newer). The plain
-`npm start` does **not** read `.env`. Note that `.env` may also set `DATABASE_URL`, which then applies too.
-**`.env` holds the private key and must never be committed**; it is in `.gitignore`. If a key was ever
-committed, rotate it in the Google Cloud console.
-
-- `POST /api/v1/live-tournaments/:id/import/google` imports the `Schedule` sheet and the fighters from the
-  spreadsheet (calculated values), like the `.xlsx` import. Creator or system admin.
-- `GET /api/v1/live-tournaments/:id/sync` lists both targets (`LOCAL`, `GOOGLE`) with `state`, `lastSuccessAt`,
-  `lastError`, `lastErrorAt`, `pending` and `failed`. `lastError` is shown only while it still applies (newer
-  than the last success, or a job is `FAILED`). States: `OK`, `ERROR`, `NOT_CONFIGURED`, `NO_SPREADSHEET`,
-  `NO_BACKUP_FILE` (no `backup.xlsx` yet: import an `.xlsx` first). Creator or system admin.
-- `GET /api/v1/live-tournaments/:id/backup.xlsx` downloads the local backup. Creator or system admin.
-
-Every Google call has a 10 s timeout. A failing or hanging Google never slows scoring: the sync jobs stay
-pending and retry with back-off (5 s, 15 s, 60 s). If the whole target is unusable (Google down, bad
-credentials, backup file locked by Excel), the batch backs off once instead of retrying bout by bout. Error
-messages never contain the key or a token. Each write also stores the time in `Schedule!H1`, in both targets,
-when the workbook has a `Schedule` sheet. Each round writes the local backup before Google, so a slow Google never
-delays the backup. Sync jobs are kept in the database: after a restart the worker carries on with the pending
-jobs (backed-off ones are retried at once) and does not re-queue every bout.
+## Live tournament scoring
 
 Scoring routes, for the scorer apps: an undo must name the exchange it removes,
 `POST /api/v1/live-bouts/:id/undo` with `{ "expectedExchangeId": "<id>" }` (400 without it). A retry of an undo

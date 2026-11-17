@@ -274,6 +274,61 @@ export interface ApiDatabaseLiveCorrectionInput {
   exchanges: readonly Omit<ApiDatabaseLiveExchange, "isDouble">[];
 }
 
+/** Who holds a live ring's keeper link right now (never the device id). */
+export interface ApiLiveRingKeeper {
+  userName: string;
+  /** ISO timestamp of the claim. */
+  since: string;
+}
+
+/** A live ring as its tournament admins see it, with the secret keeper and scoreboard tokens. */
+export interface ApiLiveRing {
+  id: string;
+  tournamentId: string;
+  name: string;
+  order: number;
+  leftColor: string;
+  rightColor: string;
+  keeperToken: string;
+  scoreboardToken: string;
+  activeKeeper: ApiLiveRingKeeper | null;
+}
+
+/** Colours a ring shows for the left and right fighter, as `#rrggbb`. */
+export interface ApiLiveRingColors {
+  leftColor: string;
+  rightColor: string;
+}
+
+export type ApiRingOvertimeAfter = "EVERY_ROUND" | "LAST_ROUND";
+
+/** Mirrors `BoutFormat` in `@hema/competition-domain`. */
+export interface ApiRingBoutFormat {
+  rounds: number;
+  breakSeconds: number;
+  lastExchangeSeconds: number;
+  overtimeAfter: ApiRingOvertimeAfter;
+  extensions: number;
+  extensionSeconds: number;
+  suddenDeath: boolean;
+}
+
+export interface ApiRingPenalty {
+  description: string;
+  penalties: number[];
+  disqualify: boolean;
+}
+
+/** Mirrors `RingRules` in `@hema/competition-domain`: what the tables of a live tournament score with. */
+export interface ApiRingRules {
+  maxDurationSeconds: number;
+  scores: number[];
+  maxDoubles: number;
+  maxPointsCap: number;
+  penalties: ApiRingPenalty[];
+  format: ApiRingBoutFormat;
+}
+
 export interface ApiEvent {
   id: string;
   eventName: string;
@@ -401,6 +456,16 @@ export interface ApiClient {
   activateDatabaseLive(id: string): Promise<{ id: string; projection: { rings: number; bouts: number; removedBouts: number } }>;
   projectDatabaseLive(id: string): Promise<{ rings: number; bouts: number; removedBouts: number }>;
   correctDatabaseLiveResult(id: string, body: ApiDatabaseLiveCorrectionInput): Promise<{ revision: number }>;
+  /** The rings of a live tournament with their keeper and scoreboard tokens (tournament admins only). */
+  liveRings(liveTournamentId: string): Promise<ApiLiveRing[]>;
+  /** The ring rules of a live tournament (the stored rules, or the defaults). */
+  liveRingRules(liveTournamentId: string): Promise<ApiRingRules>;
+  saveLiveRingRules(liveTournamentId: string, rules: ApiRingRules): Promise<ApiRingRules>;
+  /** A new keeper link: the old one stops working and whoever keeps the ring is stopped. */
+  rotateLiveRingKeeperToken(ringId: string): Promise<void>;
+  /** A new scoreboard link: screens showing the old one stop updating. */
+  rotateLiveRingScoreboardToken(ringId: string): Promise<void>;
+  setLiveRingColors(ringId: string, colors: ApiLiveRingColors): Promise<ApiLiveRingColors>;
   createArena(body: { eventId: string; name: string; order?: number; leftColor?: string; rightColor?: string }): Promise<ApiArena>;
   updateArena(
     id: string,
@@ -598,6 +663,28 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
     },
     correctDatabaseLiveResult: (id, body) =>
       requestJson<{ revision: number }>(baseUrl, `/live-bouts/${id}/correction`, { method: "POST", body }),
+    liveRings: async (liveTournamentId) =>
+      (await requestJson<{ rings: ApiLiveRing[] }>(baseUrl, `/live-tournaments/${encodeURIComponent(liveTournamentId)}/rings`)).rings,
+    liveRingRules: async (liveTournamentId) =>
+      (await requestJson<{ rules: ApiRingRules }>(baseUrl, `/live-tournaments/${encodeURIComponent(liveTournamentId)}`)).rules,
+    saveLiveRingRules: async (liveTournamentId, rules) =>
+      (await requestJson<{ rules: ApiRingRules }>(baseUrl, `/live-tournaments/${encodeURIComponent(liveTournamentId)}/rules`, {
+        method: "PUT",
+        body: rules,
+      })).rules,
+    rotateLiveRingKeeperToken: async (ringId) => {
+      await requestJson<unknown>(baseUrl, `/live-rings/${encodeURIComponent(ringId)}/rotate-token`, { method: "POST" });
+    },
+    rotateLiveRingScoreboardToken: async (ringId) => {
+      await requestJson<unknown>(baseUrl, `/live-rings/${encodeURIComponent(ringId)}/rotate-scoreboard-token`, { method: "POST" });
+    },
+    setLiveRingColors: async (ringId, colors) => {
+      const { ring } = await requestJson<{ ring: ApiLiveRingColors }>(baseUrl, `/live-rings/${encodeURIComponent(ringId)}/colors`, {
+        method: "PUT",
+        body: colors,
+      });
+      return { leftColor: ring.leftColor, rightColor: ring.rightColor };
+    },
     createArena: (body) => requestJson<ApiArena>(baseUrl, "/arenas", { method: "POST", body }),
     updateArena: (id, body) => requestJson<ApiArena>(baseUrl, `/arenas/${id}`, { method: "PATCH", body }),
     listArenas: () => requestJson<ApiArena[]>(baseUrl, "/arenas"),

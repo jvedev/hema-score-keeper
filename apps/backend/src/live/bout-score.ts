@@ -11,7 +11,7 @@ export interface BoutScore {
 }
 
 /**
- * The sheet's rule: an exchange where both fighters score is a double and counts 0 for both.
+ * The scoring rule: an exchange where both fighters score is a double and counts 0 for both.
  * A deduction stores negative points for the penalised fighter and simply adds them.
  */
 export function scoreOf(exchanges: readonly ScoredExchange[]): BoutScore {

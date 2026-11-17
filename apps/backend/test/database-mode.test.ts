@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sql } from "kysely";
-import { enqueueSync } from "../src/live/live-store.js";
 import { bearer, createTestContext, insertUser, type TestContext, type TestUser } from "./helpers.js";
 
 describe("database-mode tournament activation and projection", () => {
@@ -177,11 +176,7 @@ describe("database-mode tournament activation and projection", () => {
       projection: { rings: 2, bouts: 3, removedBouts: 0 },
     });
     const liveTournament = await ctx.database.selectFrom("LiveTournament").selectAll().executeTakeFirstOrThrow();
-    expect(liveTournament).toMatchObject({
-      mode: "DATABASE",
-      sourceTournamentId: "source-tournament",
-      googleSpreadsheetId: null,
-    });
+    expect(liveTournament).toMatchObject({ name: "Open", sourceTournamentId: "source-tournament", createdByUserId: admin.id });
     const rings = await ctx.database.selectFrom("LiveRing").selectAll().where("tournamentId", "=", liveTournament.id).execute();
     expect(rings).toHaveLength(2);
     expect(rings.every((ring) => ring.keeperToken.length === 32 && ring.scoreboardToken.length === 32)).toBe(true);
@@ -241,23 +236,29 @@ describe("database-mode tournament activation and projection", () => {
       .toEqual({ order: 4 });
   });
 
-  it("keeps spreadsheet imports, backup and sync jobs disabled for database mode", async () => {
+  it("has no spreadsheet, tournament list or fighter-identity routes", async () => {
     await activate();
     const url = `/api/v1/live-tournaments/${liveTournamentId}`;
     const headers = bearer(admin);
-    const xlsx = await ctx.app.inject({
-      method: "POST",
-      url: `${url}/import/xlsx`,
-      headers: { ...headers, "content-type": "application/octet-stream" },
-      payload: Buffer.from("not a workbook"),
-    });
-    const google = await ctx.app.inject({ method: "POST", url: `${url}/import/google`, headers });
-    const sync = await ctx.app.inject({ method: "GET", url: `${url}/sync`, headers });
-    const backup = await ctx.app.inject({ method: "GET", url: `${url}/backup.xlsx`, headers });
-    expect([xlsx.statusCode, google.statusCode, sync.statusCode, backup.statusCode]).toEqual([409, 409, 409, 409]);
-
-    await enqueueSync(ctx.database, liveTournamentId!, "live-bout");
-    expect(await ctx.database.selectFrom("LiveSyncJob").select("id").execute()).toEqual([]);
+    const requests = [
+      { method: "POST", url: "/api/v1/live-tournaments", payload: { name: "Sheet" } },
+      { method: "GET", url: "/api/v1/live-tournaments" },
+      { method: "POST", url: `${url}/import/xlsx`, payload: {} },
+      { method: "POST", url: `${url}/import/google`, payload: {} },
+      { method: "GET", url: `${url}/sync` },
+      { method: "GET", url: `${url}/backup.xlsx` },
+      { method: "GET", url: `${url}/fighters` },
+      { method: "POST", url: `${url}/fighters/identities`, payload: { name: "Anna" } },
+      { method: "GET", url: `${url}/ambiguous-bouts` },
+      { method: "PUT", url: `${url}/bouts/some-bout/sides/LEFT/identity`, payload: { fighterId: null } },
+      { method: "PUT", url: `${url}/fighters/some-fighter/account`, payload: { userId: null } },
+      { method: "GET", url: "/api/v1/google-sheets/values?spreadsheetId=x&range=A1" },
+      { method: "PUT", url: "/api/v1/google-sheets/values", payload: { spreadsheetId: "x", range: "A1", values: [] } },
+    ] as const;
+    for (const request of requests) {
+      const response = await ctx.app.inject({ ...request, headers });
+      expect(response.statusCode, `${request.method} ${request.url}`).toBe(404);
+    }
   });
 
   it("updates unscored schedule changes but refuses to move a bout after scoring starts", async () => {

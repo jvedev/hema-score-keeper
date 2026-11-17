@@ -1,8 +1,6 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { bearer, createTestContext, insertUser, YieldAfterEachQuery, type TestContext, type TestUser } from "./helpers.js";
+import { createLiveTournament } from "./live-fixtures.js";
 
 const TOKEN = "ring-1-token";
 const OTHER_TOKEN = "ring-2-token";
@@ -12,36 +10,47 @@ describe("live ring keeper", () => {
   let creator: TestUser;
   let alice: TestUser;
   let bob: TestUser;
+  let tournamentId: string;
+  let ringOneId: string;
+  let ringTwoId: string;
+  let boutOneId: string;
+  let boutTwoId: string;
+  let boutThreeId: string;
 
   async function setup(plugins: YieldAfterEachQuery[] = []): Promise<void> {
     ctx = await createTestContext({ plugins });
     creator = await insertUser(ctx.database, { id: "creator", role: "USER", name: "Carla Creator" });
     alice = await insertUser(ctx.database, { id: "alice", role: "USER", name: "Alice Keeper" });
     bob = await insertUser(ctx.database, { id: "bob", role: "USER", name: "Bob Keeper" });
-    await ctx.database
-      .insertInto("LiveTournament")
-      .values({ id: "T", name: "Tournament", mode: "SHEET", layoutVersion: "v3", googleSpreadsheetId: null, createdByUserId: creator.id, createdAt: "2026-10-25T10:00:00.000Z" })
-      .execute();
-    await ctx.database.insertInto("LiveRing").values({ id: "R1", tournamentId: "T", name: "Ring 1", order: 1, keeperToken: TOKEN }).execute();
-    await ctx.database.insertInto("LiveRing").values({ id: "R2", tournamentId: "T", name: "Ring 2", order: 2, keeperToken: OTHER_TOKEN }).execute();
-    for (const [id, ringId, order] of [["B1", "R1", 1], ["B2", "R1", 2], ["B9", "R2", 1]] as const) {
-      await ctx.database
-        .insertInto("LiveBout")
-        .values({
-          id, tournamentId: "T", ringId, order, label: id, sheetName: "Pool_1", headerCell: `${id}25`,
-          fighterLeft: "L", fighterRight: "R", status: "PENDING", startedAt: null, finishedAt: null,
-        })
-        .execute();
-    }
+    const left = await insertUser(ctx.database, { id: "fighter-left", role: "USER", name: "L" });
+    const right = await insertUser(ctx.database, { id: "fighter-right", role: "USER", name: "R" });
+    const live = await createLiveTournament(ctx, {
+      admin: creator,
+      rings: [
+        { key: "one", name: "Ring 1", keeperToken: TOKEN },
+        { key: "two", name: "Ring 2", keeperToken: OTHER_TOKEN },
+      ],
+      bouts: [
+        { key: "one", ring: "one", left, right },
+        { key: "two", ring: "one", left, right },
+        { key: "three", ring: "one", left, right },
+        { key: "other-ring", ring: "two", left, right },
+      ],
+      scorers: [alice, bob],
+    });
+    tournamentId = live.liveTournamentId;
+    ringOneId = live.ringId("one");
+    ringTwoId = live.ringId("two");
+    boutOneId = live.boutId("one");
+    boutTwoId = live.boutId("two");
+    boutThreeId = live.boutId("three");
   }
 
   beforeEach(async () => {
-    process.env.LIVE_DATA_DIR = mkdtempSync(path.join(tmpdir(), "live-ring-"));
     await setup();
   });
 
   afterEach(async () => {
-    delete process.env.LIVE_DATA_DIR;
     await ctx.app.close();
   });
 
@@ -61,19 +70,19 @@ describe("live ring keeper", () => {
     return { "x-ring-token": token, "x-device-id": deviceId };
   }
 
-  function exchange(as: TestUser, deviceId: string, clientExchangeId: string, left = 1, right = 0, token = TOKEN, bout = "B1") {
+  function exchange(as: TestUser, deviceId: string, clientExchangeId: string, left = 1, right = 0, token = TOKEN, bout = boutOneId) {
     return post(`/api/v1/live-bouts/${bout}/exchanges`, as, { clientExchangeId, kind: "EXCHANGE", leftPoints: left, rightPoints: right }, keeper(deviceId, token));
   }
 
-  async function ring(id = "R1") {
+  async function ring(id = ringOneId) {
     return ctx.database.selectFrom("LiveRing").selectAll().where("id", "=", id).executeTakeFirstOrThrow();
   }
 
-  async function exchangeRows(bout = "B1") {
+  async function exchangeRows(bout = boutOneId) {
     return ctx.database.selectFrom("LiveExchange").selectAll().where("boutId", "=", bout).orderBy("seq").execute();
   }
 
-  async function bout(id = "B1") {
+  async function bout(id = boutOneId) {
     return ctx.database.selectFrom("LiveBout").selectAll().where("id", "=", id).executeTakeFirstOrThrow();
   }
 
@@ -81,15 +90,16 @@ describe("live ring keeper", () => {
     const before = await get(`/api/v1/live-rings/by-token/${TOKEN}`, alice);
     expect(before.statusCode).toBe(200);
     expect(before.json()).toMatchObject({
-      ring: { id: "R1", name: "Ring 1", tournamentId: "T" },
-      tournament: { id: "T", name: "Tournament" },
+      ring: { id: ringOneId, name: "Ring 1", tournamentId },
+      tournament: { id: tournamentId, name: "Tournament" },
       activeKeeper: null,
     });
-    expect((before.json().bouts as { id: string }[]).map((b) => b.id)).toEqual(["B1", "B2"]);
+    expect(before.json().tournament).not.toHaveProperty("mode");
+    expect((before.json().bouts as { id: string }[]).map((b) => b.id)).toEqual([boutOneId, boutTwoId, boutThreeId]);
 
     const claimed = await claim(alice, "dev-a");
     expect(claimed.statusCode).toBe(200);
-    expect(claimed.json().ring).toMatchObject({ id: "R1", name: "Ring 1" });
+    expect(claimed.json().ring).toMatchObject({ id: ringOneId, name: "Ring 1" });
     expect(await ring()).toMatchObject({ activeDeviceId: "dev-a", activeUserId: "alice" });
 
     const after = await get(`/api/v1/live-rings/by-token/${TOKEN}`, bob);
@@ -144,10 +154,10 @@ describe("live ring keeper", () => {
     expect(late.json()).toMatchObject({ reason: "TAKEN_OVER", activeKeeper: { userName: "Bob Keeper" } });
     const stale = keeper("dev-a");
     for (const [url, body] of [
-      ["/api/v1/live-bouts/B1/undo", { expectedExchangeId: stored.json().exchange.id }],
-      ["/api/v1/live-bouts/B1/start", undefined],
-      ["/api/v1/live-bouts/B1/finish", undefined],
-      ["/api/v1/live-bouts/B1/clock", { seconds: 10, running: true }],
+      [`/api/v1/live-bouts/${boutOneId}/undo`, { expectedExchangeId: stored.json().exchange.id }],
+      [`/api/v1/live-bouts/${boutOneId}/start`, undefined],
+      [`/api/v1/live-bouts/${boutOneId}/finish`, undefined],
+      [`/api/v1/live-bouts/${boutOneId}/clock`, { seconds: 10, running: true }],
     ] as const) {
       const response = await post(url, alice, body, stale);
       expect(response.statusCode, url).toBe(409);
@@ -166,10 +176,10 @@ describe("live ring keeper", () => {
     expect((await bout()).clockSeconds).toBe(0);
 
     // Missing or wrong ring token is 403, also for the active keeper; a missing device id is 400.
-    expect((await post("/api/v1/live-bouts/B1/exchanges", bob, { clientExchangeId: "c4", kind: "EXCHANGE", leftPoints: 1, rightPoints: 0 }, { "x-device-id": "dev-b" })).statusCode).toBe(403);
+    expect((await post(`/api/v1/live-bouts/${boutOneId}/exchanges`, bob, { clientExchangeId: "c4", kind: "EXCHANGE", leftPoints: 1, rightPoints: 0 }, { "x-device-id": "dev-b" })).statusCode).toBe(403);
     expect((await exchange(bob, "dev-b", "c4", 1, 0, "wrong")).statusCode).toBe(403);
     expect((await exchange(bob, "dev-b", "c4", 1, 0, OTHER_TOKEN)).statusCode).toBe(403);
-    expect((await post("/api/v1/live-bouts/B1/exchanges", bob, { clientExchangeId: "c4", kind: "EXCHANGE", leftPoints: 1, rightPoints: 0 }, { "x-ring-token": TOKEN })).statusCode).toBe(400);
+    expect((await post(`/api/v1/live-bouts/${boutOneId}/exchanges`, bob, { clientExchangeId: "c4", kind: "EXCHANGE", leftPoints: 1, rightPoints: 0 }, { "x-ring-token": TOKEN })).statusCode).toBe(400);
     expect(await exchangeRows()).toHaveLength(1);
 
     // The new keeper continues the bout.
@@ -200,11 +210,11 @@ describe("live ring keeper", () => {
 
   it("rotated token is unknown", async () => {
     await claim(alice, "dev-a");
-    expect((await post("/api/v1/live-rings/R1/rotate-token", alice)).statusCode).toBe(403);
-    expect((await post("/api/v1/live-rings/R1/rotate-token", null)).statusCode).toBe(401);
+    expect((await post(`/api/v1/live-rings/${ringOneId}/rotate-token`, alice)).statusCode).toBe(403);
+    expect((await post(`/api/v1/live-rings/${ringOneId}/rotate-token`, null)).statusCode).toBe(401);
     expect((await post("/api/v1/live-rings/nope/rotate-token", creator)).statusCode).toBe(404);
 
-    const rotated = await post("/api/v1/live-rings/R1/rotate-token", creator);
+    const rotated = await post(`/api/v1/live-rings/${ringOneId}/rotate-token`, creator);
     expect(rotated.statusCode).toBe(200);
     const newToken = rotated.json().ring.keeperToken as string;
     expect(newToken).toMatch(/^[A-Za-z0-9_-]{32}$/);
@@ -225,171 +235,153 @@ describe("live ring keeper", () => {
 
   it("claim pauses a running clock", async () => {
     await claim(alice, "dev-a");
-    expect((await post("/api/v1/live-bouts/B1/clock", alice, { seconds: 42, running: true }, keeper("dev-a"))).statusCode).toBe(200);
+    expect((await post(`/api/v1/live-bouts/${boutOneId}/clock`, alice, { seconds: 42, running: true }, keeper("dev-a"))).statusCode).toBe(200);
     expect(await bout()).toMatchObject({ clockSeconds: 42, clockRunning: 1 });
 
     await claim(bob, "dev-b", true);
     expect(await bout()).toMatchObject({ clockSeconds: 42, clockRunning: 0 });
-    const view = await get("/api/v1/live-bouts/B1", bob);
+    const view = await get(`/api/v1/live-bouts/${boutOneId}`, bob);
     expect(view.json().clock).toMatchObject({ seconds: 42, running: false });
 
     // The new keeper restarts it.
-    expect((await post("/api/v1/live-bouts/B1/clock", bob, { seconds: 42, running: true }, keeper("dev-b"))).statusCode).toBe(200);
-    expect((await get("/api/v1/live-bouts/B1", bob)).json().clock).toMatchObject({ seconds: 42, running: true });
+    expect((await post(`/api/v1/live-bouts/${boutOneId}/clock`, bob, { seconds: 42, running: true }, keeper("dev-b"))).statusCode).toBe(200);
+    expect((await get(`/api/v1/live-bouts/${boutOneId}`, bob)).json().clock).toMatchObject({ seconds: 42, running: true });
   });
 
   it("clock is stored and returned", async () => {
     await claim(alice, "dev-a");
-    const initial = await get("/api/v1/live-bouts/B1", alice);
+    const initial = await get(`/api/v1/live-bouts/${boutOneId}`, alice);
     expect(initial.json().clock).toEqual({ seconds: 0, running: false, updatedAt: null });
 
-    const response = await post("/api/v1/live-bouts/B1/clock", alice, { seconds: 75, running: true }, keeper("dev-a"));
+    const response = await post(`/api/v1/live-bouts/${boutOneId}/clock`, alice, { seconds: 75, running: true }, keeper("dev-a"));
     expect(response.statusCode).toBe(200);
     expect(response.json().clock).toMatchObject({ seconds: 75, running: true });
-    const view = await get("/api/v1/live-bouts/B1", alice);
+    const view = await get(`/api/v1/live-bouts/${boutOneId}`, alice);
     expect(view.json().clock).toMatchObject({ seconds: 75, running: true });
     expect(view.json().clock.updatedAt).toEqual(expect.any(String));
     const byToken = await get(`/api/v1/live-rings/by-token/${TOKEN}`, alice);
-    expect((byToken.json().bouts as { id: string; clock: unknown }[]).find((b) => b.id === "B1")!.clock).toMatchObject({ seconds: 75, running: true });
+    expect((byToken.json().bouts as { id: string; clock: unknown }[]).find((b) => b.id === boutOneId)!.clock).toMatchObject({ seconds: 75, running: true });
 
     for (const bad of [{ seconds: -1, running: true }, { seconds: 1.5, running: true }, { seconds: "3", running: true }, { seconds: 3, running: "yes" }, { seconds: 3 }, {}]) {
-      expect((await post("/api/v1/live-bouts/B1/clock", alice, bad, keeper("dev-a"))).statusCode, JSON.stringify(bad)).toBe(400);
+      expect((await post(`/api/v1/live-bouts/${boutOneId}/clock`, alice, bad, keeper("dev-a"))).statusCode, JSON.stringify(bad)).toBe(400);
     }
     expect(await bout()).toMatchObject({ clockSeconds: 75, clockRunning: 1 });
-    // The clock is not a sheet value: no sync job. It does not start the bout either.
-    expect(await ctx.database.selectFrom("LiveSyncJob").selectAll().execute()).toEqual([]);
+    // The clock does not start the bout.
     expect((await bout()).status).toBe("PENDING");
-    expect((await post("/api/v1/live-bouts/B1/clock", alice, { seconds: 5, running: false }, keeper("dev-a", OTHER_TOKEN))).statusCode).toBe(403);
+    expect((await post(`/api/v1/live-bouts/${boutOneId}/clock`, alice, { seconds: 5, running: false }, keeper("dev-a", OTHER_TOKEN))).statusCode).toBe(403);
   });
 
-  it("rules: the creator sets them, the ring view and display use them", async () => {
-    const put = (as: TestUser, payload: unknown) => ctx.app.inject({ method: "PUT", url: "/api/v1/live-tournaments/T/rules", payload: payload as object, headers: bearer(as) });
+  it("rules: a tournament admin sets them, the ring view and display use them", async () => {
+    const put = (as: TestUser, payload: unknown) => ctx.app.inject({ method: "PUT", url: `/api/v1/live-tournaments/${tournamentId}/rules`, payload: payload as object, headers: bearer(as) });
     expect((await put(alice, { rounds: 3 })).statusCode).toBe(403);
     const saved = await put(creator, { maxDurationSeconds: 120, maxDoubles: 2, rounds: 3, breakSeconds: 30, lastExchangeSeconds: 10, extensions: 1, extensionSeconds: 30 });
     expect(saved.statusCode).toBe(200);
     expect(saved.json().rules.format).toMatchObject({ rounds: 3, breakSeconds: 30, extensions: 1 });
     const view = await get(`/api/v1/live-rings/by-token/${TOKEN}`, alice);
     expect(view.json().rules).toMatchObject({ maxDurationSeconds: 120, maxDoubles: 2, format: { rounds: 3 } });
-    expect((await get("/api/v1/live-tournaments/T", alice)).json().rules.format.rounds).toBe(3);
+    expect((await get(`/api/v1/live-tournaments/${tournamentId}`, alice)).json().rules.format.rounds).toBe(3);
 
     await claim(alice, "dev-a");
     await exchange(alice, "dev-a", "c1", 2, 0);
-    await post("/api/v1/live-bouts/B1/exchanges", alice, { clientExchangeId: "c2", kind: "EXCHANGE", leftPoints: 1, rightPoints: 0, round: 2 }, keeper("dev-a"));
+    await post(`/api/v1/live-bouts/${boutOneId}/exchanges`, alice, { clientExchangeId: "c2", kind: "EXCHANGE", leftPoints: 1, rightPoints: 0, round: 2 }, keeper("dev-a"));
     const state = { seconds: 100, running: false, round: 2, period: "REGULAR", extension: 0, warningsLeft: 1, warningsRight: 2 };
-    expect((await post("/api/v1/live-bouts/B1/clock", alice, state, keeper("dev-a"))).statusCode).toBe(200);
-    const detail = (await get("/api/v1/live-bouts/B1", alice)).json();
+    expect((await post(`/api/v1/live-bouts/${boutOneId}/clock`, alice, state, keeper("dev-a"))).statusCode).toBe(200);
+    const detail = (await get(`/api/v1/live-bouts/${boutOneId}`, alice)).json();
     expect(detail.display).toMatchObject({
       round: 2, rounds: 3, roundsWon: { left: 1, right: 0 }, score: { left: 1, right: 0 }, warnings: { left: 1, right: 2 },
       remainingSeconds: 20, tone: "NORMAL", period: "REGULAR", extension: null,
     });
-    await post("/api/v1/live-bouts/B1/clock", alice, { ...state, seconds: 140, period: "EXTENSION", extension: 1 }, keeper("dev-a"));
-    expect((await get("/api/v1/live-bouts/B1", alice)).json().display).toMatchObject({ extension: 1, remainingSeconds: 10, tone: "OVERTIME" });
+    await post(`/api/v1/live-bouts/${boutOneId}/clock`, alice, { ...state, seconds: 140, period: "EXTENSION", extension: 1 }, keeper("dev-a"));
+    expect((await get(`/api/v1/live-bouts/${boutOneId}`, alice)).json().display).toMatchObject({ extension: 1, remainingSeconds: 10, tone: "OVERTIME" });
     for (const bad of [{ ...state, period: "NAP" }, { ...state, round: 0 }, { ...state, warningsLeft: -1 }, { seconds: 1, running: false, round: 1 }]) {
-      expect((await post("/api/v1/live-bouts/B1/clock", alice, bad, keeper("dev-a"))).statusCode, JSON.stringify(bad)).toBe(400);
+      expect((await post(`/api/v1/live-bouts/${boutOneId}/clock`, alice, bad, keeper("dev-a"))).statusCode, JSON.stringify(bad)).toBe(400);
     }
-    expect((await post("/api/v1/live-bouts/B1/exchanges", alice, { clientExchangeId: "c3", kind: "EXCHANGE", leftPoints: 1, rightPoints: 0, round: 10 }, keeper("dev-a"))).statusCode).toBe(400);
+    expect((await post(`/api/v1/live-bouts/${boutOneId}/exchanges`, alice, { clientExchangeId: "c3", kind: "EXCHANGE", leftPoints: 1, rightPoints: 0, round: 10 }, keeper("dev-a"))).statusCode).toBe(400);
   });
 
   it("the break counts down from when it began on the server", async () => {
-    await ctx.database.updateTable("LiveTournament").set({ ruleset: JSON.stringify({ rounds: 3, breakSeconds: 60 }) }).where("id", "=", "T").execute();
+    await ctx.database.updateTable("LiveTournament").set({ ruleset: JSON.stringify({ rounds: 3, breakSeconds: 60 }) }).where("id", "=", tournamentId).execute();
     await claim(alice, "dev-a");
-    await post("/api/v1/live-bouts/B1/clock", alice, { seconds: 180, running: false, round: 1, period: "BREAK", extension: 0, warningsLeft: 0, warningsRight: 0 }, keeper("dev-a"));
+    await post(`/api/v1/live-bouts/${boutOneId}/clock`, alice, { seconds: 180, running: false, round: 1, period: "BREAK", extension: 0, warningsLeft: 0, warningsRight: 0 }, keeper("dev-a"));
     const startedAt = (await bout()).periodStartedAt!;
     // A repeat of the same state does not restart the break.
-    await post("/api/v1/live-bouts/B1/clock", alice, { seconds: 180, running: false, round: 1, period: "BREAK", extension: 0, warningsLeft: 0, warningsRight: 0 }, keeper("dev-a"));
+    await post(`/api/v1/live-bouts/${boutOneId}/clock`, alice, { seconds: 180, running: false, round: 1, period: "BREAK", extension: 0, warningsLeft: 0, warningsRight: 0 }, keeper("dev-a"));
     expect((await bout()).periodStartedAt).toBe(startedAt);
-    await ctx.database.updateTable("LiveBout").set({ periodStartedAt: new Date(Date.parse(startedAt) - 25_000).toISOString() }).where("id", "=", "B1").execute();
-    const display = (await get("/api/v1/live-bouts/B1", alice)).json().display;
+    await ctx.database.updateTable("LiveBout").set({ periodStartedAt: new Date(Date.parse(startedAt) - 25_000).toISOString() }).where("id", "=", boutOneId).execute();
+    const display = (await get(`/api/v1/live-bouts/${boutOneId}`, alice)).json().display;
     expect(display.period).toBe("BREAK");
     expect(display.remainingSeconds).toBeGreaterThanOrEqual(34);
     expect(display.remainingSeconds).toBeLessThanOrEqual(35);
   });
 
   it("scoreboard: view only, no sign-in, current bout, on deck and the pool", async () => {
-    await ctx.database.updateTable("LiveRing").set({ scoreboardToken: "board-1" }).where("id", "=", "R1").execute();
-    await ctx.database.insertInto("LiveBout").values({
-      id: "B3", tournamentId: "T", ringId: "R1", order: 3, label: "B3", sheetName: "Pool_1", headerCell: "B325",
-      fighterLeft: "L3", fighterRight: "R3", status: "PENDING", startedAt: null, finishedAt: null,
-    }).execute();
+    await ctx.database.updateTable("LiveRing").set({ scoreboardToken: "board-1" }).where("id", "=", ringOneId).execute();
     expect((await get("/api/v1/scoreboard/nope", null)).statusCode).toBe(404);
     const idle = (await get("/api/v1/scoreboard/board-1", null)).json();
-    expect(idle).toMatchObject({ ring: { name: "Ring 1", leftColor: "#21c15b", rightColor: "#2f7dfa" }, current: null, onDeck: { label: "B1" }, after: { label: "B2" } });
-    expect(idle.pool.bouts.map((b: { label: string; isNext: boolean }) => [b.label, b.isNext])).toEqual([["B1", true], ["B2", false], ["B3", false]]);
+    expect(idle).toMatchObject({ ring: { name: "Ring 1", leftColor: "#21c15b", rightColor: "#2f7dfa" }, current: null, onDeck: { label: "Bout 1" }, after: { label: "Bout 2" } });
+    // The pool is the next bout's scheduled phase: its stage and time slot.
+    expect(idle.pool.name).toBe("Bracket · Slot 1");
+    expect(idle.pool.bouts.map((b: { label: string; isNext: boolean }) => [b.label, b.isNext])).toEqual([["Bout 1", true], ["Bout 2", false], ["Bout 3", false]]);
 
     await claim(alice, "dev-a");
     await exchange(alice, "dev-a", "c1", 2, 0);
-    await post("/api/v1/live-bouts/B1/clock", alice, { seconds: 30, running: true }, keeper("dev-a"));
+    await post(`/api/v1/live-bouts/${boutOneId}/clock`, alice, { seconds: 30, running: true }, keeper("dev-a"));
     const live = (await get("/api/v1/scoreboard/board-1", null)).json();
-    expect(live.current).toMatchObject({ label: "B1", display: { score: { left: 2, right: 0 }, running: true } });
+    expect(live.current).toMatchObject({ label: "Bout 1", display: { score: { left: 2, right: 0 }, running: true } });
     expect(live.current.display.remainingSeconds).toBeLessThanOrEqual(150);
-    expect(live).toMatchObject({ onDeck: { label: "B2" }, after: { label: "B3" } });
+    expect(live).toMatchObject({ onDeck: { label: "Bout 2" }, after: { label: "Bout 3" } });
     // The keeper link is not a scoreboard link, and the scoreboard token opens nothing else.
     expect((await get(`/api/v1/scoreboard/${TOKEN}`, null)).statusCode).toBe(404);
     expect((await get("/api/v1/live-rings/by-token/board-1", alice)).statusCode).toBe(404);
 
-    await post("/api/v1/live-bouts/B1/finish", alice, {}, keeper("dev-a"));
+    await post(`/api/v1/live-bouts/${boutOneId}/finish`, alice, {}, keeper("dev-a"));
     const after = (await get("/api/v1/scoreboard/board-1", null)).json();
     expect(after.current).toBeNull();
-    expect(after.pool.bouts[0]).toMatchObject({ label: "B1", status: "DONE", result: { left: 2, right: 0 } });
-    expect(after.pool.bouts[1]).toMatchObject({ label: "B2", isNext: true, result: null });
+    expect(after.pool.bouts[0]).toMatchObject({ label: "Bout 1", status: "DONE", result: { left: 2, right: 0 } });
+    expect(after.pool.bouts[1]).toMatchObject({ label: "Bout 2", isNext: true, result: null });
   });
 
   it("a running clock runs on at most 10 s past the keeper's last report", async () => {
-    await ctx.database.updateTable("LiveBout").set({ clockSeconds: 30, clockRunning: 1, clockUpdatedAt: new Date(Date.now() - 60_000).toISOString(), status: "RUNNING" }).where("id", "=", "B1").execute();
-    await ctx.database.updateTable("LiveRing").set({ scoreboardToken: "board-1" }).where("id", "=", "R1").execute();
+    await ctx.database.updateTable("LiveBout").set({ clockSeconds: 30, clockRunning: 1, clockUpdatedAt: new Date(Date.now() - 60_000).toISOString(), status: "RUNNING" }).where("id", "=", boutOneId).execute();
+    await ctx.database.updateTable("LiveRing").set({ scoreboardToken: "board-1" }).where("id", "=", ringOneId).execute();
     expect((await get("/api/v1/scoreboard/board-1", null)).json().current.display.remainingSeconds).toBe(140);
   });
 
   it("colours and a new scoreboard link: tournament admin only", async () => {
-    const put = (as: TestUser, payload: unknown) => ctx.app.inject({ method: "PUT", url: "/api/v1/live-rings/R1/colors", payload: payload as object, headers: bearer(as) });
+    const put = (as: TestUser, payload: unknown) => ctx.app.inject({ method: "PUT", url: `/api/v1/live-rings/${ringOneId}/colors`, payload: payload as object, headers: bearer(as) });
     expect((await put(alice, { leftColor: "#ff0000", rightColor: "#0000ff" })).statusCode).toBe(403);
     expect((await put(creator, { leftColor: "red", rightColor: "#0000ff" })).statusCode).toBe(400);
     expect((await put(creator, { leftColor: "#FF0000", rightColor: "#0000ff" })).json().ring).toMatchObject({ leftColor: "#ff0000", rightColor: "#0000ff" });
     expect((await get(`/api/v1/live-rings/by-token/${TOKEN}`, alice)).json().ring).toMatchObject({ leftColor: "#ff0000" });
     const before = (await ring()).scoreboardToken;
-    expect((await post("/api/v1/live-rings/R1/rotate-scoreboard-token", alice)).statusCode).toBe(403);
-    const rotated = (await post("/api/v1/live-rings/R1/rotate-scoreboard-token", creator)).json().ring.scoreboardToken;
+    expect((await post(`/api/v1/live-rings/${ringOneId}/rotate-scoreboard-token`, alice)).statusCode).toBe(403);
+    const rotated = (await post(`/api/v1/live-rings/${ringOneId}/rotate-scoreboard-token`, creator)).json().ring.scoreboardToken;
     expect(rotated).not.toBe(before);
     expect((await ring()).keeperToken).toBe(TOKEN);
-    const links = (await get("/api/v1/live-tournaments/T/rings", creator)).json().rings;
+    const links = (await get(`/api/v1/live-tournaments/${tournamentId}/rings`, creator)).json().rings;
     expect(links[0].scoreboardToken).toBe(rotated);
   });
 
-  it("ring links visible to creator only", async () => {
+  it("ring links visible to tournament admins and system admins only", async () => {
     const admin = await insertUser(ctx.database, { id: "admin", role: "SYSTEM_ADMIN" });
     await claim(alice, "dev-a");
-    const own = await get("/api/v1/live-tournaments/T/rings", creator);
+    const own = await get(`/api/v1/live-tournaments/${tournamentId}/rings`, creator);
     expect(own.statusCode).toBe(200);
     expect(own.json().rings).toEqual([
-      expect.objectContaining({ id: "R1", name: "Ring 1", order: 1, keeperToken: TOKEN, activeKeeper: expect.objectContaining({ userName: "Alice Keeper" }) }),
-      expect.objectContaining({ id: "R2", name: "Ring 2", order: 2, keeperToken: OTHER_TOKEN, activeKeeper: null }),
+      expect.objectContaining({ id: ringOneId, name: "Ring 1", order: 1, keeperToken: TOKEN, activeKeeper: expect.objectContaining({ userName: "Alice Keeper" }) }),
+      expect.objectContaining({ id: ringTwoId, name: "Ring 2", order: 2, keeperToken: OTHER_TOKEN, activeKeeper: null }),
     ]);
-    expect((await get("/api/v1/live-tournaments/T/rings", admin)).statusCode).toBe(200);
-    expect((await get("/api/v1/live-tournaments/T/rings", alice)).statusCode).toBe(403);
-    expect((await get("/api/v1/live-tournaments/T/rings", null)).statusCode).toBe(401);
+    expect((await get(`/api/v1/live-tournaments/${tournamentId}/rings`, admin)).statusCode).toBe(200);
+    expect((await get(`/api/v1/live-tournaments/${tournamentId}/rings`, alice)).statusCode).toBe(403);
+    expect((await get(`/api/v1/live-tournaments/${tournamentId}/rings`, null)).statusCode).toBe(401);
     expect((await get("/api/v1/live-tournaments/nope/rings", creator)).statusCode).toBe(404);
 
     // No other route leaks a token or the keeper's device id.
-    for (const url of [`/api/v1/live-rings/by-token/${TOKEN}`, "/api/v1/live-tournaments/T", "/api/v1/live-rings/R1/bouts", "/api/v1/live-bouts/B1"]) {
+    for (const url of [`/api/v1/live-rings/by-token/${TOKEN}`, `/api/v1/live-tournaments/${tournamentId}`, `/api/v1/live-rings/${ringOneId}/bouts`, `/api/v1/live-bouts/${boutOneId}`]) {
       const body = (await get(url, bob)).body;
       expect(body, url).not.toContain(OTHER_TOKEN);
       expect(body, url).not.toContain(TOKEN);
       expect(body, url).not.toContain("dev-a");
     }
-  });
-
-  it("lists own tournaments, and every tournament for a system admin", async () => {
-    const admin = await insertUser(ctx.database, { id: "admin", role: "SYSTEM_ADMIN" });
-    await ctx.database
-      .insertInto("LiveTournament")
-      .values({ id: "T2", name: "Other", mode: "SHEET", layoutVersion: "v3", googleSpreadsheetId: "sheet-1", createdByUserId: alice.id, createdAt: "2026-10-26T10:00:00.000Z" })
-      .execute();
-    const own = await get("/api/v1/live-tournaments", creator);
-    expect(own.statusCode).toBe(200);
-    expect(own.json().tournaments).toEqual([{ id: "T", name: "Tournament", googleSpreadsheetId: null, createdAt: "2026-10-25T10:00:00.000Z" }]);
-    const all = await get("/api/v1/live-tournaments", admin);
-    expect(all.json().tournaments.map((tournament: { id: string }) => tournament.id)).toEqual(["T2", "T"]);
-    expect((await get("/api/v1/live-tournaments", bob)).json().tournaments).toEqual([]);
-    expect((await get("/api/v1/live-tournaments", null)).statusCode).toBe(401);
   });
 });

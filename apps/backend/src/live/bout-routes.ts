@@ -8,7 +8,7 @@ import { ensureObject, HttpError, requireString } from "../http.js";
 import { BOUT_PERIODS, type BoutPeriod } from "@hema/competition-domain";
 import { displayOf, tournamentRules } from "./bout-display.js";
 import { scoreOf, type BoutScore } from "./bout-score.js";
-import { activeExchanges, enqueueSync, type LiveExchangeRow } from "./live-store.js";
+import { activeExchanges, type LiveExchangeRow } from "./live-store.js";
 import { checkRingToken, requireKeeper } from "./ring-keeper.js";
 import { requireLiveRingAccess } from "./ring-access.js";
 import { requireEventTournamentAdmin } from "../tournaments/access.js";
@@ -194,8 +194,7 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
   // Every write below checks the ring keeper (X-Ring-Token + X-Device-Id) inside its own transaction, so a takeover
   // committed between the check and the write can't let the replaced device write.
 
-  // Start and finish change the bout's state only. They queue no sheet write: the sheet's content depends only on
-  // the exchanges, and a write here would blank a bout range someone typed by hand.
+  // Start and finish change the bout's state only.
   app.post("/api/v1/live-bouts/:id/start", async (request) => {
     const user = await requireUser(request, database);
     const boutId = requirePathParam(request, "id");
@@ -271,7 +270,6 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
             undoneAt: null,
           };
           await trx.insertInto("LiveExchange").values(exchange).execute();
-          await enqueueSync(trx, bout.tournamentId, boutId, app.now());
           return { exchange, score: await scoreFor(trx, boutId) };
         });
         reply.code(200);
@@ -329,7 +327,6 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
         .where("undoneAt", "is", null)
         .executeTakeFirst();
       if (Number(updated.numUpdatedRows) !== 1) throw new HttpError(409, "There is nothing to undo.");
-      await enqueueSync(trx, bout.tournamentId, boutId, app.now());
       return { undone: publicExchange({ ...newest, undoneAt }), score: await scoreFor(trx, boutId) };
     });
   });
@@ -367,12 +364,9 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
     return database.transaction().execute(async (trx) => {
       const bout = await getBout(trx, boutId);
       const tournament = await trx.selectFrom("LiveTournament")
-        .select(["mode", "sourceTournamentId"])
+        .select("sourceTournamentId")
         .where("id", "=", bout.tournamentId)
         .executeTakeFirstOrThrow();
-      if (tournament.mode !== "DATABASE" || tournament.sourceTournamentId === null) {
-        throw new HttpError(409, "Only a database-mode bout can be corrected here.");
-      }
       await requireEventTournamentAdmin(trx, tournament.sourceTournamentId, user);
       const revision = await correctDatabaseBoutResult(trx, boutId, user.id, exchanges, app.now().toISOString());
       const correctedBout = await getBout(trx, boutId);
@@ -387,7 +381,7 @@ export function registerBoutRoutes(app: FastifyInstance, database: Kysely<Backen
   });
 
   // The device reports its clock; the server never counts. Allowed in any bout state (a pause sent right after
-  // finish must not be refused), it doesn't start the bout and queues no sheet write.
+  // finish must not be refused) and it doesn't start the bout.
   app.post("/api/v1/live-bouts/:id/clock", async (request) => {
     const user = await requireUser(request, database);
     const boutId = requirePathParam(request, "id");

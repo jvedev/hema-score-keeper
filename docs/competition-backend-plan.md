@@ -1,12 +1,12 @@
 # Competition app → existing backend plan
 
 ## Doel
-De `competition` app loskoppelen van Google Docs en laten praten met de bestaande backend.
+De `competition` app laten praten met de bestaande backend (SQLite is de enige bron van waarheid).
 Dit is een **competition-first** integratie: de app werkt op een competition, niet op een event-overview.
 
 ## Huidige status
 - Backend competition read-endpoints staan live.
-- De competition app praat nu via een gedeeld `@hema/competition-api` package met backend/mock/sheets-adapters.
+- De competition app praat nu via een gedeeld `@hema/competition-api` package met backend/mock-adapters.
 - De selector toont nu tabs voor **My competitions**, **Archive** en **Public competitions**.
 - Write-flows blijven nog gefaseerd open voor de volgende stap.
 
@@ -59,11 +59,6 @@ Dit is een **competition-first** integratie: de app werkt op een competition, ni
   lokale ranking, globale ranking of beide.
 - Standalone matches krijgen voorlopig geen ranking-context.
 
-### 5. Houd Google Docs tijdelijk als referentie, niet als bron van waarheid
-- De competition app kan eerst de nieuwe backend lezen.
-- Docs kunnen nog als fallback of import-export blijven bestaan.
-- Pas daarna haal je OAuth/Docs echt weg.
-
 ## Hoe dit mooi ingepast kan worden
 ### Gekozen route
 Voeg een aparte `Competition`-entiteit toe in de backend.
@@ -87,12 +82,11 @@ Voeg een aparte `Competition`-entiteit toe in de backend.
 ### Fase 3: scheiden van concerns
 - rankinglogica naar apart package
 - backend service classes herbruikbaar maken
-- Docs/OAuth pas hier vervangen
 
 ## Suggesties
 - Maak de competition app niet afhankelijk van event-UI.
 - Deel alleen echte herbruikbare logica met score-keeper.
-- Houd ranking-berekening los van de sheet/backend-adapter.
+- Houd ranking-berekening los van de backend-adapter.
 - Gebruik `competitionId` in de UI; verberg het backend-concept zo veel mogelijk.
 - Maak de backend-client service-based, zodat later meerdere apps dezelfde domeinservices kunnen hergebruiken.
 - Houd de eerste versie van de ranking simpel: backend als bron van waarheid, app alleen renderen.

@@ -18,7 +18,6 @@ import { competitionBoutHistory, competitionStandings, standingsForViewer } from
 import { registerBoutRoutes as registerLiveBoutRoutes } from "./live/bout-routes.js";
 import { registerLiveRoutes } from "./live/live-routes.js";
 import { registerRingRoutes } from "./live/ring-routes.js";
-import { startSyncWorker } from "./live/sync-worker.js";
 import { startPushWorker } from "./live/push-notifications.js";
 import { appPaths, productionAppMounts, registerStaticApps, type StaticAppMount } from "./static-apps.js";
 import { registerClubRoutes } from "./club-routes.js";
@@ -32,7 +31,6 @@ import {
   requireEventAdmin,
   requireEventOrTournamentAdmin,
 } from "./events/access.js";
-import { readSheetValues, writeSheetValues } from "./google-sheets.js";
 import {
   ensureJsonValue,
   ensureObject,
@@ -187,25 +185,6 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
     return reply.type("text/html; charset=utf-8").send(
       `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>HEMA Score Keeper</title><h1>HEMA Score Keeper</h1><ul>${links}</ul></html>`,
     );
-  });
-
-  app.get("/api/v1/google-sheets/values", async (request) => {
-    const query = ensureObject(request.query ?? {}, "Query");
-    const spreadsheetId = requireString(query.spreadsheetId, "spreadsheetId");
-    const range = requireString(query.range, "range");
-    const values = await readSheetValues(spreadsheetId, range);
-    return { values };
-  });
-
-  app.put("/api/v1/google-sheets/values", async (request) => {
-    const body = ensureObject(request.body, "Google Sheets values");
-    const spreadsheetId = requireString(body.spreadsheetId, "Spreadsheet ID");
-    const range = requireString(body.range, "Range");
-    if (!Array.isArray(body.values)) {
-      throw new HttpError(400, "values must be an array of rows.");
-    }
-    await writeSheetValues(spreadsheetId, range, body.values as unknown[][]);
-    return { ok: true };
   });
 
   /** Owner, co-admin or system admin of the competition. */
@@ -1958,10 +1937,8 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
     await database.transaction().execute(async (trx) => {
       const liveBout = await trx
         .selectFrom("LiveBout")
-        .innerJoin("LiveTournament", "LiveTournament.id", "LiveBout.tournamentId")
-        .select("LiveBout.id")
-        .where("LiveBout.sourceMatchId", "=", matchId)
-        .where("LiveTournament.mode", "=", "DATABASE")
+        .select("id")
+        .where("sourceMatchId", "=", matchId)
         .executeTakeFirst();
       if (liveBout) {
         throw new HttpError(409, "This match is completed through live scoring.");
@@ -2154,9 +2131,6 @@ async function start(): Promise<void> {
   const host = process.env.IP?.trim() || process.env.HOST?.trim() || "0.0.0.0";
   const port = Number(process.env.PORT ?? 3001);
   if (process.env.NODE_ENV !== "test") {
-    // Mirrors live bouts into the backup .xlsx (and the Google Sheet) in the background, off the request path.
-    const stopSync = startSyncWorker(db);
-    app.addHook("onClose", async () => stopSync());
     const stopPush = startPushWorker(db);
     app.addHook("onClose", async () => stopPush());
   }

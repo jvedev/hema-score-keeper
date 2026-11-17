@@ -5,6 +5,10 @@ import { isEventTournamentAdmin } from "../tournaments/access.js";
 
 const SCORING_ROLES = ["TABLE", "JUDGE", "JURY"] as const;
 
+/**
+ * Who may score on a ring: the tournament admins of the source tournament and system admins (null: every phase),
+ * or users assigned to one of the ring's scheduled phases as TABLE, JUDGE or JURY (the ids of those phases).
+ */
 export async function requireLiveRingAccess(
   executor: DbExecutor,
   ringId: string,
@@ -17,17 +21,15 @@ export async function requireLiveRingAccess(
     .select([
       "LiveRing.id",
       "LiveRing.sourceArenaId",
-      "LiveTournament.mode",
       "LiveTournament.sourceTournamentId",
     ])
     .where("LiveRing.id", "=", ringId)
     .executeTakeFirst();
   if (!ring) throw new HttpError(404, "Ring not found.");
-  if (ring.mode === "SHEET") return null;
-  if (!ring.sourceTournamentId || !ring.sourceArenaId) {
-    throw new HttpError(409, "This database-mode ring is missing its source schedule.");
-  }
   if (await isEventTournamentAdmin(executor, ring.sourceTournamentId, user)) return null;
+  if (!ring.sourceArenaId) {
+    throw new HttpError(409, "This ring is missing its source arena.");
+  }
 
   let assignments = executor
     .selectFrom("ScheduledAssignment")

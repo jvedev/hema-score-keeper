@@ -10,7 +10,6 @@ if not exist "%HEMASCORE_DATA_DIR%\server.env" (
 
 set "APP_DATA_DIR=%HEMASCORE_DATA_DIR%"
 set "DATABASE_URL=file:./dev.db"
-set "LIVE_DATA_DIR=%HEMASCORE_DATA_DIR%\live"
 
 runtime\node.exe --env-file "%HEMASCORE_DATA_DIR%\server.env" server\apps\backend\scripts\create-admin.mjs %*
 exit /b %errorlevel%

@@ -3,7 +3,7 @@ import type { MatchEventDetail } from "@hema/ui";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActiveKeeper, BoutDetail, BoutScore, BoutStateReport, ClockReport, ExchangeToSend, LiveBoutRow, LiveSession, RingByToken, ServerExchange } from "./live-client";
 import { resetOutboxes } from "./outbox";
-import { RingController, ringPenalties, sheetScore, type BoutScreen, type OpenBout, type RingApi, type RingModeState, type RingView } from "./ring-controller";
+import { RingController, ringPenalties, liveBoutScore, type BoutScreen, type OpenBout, type RingApi, type RingModeState, type RingView } from "./ring-controller";
 import { MemoryStorage } from "./test-support";
 
 const SINCE = "2026-10-26T10:00:00Z";
@@ -34,7 +34,7 @@ class FakeApi implements RingApi {
   claims: Record<string, string> = {};
   /** The ring token each stored claim was made under. */
   claimTokens: Record<string, string> = {};
-  ring: RingByToken | Error = { ring: { id: "r1", tournamentId: "t1", name: "Ring 1", order: 1 }, tournament: { id: "t1", name: "Cup", mode: "SHEET" }, bouts: [boutRow("b1", 1), boutRow("b2", 2)], activeKeeper: null, youAreKeeper: false };
+  ring: RingByToken | Error = { ring: { id: "r1", tournamentId: "t1", name: "Ring 1", order: 1 }, tournament: { id: "t1", name: "Cup" }, bouts: [boutRow("b1", 1), boutRow("b2", 2)], activeKeeper: null, youAreKeeper: false };
   /** The device the server has as the ring's keeper. */
   keeperDevice: string | null = null;
   exchanges: Record<string, ServerExchange[]> = { b1: [], b2: [] };
@@ -64,7 +64,7 @@ class FakeApi implements RingApi {
     const bout = ring.bouts.find((candidate) => candidate.id === boutId)!;
     const exchanges = this.exchanges[boutId]!.filter((exchange) => exchange.undoneAt === null);
     const clock = { ...this.clocks[boutId]!, updatedAt: SINCE };
-    const answer = { bout: { ...bout, clock }, exchanges: structuredClone(exchanges), score: sheetScore(exchanges), clock };
+    const answer = { bout: { ...bout, clock }, exchanges: structuredClone(exchanges), score: liveBoutScore(exchanges), clock };
     if (this.readGate) await this.readGate();
     return answer;
   };
@@ -89,7 +89,7 @@ class FakeApi implements RingApi {
     if (outcome) throw outcome;
   }
   #score(boutId: string): BoutScore {
-    return this.scoreOverride ?? sheetScore(this.exchanges[boutId]!.filter((exchange) => exchange.undoneAt === null));
+    return this.scoreOverride ?? liveBoutScore(this.exchanges[boutId]!.filter((exchange) => exchange.undoneAt === null));
   }
   startBout = async (_token: string, boutId: string) => this.#write(`start ${boutId}`);
   finishBout = async (_token: string, boutId: string) => {
@@ -248,17 +248,6 @@ describe("ring mode", () => {
     expect(state().ring?.name).toBe("Ring 1");
   });
 
-  it("keeps the tournament scoring mode in ring state", async () => {
-    api.ring = {
-      ...(api.ring as RingByToken),
-      tournament: { id: "t1", name: "Cup", mode: "DATABASE" },
-    };
-
-    await controller().open("tok");
-
-    expect(state().tournamentMode).toBe("DATABASE");
-  });
-
   it("claim on an active ring asks to confirm", async () => {
     keptBy("Ann");
     const ring = controller();
@@ -308,7 +297,7 @@ describe("ring mode", () => {
     expect(state().screen).toBe("bout");
     expect(screen.opened).toMatchObject({ id: "b1", fighterLeft: "L1", fighterRight: "R1", clockSeconds: 75, started: true });
     expect(screen.clock().running).toBe(false);
-    // The sheet rule: the double counts 0 for both, the deduction is negative.
+    // The live bout score rule: the double counts 0 for both, the deduction is negative.
     expect(screen.score).toEqual({ left: 2, right: 0, doubles: 1 });
     expect(state().canUndo).toBe(true);
     // The server still had the clock running: the keeper tells it the clock is paused.

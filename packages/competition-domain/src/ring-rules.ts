@@ -47,7 +47,7 @@ export const DEFAULT_BOUT_FORMAT: Readonly<BoutFormat> = Object.freeze({
   suddenDeath: false,
 });
 
-/** Sheet tournaments without a ruleset score with these (the ring constants of phase 2). */
+/** Live tournaments without their own ring rules score with these. */
 export function defaultRingRules(): RingRules {
   return {
     maxDurationSeconds: 180,

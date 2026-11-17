@@ -9,7 +9,7 @@ let database: Kysely<BackendDatabase>;
 let app: FastifyInstance;
 
 beforeEach(async () => {
-  // A brand-new database: only the normal bootstrap and migrations, nothing else created by hand.
+  // A brand-new database: only the baseline schema and the normal bootstrap, nothing else created by hand.
   database = createDatabase("file::memory:");
   app = createApp(database);
   await app.ready();

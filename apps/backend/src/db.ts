@@ -1,11 +1,9 @@
-import path from "node:path";
-import { mkdirSync } from "node:fs";
-import { appDataDir } from "./app-root.js";
-import BetterSqlite3 from "better-sqlite3";
+import type BetterSqlite3 from "better-sqlite3";
 import { Kysely, SqliteDialect, type Generated, type Transaction } from "kysely";
 import type { EntryKind, ScheduleRole, StageOfficialRole, StageType } from "./api-types.js";
-import { initializeCompetitionDatabase } from "./competition-bootstrap.js";
-import { applySchemaMigrations } from "./schema-migrations.js";
+import { DEFAULT_DATABASE_URL, openNativeDatabase, prepareNativeDatabase } from "./native-database.js";
+
+export { resolveDatabasePath } from "./native-database.js";
 
 export type SqliteBoolean = 0 | 1;
 
@@ -229,11 +227,6 @@ interface CompetitionAdminTable {
   role: "OWNER" | "CO_ADMIN";
 }
 
-interface SchemaMigrationTable {
-  name: string;
-  appliedAt: string;
-}
-
 interface CompetitionParticipantTable {
   id: string;
   competitionId: string;
@@ -269,7 +262,6 @@ interface BoutTable {
   fighterAUserId: string;
   fighterBUserId: string;
   refereeUserId: string;
-  tableUserId: string | null;
   ring: string | null;
   startedAt: string;
   scoreA: number;
@@ -321,15 +313,10 @@ interface BoutRevisionTable {
   replacedByUserId: string;
 }
 
-export type LiveTarget = "LOCAL" | "GOOGLE";
-
 interface LiveTournamentTable {
   id: string;
   name: string;
-  mode: "SHEET" | "DATABASE";
-  sourceTournamentId: Generated<string | null>;
-  layoutVersion: string;
-  googleSpreadsheetId: string | null;
+  sourceTournamentId: string;
   createdByUserId: string;
   createdAt: string;
   /** Ring-mode match parameters and bout format as JSON (`parseRingRules`); null = the ring defaults. */
@@ -358,21 +345,17 @@ interface LiveRingTable {
 interface LiveBoutTable {
   id: string;
   tournamentId: string;
-  sourceMatchId: Generated<string | null>;
+  sourceMatchId: string;
   scheduledPhaseId: Generated<string | null>;
   sourceScheduleSignature: Generated<string | null>;
   sourceResultSignature: Generated<string | null>;
   ringId: string;
   order: number;
   label: string;
-  sheetName: string;
-  headerCell: string;
   fighterLeft: string;
   fighterRight: string;
   fighterLeftId: Generated<string | null>;
   fighterRightId: Generated<string | null>;
-  fighterLeftManuallyAssigned: Generated<number>;
-  fighterRightManuallyAssigned: Generated<number>;
   status: "PENDING" | "RUNNING" | "DONE";
   startedAt: string | null;
   finishedAt: string | null;
@@ -404,10 +387,7 @@ interface LiveTournamentFighterTable {
   id: string;
   tournamentId: string;
   name: string;
-  nameKey: string;
-  userId: string | null;
-  active: Generated<number>;
-  ambiguous: Generated<number>;
+  userId: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -427,26 +407,6 @@ interface LiveExchangeTable {
   createdByUserId: string;
   createdAt: string;
   undoneAt: string | null;
-}
-
-interface LiveSyncJobTable {
-  id: string;
-  tournamentId: string;
-  boutId: string;
-  target: LiveTarget;
-  status: "PENDING" | "DONE" | "FAILED";
-  attempts: number;
-  nextAttemptAt: string;
-  lastError: string | null;
-  updatedAt: string;
-}
-
-interface LiveSyncStateTable {
-  tournamentId: string;
-  target: LiveTarget;
-  lastSuccessAt: string | null;
-  lastError: string | null;
-  lastErrorAt: string | null;
 }
 
 interface LivePushSubscriptionTable {
@@ -473,6 +433,7 @@ interface LivePushJobTable {
   updatedAt: string;
 }
 
+/** The Kysely view of the baseline schema (`schema.ts`); `BACKEND_TABLES` there must list exactly these tables. */
 export interface BackendDatabase {
   Club: ClubTable;
   User: UserTable;
@@ -508,7 +469,6 @@ export interface BackendDatabase {
   CompetitionParticipant: CompetitionParticipantTable;
   CompetitionBout: CompetitionBoutTable;
   CompetitionAdmin: CompetitionAdminTable;
-  SchemaMigration: SchemaMigrationTable;
   Bout: BoutTable;
   BoutJury: BoutJuryTable;
   BoutTableOfficial: BoutTableOfficialTable;
@@ -520,46 +480,22 @@ export interface BackendDatabase {
   LiveBout: LiveBoutTable;
   LiveBoutRevision: LiveBoutRevisionTable;
   LiveExchange: LiveExchangeTable;
-  LiveSyncJob: LiveSyncJobTable;
-  LiveSyncState: LiveSyncStateTable;
   LivePushSubscription: LivePushSubscriptionTable;
   LivePushJob: LivePushJobTable;
 }
 
 export type DbExecutor = Kysely<BackendDatabase> | Transaction<BackendDatabase>;
 
-export function resolveDatabasePath(
-  databaseUrl = process.env.DATABASE_URL ?? "file:./dev.db",
-  env: NodeJS.ProcessEnv = process.env,
-): string {
-  if (!databaseUrl.startsWith("file:")) {
-    return databaseUrl;
-  }
-
-  const databaseDir = appDataDir(env);
-  const filePath = databaseUrl.slice("file:".length);
-
-  if (filePath === ":memory:") {
-    return filePath;
-  }
-
-  return path.isAbsolute(filePath) ? filePath : path.resolve(databaseDir, filePath);
+export function createDatabase(databaseUrl = process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL): Kysely<BackendDatabase> {
+  return toKysely(openNativeDatabase(databaseUrl));
 }
 
-export function createDatabase(databaseUrl = process.env.DATABASE_URL ?? "file:./dev.db"): Kysely<BackendDatabase> {
-  const databasePath = resolveDatabasePath(databaseUrl);
-  if (databasePath !== ":memory:") {
-    mkdirSync(path.dirname(databasePath), { recursive: true });
-  }
-  const native = new BetterSqlite3(databasePath);
-  return initializeDatabase(native);
-}
-
+/** Prepares an already opened database (e.g. `:memory:` in tests) exactly like the server's own database. */
 export function initializeDatabase(native: BetterSqlite3.Database): Kysely<BackendDatabase> {
-  native.pragma("foreign_keys = ON");
-  initializeCompetitionDatabase(native);
-  applySchemaMigrations(native);
+  return toKysely(prepareNativeDatabase(native));
+}
 
+function toKysely(native: BetterSqlite3.Database): Kysely<BackendDatabase> {
   return new Kysely<BackendDatabase>({
     dialect: new SqliteDialect({ database: native }),
   });

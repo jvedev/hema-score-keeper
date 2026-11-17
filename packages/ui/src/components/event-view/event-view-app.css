@@ -606,3 +606,80 @@ textarea.text-input {
     grid-template-columns: 1fr;
   }
 }
+
+.live-rings,
+.live-ring-list {
+  display: grid;
+  gap: 10px;
+}
+
+.live-ring {
+  gap: 12px;
+}
+
+.live-ring-header {
+  display: grid;
+  gap: 2px;
+}
+
+.live-ring-header [data-kept="true"] {
+  color: #9be7b4;
+}
+
+.live-ring-links {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.live-ring-link {
+  align-content: start;
+  display: grid;
+  gap: 8px;
+}
+
+.live-ring-colors {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.live-ring-colors-title {
+  color: rgba(255, 255, 255, 0.72);
+  flex-basis: 100%;
+  font-size: 12px;
+}
+
+.live-ring-colors input[type="color"] {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  height: 36px;
+  padding: 2px;
+  width: 56px;
+}
+
+.live-ring-rules-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.live-ring-rules [aria-invalid="true"] {
+  border-color: #ffb6b9;
+}
+
+.live-ring-notice {
+  color: #9be7b4;
+  margin: 0;
+}
+
+.live-ring-error {
+  color: #ffb6b9;
+  margin: 0;
+}
+
+.live-ring-error p {
+  margin: 0;
+}

@@ -80,12 +80,11 @@ async function writeMatchResult(
   if (!bout) throw new HttpError(404, "Bout not found.");
   const tournament = await executor
     .selectFrom("LiveTournament")
-    .select(["mode", "sourceTournamentId", "ruleset"])
+    .select("ruleset")
     .where("id", "=", bout.tournamentId)
     .executeTakeFirstOrThrow();
-  if (tournament.mode !== "DATABASE") return;
-  if (!tournament.sourceTournamentId || !bout.sourceMatchId) {
-    throw new HttpError(409, "This database-mode bout is missing its source match.");
+  if (!bout.sourceMatchId) {
+    throw new HttpError(409, "This live bout is missing its source match.");
   }
 
   const match = await requireMatchRow(executor, bout.sourceMatchId);
@@ -184,12 +183,8 @@ export async function correctDatabaseBoutResult(
 ): Promise<number> {
   const bout = await executor.selectFrom("LiveBout").selectAll().where("id", "=", boutId).executeTakeFirst();
   if (!bout) throw new HttpError(404, "Bout not found.");
-  const tournament = await executor.selectFrom("LiveTournament")
-    .select(["mode", "sourceTournamentId"])
-    .where("id", "=", bout.tournamentId)
-    .executeTakeFirstOrThrow();
-  if (tournament.mode !== "DATABASE" || !tournament.sourceTournamentId || !bout.sourceMatchId) {
-    throw new HttpError(409, "Only a linked database-mode bout can be corrected.");
+  if (!bout.sourceMatchId) {
+    throw new HttpError(409, "Only a bout linked to a source match can be corrected.");
   }
   if (bout.status !== "DONE") throw new HttpError(409, "Only a completed bout can be corrected.");
   if (bout.sourceResultSignature === null) {

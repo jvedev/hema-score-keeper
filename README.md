@@ -58,5 +58,11 @@ De API luistert standaard op `http://localhost:3001` en biedt nu CRUD voor
 clubs, vechters en toernooien, plus toernooi-arena's, poolindeling, bouts en
 losse exchanges.
 
-De oude database-migrations zijn omgezet naar losse SQL-migrations in
-`apps/backend/sql/migrations`, en seeden doe je via `npm run backend:db:seed`.
+Het volledige databaseschema staat in `apps/backend/src/schema.ts` (baseline, versie in
+`PRAGMA user_version`). Bij de eerste start maakt de backend een lege database daarmee aan;
+een database van een ouder schema wordt geweigerd en moet opnieuw worden aangemaakt. Zolang er
+geen productiedata is, pas je bij een schemawijziging `schema.ts` direct aan en maak je de
+dev-database opnieuw aan met `npm run backend:db:reset` (bewaart een backup
+`dev.db.bak-<tijd>`, maakt een nieuwe database en seedt die). Alleen seeden (alle data
+vervangen door voorbeelddata) doe je met `npm run backend:db:seed`. Beide scripts bouwen eerst
+de backend en volgen `DATABASE_URL`/`APP_DATA_DIR`; stop de backend voordat je reset.
