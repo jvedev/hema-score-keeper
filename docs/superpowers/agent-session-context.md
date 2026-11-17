@@ -16,21 +16,37 @@ This is the concise, repository-owned handoff for an AI agent starting a new ses
 
 **Direction change 2026-11-17 (overrides older notes below):** spreadsheet mode is dropped; SQLite
 is the only source of truth. Nothing is in production, so no data, migrations, or API
-compatibility need preserving, and the dev database may be discarded. All earlier work is now on
-`master`. The removal phase in
-[`plans/2026-11-17-remove-spreadsheet-mode.md`](plans/2026-11-17-remove-spreadsheet-mode.md) is
-implemented and verified but uncommitted; see its **Status / next** for open items. The
-baseline schema ([`plans/2026-11-17-baseline-database-schema.md`](plans/2026-11-17-baseline-database-schema.md))
-is implemented and verified but uncommitted: `apps/backend/src/schema.ts` is the only schema,
-old databases are refused, and `npm run backend:db:reset` recreates and seeds the dev database
-(the existing `data/dev.db` must be reset once). After it:
-[`plans/2026-11-17-table-ring-and-scoreboard-settings.md`](plans/2026-11-17-table-ring-and-scoreboard-settings.md)
-is implemented and verified but uncommitted (ring colours and scoreboard settings from the
-table, an Event colour palette that all colour choices pick from, default palette red/blue).
-**It changed the schema: the dev database must be reset (`npm run backend:db:reset`).** See its
-**Status / next**. Then a reduced Phase 2 of the unified Event-admin plan. HTTPS,
-Web Push and phone tests stay deferred to the end; GitHub Codespaces (HTTPS forwarded ports) is
-the intended place for them.
+compatibility need preserving, and the dev database may be discarded. All work is on `master`
+and pushed to `origin` (2026-11-17, last commit `396b3df`).
+
+Done 2026-11-17 (each plan's **Status / next** has details and verification):
+- [`plans/2026-11-17-remove-spreadsheet-mode.md`](plans/2026-11-17-remove-spreadsheet-mode.md)
+  (commit `88c4dac`): spreadsheet mode removed; ring links/colours/rules in the Event-admin
+  live tab.
+- [`plans/2026-11-17-baseline-database-schema.md`](plans/2026-11-17-baseline-database-schema.md)
+  (commit `88c4dac`): `apps/backend/src/schema.ts` is the only schema (`user_version` 1); old
+  databases are refused; `npm run backend:db:reset` backs up, recreates and seeds the dev
+  database.
+- [`plans/2026-11-17-table-ring-and-scoreboard-settings.md`](plans/2026-11-17-table-ring-and-scoreboard-settings.md)
+  (commit `396b3df`): Event colour palette (default red/blue), ring colours and scoreboard
+  settings from the table and Event-admin; browser-checked locally, two bugs fixed.
+
+Local dev: seed users `jeroen` (competition admin) and `admin` (SYSTEM_ADMIN), both with the
+seed's test password. `.claude/launch.json` has `backend` (:3001), `event-admin-live` (:5182,
+sets `VITE_SCORE_KEEPER_URL`) and `score-keeper-live` (:5180).
+
+Open small items: visual check on a real tablet/large monitor; tracked `google.md` contains a
+plain-text password (user to rotate/delete); demo Competitions are auto-added on first start
+(move to seed only?); backend `PUT /live-tournaments/:id/rules` accepts invalid values silently;
+Event-admin client calls a missing `GET /api/v1/events/:id`; stale tracked
+`pages-stage/competition/**`.
+
+**Next:** plan the reduced Phase 2 of
+[`plans/2026-11-07-unified-event-admin-implementation.md`](plans/2026-11-07-unified-event-admin-implementation.md)
+(attach rating Competitions to an Event; no spreadsheet component) and get the user's approval
+before building. HTTPS, Web Push and phone tests stay deferred to the end; GitHub Codespaces
+(HTTPS forwarded ports) is the intended place for them; also re-test the Windows package and
+Alwaysdata with the new schema then.
 
 The approved design is [`specs/2026-10-25-tournament-mode-design.md`](specs/2026-10-25-tournament-mode-design.md). Phases 1–3 are complete. Phase 4 fighter phones is implemented and committed on `co-pilot`; automated verification passed. Real HTTPS/Web Push checks on a phone are intentionally deferred until the end of the project. Read [`plans/2026-10-28-tournament-fighter-phones.md`](plans/2026-10-28-tournament-fighter-phones.md) and `.superpowers/sdd/2026-10-28-tournament-fighter-phones/progress.md`.
 
