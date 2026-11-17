@@ -2,7 +2,7 @@
 name: api-mock
 description: >
   Create deterministic fetch API mocks and fixtures for tests by running the
-  generator in `.github/skills/api-mock/scripts`. Use when tests need API calls
+  generator in `.claude/skills/api-mock/scripts`. Use when tests need API calls
   mocked without network access or additional dependencies.
 ---
 
@@ -23,13 +23,13 @@ Use this skill when the user asks to:
 2. Generate a mock module:
 
    ```bash
-   node .github/skills/api-mock/scripts/create-api-mock.mjs --name "load-match" --url "/api/matches/42" --method GET --body '{"id":42}'
+   node .claude/skills/api-mock/scripts/create-api-mock.mjs --name "load-match" --url "/api/matches/42" --method GET --body '{"id":42}'
    ```
 
 3. For non-JSON responses, use `--content-type`:
 
    ```bash
-   node .github/skills/api-mock/scripts/create-api-mock.mjs --name "health" --url "/health" --body "ok" --content-type text/plain
+   node .claude/skills/api-mock/scripts/create-api-mock.mjs --name "health" --url "/health" --body "ok" --content-type text/plain
    ```
 
 4. Preview changes with `--dry-run`. Use `--force` only when replacing an

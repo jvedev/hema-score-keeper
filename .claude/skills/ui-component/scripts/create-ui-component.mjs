@@ -59,9 +59,7 @@ function assertComponentName(value) {
 
 function assertTagName(value) {
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(value)) {
-    throw new Error(
-      `Invalid custom element tag "${value}". It must be lowercase and contain a hyphen.`
-    );
+    throw new Error(`Invalid custom element tag "${value}". It must be lowercase and contain a hyphen.`);
   }
 }
 
@@ -79,9 +77,7 @@ function ensureDirectory(dirPath, dryRun) {
 
 function writeFile(filePath, content, force, dryRun) {
   if (fs.existsSync(filePath) && !force) {
-    throw new Error(
-      `File already exists: ${path.relative(repoRoot, filePath)}. Re-run with --force to overwrite.`
-    );
+    throw new Error(`File already exists: ${path.relative(repoRoot, filePath)}. Re-run with --force to overwrite.`);
   }
 
   if (!dryRun) {
@@ -110,14 +106,14 @@ function updateIndex(exportLine, dryRun) {
 function templateTs(componentName, tagName, className) {
   return `import css from "./${componentName}.css?raw";
 import html from "./${componentName}.html?raw";
-import { BaseComponent } from "../base-component/base-component";
+import { BaseComponent } from "../base-component/base-component.js";
 
 export class ${className} extends BaseComponent {
   connectedCallback(): void {
     this.render(css, html);
   }
 
-  disconnectedCallback(): void {
+  override disconnectedCallback(): void {
     super.disconnectedCallback();
   }
 }
@@ -196,7 +192,7 @@ function main() {
   assertClassName(className);
 
   const componentDir = path.join(componentsRoot, componentName);
-  const exportLine = `export * from "./components/${componentName}/${componentName}";`;
+  const exportLine = `export * from "./components/${componentName}/${componentName}.js";`;
   const files = [
     {
       path: path.join(componentDir, `${componentName}.ts`),
@@ -242,8 +238,8 @@ function main() {
 
   console.log("");
   console.log("Next steps:");
-  console.log("- npm run test --workspace @repo/ui");
-  console.log("- npm run storybook --workspace @repo/ui");
+  console.log("- npm run test --workspace @hema/ui");
+  console.log("- npm run storybook --workspace @hema/ui");
 }
 
 try {

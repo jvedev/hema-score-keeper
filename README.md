@@ -7,7 +7,7 @@ Web Components-library.
 
 - `apps/score-keeper`: Vite-app, PWA-assets en applicatielogica.
 - `packages/ui`: framework-onafhankelijke custom elements.
-- `.github/skills/ui-component`: generator voor nieuwe UI-componenten.
+- `.claude/skills/ui-component`: generator voor nieuwe UI-componenten.
 
 Componenten laden hun HTML en CSS als Vite raw imports (`?raw`) en erven van
 `BaseComponent` voor Shadow DOM en automatische event-cleanup.
@@ -26,7 +26,7 @@ npm run storybook
 Een nieuw component scaffold je met:
 
 ```sh
-node .github/skills/ui-component/scripts/create-ui-component.mjs --name hema-example
+node .claude/skills/ui-component/scripts/create-ui-component.mjs --name hema-example
 ```
 
 ## Score-keeper API

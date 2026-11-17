@@ -5,6 +5,7 @@ This is the concise, repository-owned handoff for an AI agent starting a new ses
 ## Repository and collaboration
 
 - This is the HEMA Score Keeper monorepo: several apps, shared packages, and a backend.
+- The repo is set up for GitHub Copilot and Claude Code side by side (2026-11-17): `AGENTS.md` holds all shared rules; `CLAUDE.md` and `.github/copilot-instructions.md` only point to it; shared skills live once in `.claude/skills/` (VS Code Copilot also discovers that folder). The former `co-pilot` work was fast-forwarded into local `master` at `a85241f`.
 - Work directly on the current user-selected branch. The user commits changes unless they explicitly request a commit.
 - Ask for the user's permission before installing npm packages; do not run installation commands without approval.
 - For scripts and verification commands on this machine, use Bash, DOS `cmd.exe`, Node.js or Python; do not use PowerShell or PowerShell scripts.
