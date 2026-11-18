@@ -1,6 +1,23 @@
 import "@hema/ui/event-planner-view";
 import "@hema/ui/event-view";
-import { createApiClient, type EventAdminSession } from "@hema/event-admin-api";
+import "@hema/ui/events-index-view";
+import "@hema/ui/event-overview-view";
+import {
+  parseEventAdminRoute,
+  formatEventAdminRoute,
+  stripAppBase,
+  withAppBase,
+  setLocale,
+  type EventAdminRoute,
+  type EventsIndexView,
+  type EventOverviewView,
+} from "@hema/ui";
+import {
+  createApiClient,
+  type EventAdminSession,
+  type ApiEvent,
+  type ApiEventCompetition,
+} from "@hema/event-admin-api";
 import "./auth.css";
 
 const appRoot = document.querySelector<HTMLElement>("#app");
@@ -9,6 +26,16 @@ if (!appRoot) {
 }
 const app: HTMLElement = appRoot;
 const api = createApiClient();
+const baseUrl = import.meta.env.BASE_URL;
+
+let currentEventsList: ApiEvent[] = [];
+let activeEvent: ApiEvent | null = null;
+
+function navigateTo(route: EventAdminRoute): void {
+  const url = formatEventAdminRoute(route, baseUrl);
+  window.history.pushState({}, "", url);
+  renderRoute();
+}
 
 function renderRoute(): void {
   const session = api.currentSession();
@@ -16,25 +43,329 @@ function renderRoute(): void {
     renderLogin();
     return;
   }
-  const path = stripAppBase(window.location.pathname).replace(/\/+$/, "") || "/";
-  const tagName = path === "/planning" ? "event-planner-view" : "event-view";
-  renderSessionBar(session);
-  if (app.querySelector(tagName)) {
-    return;
+
+  if (session.user.language) {
+    setLocale(session.user.language);
   }
 
-  const view = document.createElement(tagName);
-  const scoreKeeperUrl = import.meta.env.VITE_SCORE_KEEPER_URL?.trim();
-  if (tagName === "event-view" && scoreKeeperUrl) view.setAttribute("score-keeper-url", scoreKeeperUrl);
-  const sessionBar = app.querySelector(".event-admin-session-bar");
-  app.replaceChildren(...(sessionBar ? [sessionBar, view] : [view]));
+  const route = parseEventAdminRoute(window.location.pathname, baseUrl);
+  renderShell(session, route);
+
+  const contentArea = app.querySelector<HTMLElement>(".event-admin-content");
+  if (!contentArea) return;
+
+  switch (route.kind) {
+    case "events-index":
+      renderEventsIndex(contentArea);
+      break;
+    case "event-overview":
+      renderEventOverview(contentArea, route.eventId);
+      break;
+    case "tournament-workspace":
+      renderTournamentWorkspace(contentArea, route.eventId, route.tournamentId);
+      break;
+    case "competition-workspace":
+      renderEventOverview(contentArea, route.eventId);
+      break;
+    case "event-planning":
+      renderEventPlanning(contentArea, route.eventId);
+      break;
+    case "not-found":
+      renderNotFound(contentArea, route.path);
+      break;
+  }
+}
+
+function renderShell(session: EventAdminSession, route: EventAdminRoute): void {
+  let shell = app.querySelector<HTMLElement>(".event-admin-shell");
+  if (!shell) {
+    app.innerHTML = `
+      <div class="event-admin-shell">
+        <header class="event-admin-session-bar">
+          <div class="event-admin-nav-left">
+            <a href="${withAppBase("/events", baseUrl)}" data-route class="event-admin-brand">HEMA Event-admin</a>
+            <a href="${withAppBase("/events", baseUrl)}" data-route class="event-admin-nav-link events-link">${session.user.language === "nl" ? "Evenementen" : "Events"}</a>
+            <div class="event-admin-event-switcher" style="display: none;">
+              <select aria-label="Switch event"></select>
+            </div>
+          </div>
+          <div class="event-admin-nav-right">
+            <span class="event-admin-session-user"></span>
+            <button type="button" class="event-admin-sign-out"></button>
+          </div>
+        </header>
+        <div class="event-admin-breadcrumbs-bar" style="display: none;"></div>
+        <main class="event-admin-content"></main>
+      </div>
+    `;
+    shell = app.querySelector<HTMLElement>(".event-admin-shell")!;
+
+    const signOut = shell.querySelector<HTMLButtonElement>(".event-admin-sign-out");
+    signOut?.addEventListener("click", () => {
+      void api.logout().then(renderRoute);
+    });
+
+    const switcherSelect = shell.querySelector<HTMLSelectElement>(".event-admin-event-switcher select");
+    switcherSelect?.addEventListener("change", (e) => {
+      const target = e.target as HTMLSelectElement;
+      if (target.value) {
+        navigateTo({ kind: "event-overview", eventId: target.value });
+      }
+    });
+  }
+
+  const account = shell.querySelector<HTMLElement>(".event-admin-session-user");
+  const signOut = shell.querySelector<HTMLButtonElement>(".event-admin-sign-out");
+  const eventsLink = shell.querySelector<HTMLAnchorElement>(".events-link");
+  const isDutch = session.user.language === "nl";
+
+  if (account) account.textContent = `${session.user.name} (${session.user.role})`;
+  if (signOut) signOut.textContent = isDutch ? "Uitloggen" : "Sign out";
+  if (eventsLink) {
+    eventsLink.textContent = isDutch ? "Evenementen" : "Events";
+    eventsLink.classList.toggle("active", route.kind === "events-index");
+  }
+
+  // Update Breadcrumbs & Event Switcher
+  const breadcrumbsBar = shell.querySelector<HTMLElement>(".event-admin-breadcrumbs-bar");
+  const switcher = shell.querySelector<HTMLElement>(".event-admin-event-switcher");
+  const switcherSelect = switcher?.querySelector<HTMLSelectElement>("select");
+
+  if (route.kind === "events-index" || route.kind === "not-found") {
+    if (breadcrumbsBar) breadcrumbsBar.style.display = "none";
+    if (switcher) switcher.style.display = "none";
+  } else {
+    if (breadcrumbsBar) {
+      breadcrumbsBar.style.display = "flex";
+      renderBreadcrumbs(breadcrumbsBar, route, isDutch);
+    }
+    if (switcher && switcherSelect && currentEventsList.length > 0) {
+      switcher.style.display = "block";
+      const targetEventId = "eventId" in route ? route.eventId : "";
+      switcherSelect.innerHTML = currentEventsList
+        .map(
+          (evt) =>
+            `<option value="${evt.id}" ${evt.id === targetEventId ? "selected" : ""}>${evt.eventName}</option>`,
+        )
+        .join("");
+    }
+  }
+}
+
+function renderBreadcrumbs(bar: HTMLElement, route: EventAdminRoute, isDutch: boolean): void {
+  const eventsLabel = isDutch ? "Evenementen" : "Events";
+  const eventsUrl = withAppBase("/events", baseUrl);
+
+  if (route.kind === "event-overview") {
+    const eventName = activeEvent?.id === route.eventId ? activeEvent.eventName : (isDutch ? "Evenement" : "Event");
+    bar.innerHTML = `
+      <a href="${eventsUrl}" data-route>${eventsLabel}</a>
+      <span>/</span>
+      <span>${eventName}</span>
+    `;
+  } else if (route.kind === "tournament-workspace") {
+    const eventName = activeEvent?.id === route.eventId ? activeEvent.eventName : (isDutch ? "Evenement" : "Event");
+    const eventUrl = withAppBase(`/events/${encodeURIComponent(route.eventId)}`, baseUrl);
+    bar.innerHTML = `
+      <a href="${eventsUrl}" data-route>${eventsLabel}</a>
+      <span>/</span>
+      <a href="${eventUrl}" data-route>${eventName}</a>
+      <span>/</span>
+      <span>${isDutch ? "Toernooi" : "Tournament"}</span>
+    `;
+  } else if (route.kind === "event-planning") {
+    const eventName = activeEvent?.id === route.eventId ? activeEvent.eventName : (isDutch ? "Evenement" : "Event");
+    const eventUrl = withAppBase(`/events/${encodeURIComponent(route.eventId)}`, baseUrl);
+    bar.innerHTML = `
+      <a href="${eventsUrl}" data-route>${eventsLabel}</a>
+      <span>/</span>
+      <a href="${eventUrl}" data-route>${eventName}</a>
+      <span>/</span>
+      <span>${isDutch ? "Planning" : "Planning"}</span>
+    `;
+  }
+}
+
+function renderEventsIndex(container: HTMLElement): void {
+  let view = container.querySelector<EventsIndexView>("events-index-view");
+  if (!view) {
+    view = document.createElement("events-index-view") as EventsIndexView;
+    view.setAttribute("base-url", baseUrl);
+    container.replaceChildren(view);
+
+    view.addEventListener("event-selected", (e: any) => {
+      const eventId = e.detail.eventId;
+      navigateTo({ kind: "event-overview", eventId });
+    });
+
+    view.addEventListener("event-create-requested", async (e: any) => {
+      const targetView = container.querySelector<EventsIndexView>("events-index-view");
+      if (targetView) targetView.loading = true;
+      try {
+        const created = await api.createEvent({ eventName: e.detail.eventName });
+        navigateTo({ kind: "event-overview", eventId: created.id });
+      } catch (err: any) {
+        if (targetView) {
+          targetView.loading = false;
+          targetView.error = err instanceof Error ? err.message : "Failed to create event";
+        }
+      }
+    });
+  }
+
+  const activeView = view;
+  activeView.loading = true;
+  api
+    .listEvents()
+    .then((events) => {
+      currentEventsList = events;
+      activeView.events = events;
+      activeView.loading = false;
+    })
+    .catch((err) => {
+      activeView.error = err instanceof Error ? err.message : "Failed to load events";
+      activeView.loading = false;
+    });
+}
+
+function renderEventOverview(container: HTMLElement, eventId: string): void {
+  let view = container.querySelector<EventOverviewView>("event-overview-view");
+  if (!view) {
+    view = document.createElement("event-overview-view") as EventOverviewView;
+    container.replaceChildren(view);
+
+    view.addEventListener("tournament-selected", (e: any) => {
+      navigateTo({
+        kind: "tournament-workspace",
+        eventId,
+        tournamentId: e.detail.tournamentId,
+      });
+    });
+
+    view.addEventListener("competition-selected", (e: any) => {
+      navigateTo({
+        kind: "competition-workspace",
+        eventId,
+        competitionId: e.detail.competitionId,
+      });
+    });
+
+    view.addEventListener("planning-requested", () => {
+      navigateTo({ kind: "event-planning", eventId });
+    });
+
+    view.addEventListener("tournament-create-requested", async (e: any) => {
+      const targetView = container.querySelector<EventOverviewView>("event-overview-view");
+      if (targetView) targetView.loading = true;
+      try {
+        await api.createTournament({ eventId, name: e.detail.name });
+        renderEventOverview(container, eventId);
+      } catch (err: any) {
+        if (targetView) {
+          targetView.loading = false;
+          targetView.error = err instanceof Error ? err.message : "Failed to create tournament";
+        }
+      }
+    });
+
+    view.addEventListener("competition-create-requested", async (e: any) => {
+      const targetView = container.querySelector<EventOverviewView>("event-overview-view");
+      if (targetView) targetView.loading = true;
+      try {
+        await api.createEventCompetition(eventId, {
+          name: e.detail.name,
+          slug: e.detail.slug,
+          date: e.detail.date,
+        });
+        renderEventOverview(container, eventId);
+      } catch (err: any) {
+        if (targetView) {
+          targetView.loading = false;
+          targetView.error = err instanceof Error ? err.message : "Failed to create competition";
+        }
+      }
+    });
+  }
+
+  const activeView = view;
+  activeView.loading = true;
+  Promise.all([api.getEvent(eventId), api.listEventCompetitions(eventId).catch(() => [])])
+    .then(([event, competitions]) => {
+      activeEvent = event;
+      activeView.event = event;
+      activeView.competitions = competitions;
+      activeView.loading = false;
+      const session = api.currentSession();
+      if (session) {
+        renderShell(session, { kind: "event-overview", eventId });
+      }
+    })
+    .catch((err) => {
+      activeView.error = err instanceof Error ? err.message : "Failed to load event";
+      activeView.loading = false;
+    });
+}
+
+function renderTournamentWorkspace(
+  container: HTMLElement,
+  _eventId: string,
+  _tournamentId: string,
+): void {
+  let view = container.querySelector<HTMLElement>("event-view");
+  if (!view) {
+    view = document.createElement("event-view");
+    const scoreKeeperUrl = import.meta.env.VITE_SCORE_KEEPER_URL?.trim();
+    if (scoreKeeperUrl) view.setAttribute("score-keeper-url", scoreKeeperUrl);
+    container.replaceChildren(view);
+  }
+}
+
+function renderEventPlanning(container: HTMLElement, eventId: string): void {
+  let view = container.querySelector<HTMLElement>("event-planner-view");
+  if (!view) {
+    view = document.createElement("event-planner-view");
+    if (eventId) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("eventId", eventId);
+      window.history.replaceState({}, "", url.toString());
+    }
+    container.replaceChildren(view);
+  }
+}
+
+function renderNotFound(container: HTMLElement, path: string): void {
+  const isDutch = api.currentSession()?.user.language === "nl";
+  container.innerHTML = `
+    <div class="event-admin-not-found">
+      <h2>${isDutch ? "Pagina niet gevonden" : "Page not found"}</h2>
+      <p>${path}</p>
+      <p>
+        <a href="${withAppBase("/events", baseUrl)}" data-route class="btn-primary" style="display: inline-block; padding: 0.5rem 1rem; color: #fff; text-decoration: none; border-radius: 4px; background: #2563eb;">
+          ${isDutch ? "Naar evenementen" : "Go to events"}
+        </a>
+      </p>
+    </div>
+  `;
 }
 
 function renderLogin(errorMessage?: string): void {
   const language = navigator.language.toLowerCase().startsWith("nl") ? "nl" : "en";
-  const copy = language === "nl"
-    ? { title: "Inloggen op Event-admin", username: "Gebruikersnaam", password: "Wachtwoord", submit: "Inloggen", error: "Inloggen mislukt." }
-    : { title: "Sign in to Event-admin", username: "Username", password: "Password", submit: "Sign in", error: "Sign-in failed." };
+  const copy =
+    language === "nl"
+      ? {
+          title: "Inloggen op Event-admin",
+          username: "Gebruikersnaam",
+          password: "Wachtwoord",
+          submit: "Inloggen",
+          error: "Inloggen mislukt.",
+        }
+      : {
+          title: "Sign in to Event-admin",
+          username: "Username",
+          password: "Password",
+          submit: "Sign in",
+          error: "Sign-in failed.",
+        };
   const form = document.createElement("form");
   form.className = "event-admin-login";
   form.innerHTML = `
@@ -51,7 +382,8 @@ function renderLogin(errorMessage?: string): void {
     const data = new FormData(form);
     const button = form.querySelector<HTMLButtonElement>("button[type=submit]");
     if (button) button.disabled = true;
-    void api.login(String(data.get("username") ?? ""), String(data.get("password") ?? ""))
+    void api
+      .login(String(data.get("username") ?? ""), String(data.get("password") ?? ""))
       .then(renderRoute)
       .catch((failure: unknown) => {
         if (error) error.textContent = failure instanceof Error ? failure.message : copy.error;
@@ -59,29 +391,6 @@ function renderLogin(errorMessage?: string): void {
       });
   });
   app.replaceChildren(form);
-}
-
-function renderSessionBar(session: EventAdminSession): void {
-  let bar = app.querySelector<HTMLElement>(".event-admin-session-bar");
-  if (!bar) {
-    bar = document.createElement("header");
-    bar.className = "event-admin-session-bar";
-    const account = document.createElement("span");
-    account.className = "event-admin-session-user";
-    const signOut = document.createElement("button");
-    signOut.type = "button";
-    signOut.className = "event-admin-sign-out";
-    signOut.addEventListener("click", () => {
-      void api.logout().then(renderRoute);
-    });
-    bar.append(account, signOut);
-    app.prepend(bar);
-  }
-  const account = bar.querySelector<HTMLElement>(".event-admin-session-user");
-  const signOut = bar.querySelector<HTMLButtonElement>(".event-admin-sign-out");
-  const dutch = session.user.language === "nl";
-  if (account) account.textContent = `${session.user.name} (${session.user.role})`;
-  if (signOut) signOut.textContent = dutch ? "Uitloggen" : "Sign out";
 }
 
 window.addEventListener("popstate", renderRoute);
@@ -93,7 +402,14 @@ window.addEventListener("click", (event) => {
   }
 
   const link = target.closest<HTMLAnchorElement>("a[data-route]");
-  if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey) {
+  if (
+    !link ||
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey
+  ) {
     return;
   }
 
@@ -103,27 +419,12 @@ window.addEventListener("click", (event) => {
   }
 
   event.preventDefault();
-  window.history.pushState({}, "", `${withAppBase(destination.pathname)}${destination.search}${destination.hash}`);
+  window.history.pushState(
+    {},
+    "",
+    `${withAppBase(destination.pathname, baseUrl)}${destination.search}${destination.hash}`,
+  );
   renderRoute();
 });
 
 renderRoute();
-
-function stripAppBase(pathname: string): string {
-  const base = normalizeBase(import.meta.env.BASE_URL);
-  if (base === "/") return pathname;
-  if (pathname === base.slice(0, -1)) return "/";
-  return pathname.startsWith(base) ? `/${pathname.slice(base.length)}` : pathname;
-}
-
-function withAppBase(pathname: string): string {
-  const base = normalizeBase(import.meta.env.BASE_URL);
-  if (base === "/") return pathname;
-  if (pathname === base.slice(0, -1) || pathname.startsWith(base)) return pathname;
-  return `${base}${pathname.replace(/^\/+/, "")}`;
-}
-
-function normalizeBase(base: string): string {
-  const withLeadingSlash = base.startsWith("/") ? base : `/${base}`;
-  return withLeadingSlash.endsWith("/") ? withLeadingSlash : `${withLeadingSlash}/`;
-}

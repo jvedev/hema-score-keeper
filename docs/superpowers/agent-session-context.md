@@ -128,11 +128,17 @@ implementation plan is implemented, verified, committed, and pushed on `co-pilot
 permission checks, shared planner access, and focused authorization/migration tests. Backend
 tests (40 files/374 tests), workspace typechecks, backend build, and Event-admin production
 build pass; no packages were installed.
-Phase 2 of the implementation plan is implemented and verified (not yet committed):
+Phase 2 of the implementation plan is implemented and verified (committed):
 Competition.eventId nullable FK with ON DELETE SET NULL, authorization union so Event admins
 can manage attached Competitions, Event-scoped routes for create/attach/detach, and
 competitions in the Event read model. All 336 backend tests pass, TypeScript compiles cleanly.
-Plan: `.junie/plans/phase2-competition-event-relationship.md`. Phase 3 (spreadsheet-mode
-tournament parent-Event permissions) and Phase 6 (cancelled) remain.
+Plan: `.junie/plans/phase2-competition-event-relationship.md`.
+
+Phase 3 of the implementation plan is implemented and verified:
+Event-admin shell with URL routing, deep linking, browser history (popstate), Events index view
+(`events-index-view`), Event overview workspace (`event-overview-view`) with zero-component state,
+type-aware components hub (database tournaments and rating competitions), event switcher,
+breadcrumbs, and full Dutch/English i18n. All 296 UI tests and 336 backend tests pass, production
+build succeeds. Plan: `docs/superpowers/plans/2026-11-18-phase-3-event-admin-shell-and-routing.md`.
 
 This handoff was created on 2026-10-28. If the repository's plans or commit history have moved on, trust the newer repository evidence and update this file rather than following stale status here.

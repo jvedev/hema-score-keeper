@@ -20,6 +20,14 @@
       "types": "./src/components/event-planner-view/event-planner-view.ts",
       "default": "./src/components/event-planner-view/event-planner-view.ts"
     },
+    "./events-index-view": {
+      "types": "./src/components/events-index-view/events-index-view.ts",
+      "default": "./src/components/events-index-view/events-index-view.ts"
+    },
+    "./event-overview-view": {
+      "types": "./src/components/event-overview-view/event-overview-view.ts",
+      "default": "./src/components/event-overview-view/event-overview-view.ts"
+    },
     "./start-screen-view": {
       "types": "./src/components/start-screen-view/start-screen-view.ts",
       "default": "./src/components/start-screen-view/start-screen-view.ts"

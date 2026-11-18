@@ -379,6 +379,17 @@ export interface ApiEventMutationResult {
   allFightersAreVolunteers: boolean;
 }
 
+export interface ApiEventCompetition {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  date: string;
+  visibility: string;
+  clubId: string | null;
+  eventId: string | null;
+}
+
 export interface ApiRulesetDetail extends ApiRuleset {
   matchCount: number;
   locked: boolean;
@@ -408,6 +419,19 @@ export interface ApiClient {
   createEvent(body: { eventName: string; rulesetId?: string | null; allFightersAreVolunteers?: boolean }): Promise<ApiEventMutationResult>;
   updateEvent(id: string, body: { eventName?: string; rulesetId?: string | null; allFightersAreVolunteers?: boolean }): Promise<ApiEventMutationResult>;
   deleteEvent(id: string): Promise<void>;
+  listEventCompetitions(eventId: string): Promise<ApiEventCompetition[]>;
+  createEventCompetition(
+    eventId: string,
+    body: {
+      name: string;
+      slug: string;
+      date: string;
+      visibility?: string;
+      clubId?: string | null;
+      rulesetJson?: unknown;
+    },
+  ): Promise<ApiEventCompetition>;
+  setCompetitionEvent(competitionId: string, eventId: string | null): Promise<ApiEventCompetition>;
   eventAdmins(id: string): Promise<ApiEventAdmin[]>;
   eventAdminCandidates(id: string): Promise<ApiEventAdminCandidate[]>;
   addEventAdmin(id: string, userId: string): Promise<ApiEventAdmin[]>;
@@ -611,6 +635,18 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
       body,
     }),
     deleteEvent: (id) => requestJson<void>(baseUrl, `/events/${id}`, { method: "DELETE" }),
+    listEventCompetitions: (eventId) =>
+      requestJson<ApiEventCompetition[]>(baseUrl, `/events/${eventId}/competitions`),
+    createEventCompetition: (eventId, body) =>
+      requestJson<ApiEventCompetition>(baseUrl, `/events/${eventId}/competitions`, {
+        method: "POST",
+        body,
+      }),
+    setCompetitionEvent: (competitionId, eventId) =>
+      requestJson<ApiEventCompetition>(baseUrl, `/competitions/${competitionId}/event`, {
+        method: "PATCH",
+        body: { eventId },
+      }),
     eventAdmins: async (id) =>
       (await requestJson<{ admins: ApiEventAdmin[] }>(baseUrl, `/events/${id}/admins`)).admins,
     eventAdminCandidates: async (id) =>
