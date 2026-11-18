@@ -29,6 +29,21 @@ describe("production app hosting", () => {
       expect(deepLink.statusCode).toBe(200);
       expect(deepLink.body).toContain("app shell");
 
+      const deepLinkWildcard = await app.inject({
+        method: "GET",
+        url: "/sample/events/015314f2-190a-4868-a96c-b5d77111bd0c",
+        headers: { accept: "*/*" },
+      });
+      expect(deepLinkWildcard.statusCode).toBe(200);
+      expect(deepLinkWildcard.body).toContain("app shell");
+
+      const deepLinkNoAccept = await app.inject({
+        method: "GET",
+        url: "/sample/events/015314f2-190a-4868-a96c-b5d77111bd0c",
+      });
+      expect(deepLinkNoAccept.statusCode).toBe(200);
+      expect(deepLinkNoAccept.body).toContain("app shell");
+
       const asset = await app.inject({ method: "GET", url: "/sample/assets/main.js" });
       expect(asset.statusCode).toBe(200);
       expect(asset.body).toContain("console.log");

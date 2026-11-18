@@ -62,8 +62,9 @@ async function sendSpaFallback(request: FastifyRequest, reply: FastifyReply, mou
   const base = normalizeBase(mount.base);
   const pathname = request.url.split("?", 1)[0] ?? "/";
   const relativePath = pathname.startsWith(base) ? pathname.slice(base.length) : "";
-  const acceptsHtml = request.headers.accept?.includes("text/html") ?? false;
-  if (request.method === "GET" && acceptsHtml && path.extname(relativePath) === "") {
+  const accept = request.headers.accept;
+  const isHtmlOrNavigation = !accept || accept.includes("text/html") || accept.includes("*/*");
+  if (request.method === "GET" && isHtmlOrNavigation && path.extname(relativePath) === "") {
     reply.header("Cache-Control", "no-cache");
     return reply.type("text/html").sendFile("index.html");
   }
