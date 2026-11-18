@@ -8,7 +8,7 @@ type NativeDatabase = InstanceType<typeof BetterSqlite3>;
  * Until the first production release, schema changes edit the baseline directly and the dev database is
  * recreated (`npm run backend:db:reset`); real migrations keyed on this version come once production data exists.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /** Every table of the baseline, in creation (dependency) order. Must list exactly the tables of `BackendDatabase`. */
 export const BACKEND_TABLES = [
@@ -346,12 +346,14 @@ CREATE TABLE "Competition" (
   "acceptsOtherBouts" INTEGER NOT NULL DEFAULT 1,
   "signupsNeedApproval" INTEGER NOT NULL DEFAULT 0,
   "placeLimit" INTEGER,
-  "inviteCode" TEXT
+  "inviteCode" TEXT,
+  "eventId" TEXT REFERENCES "Event" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 CREATE INDEX "Competition_status_idx" ON "Competition" ("status");
 CREATE INDEX "Competition_date_idx" ON "Competition" ("date");
 CREATE INDEX "Competition_visibility_idx" ON "Competition" ("visibility");
 CREATE INDEX "Competition_clubId_idx" ON "Competition" ("clubId");
+CREATE INDEX "Competition_eventId_idx" ON "Competition" ("eventId");
 CREATE UNIQUE INDEX "Competition_inviteCode_key" ON "Competition" ("inviteCode") WHERE "inviteCode" IS NOT NULL;
 
 CREATE TABLE "CompetitionAdmin" (

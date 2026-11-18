@@ -54,6 +54,8 @@ export interface CompetitionSummary {
   signupsNeedApproval: boolean;
   /** Most fighters (ACTIVE + PENDING) the competition takes; null means no limit. */
   placeLimit: number | null;
+  /** When set, this Competition is attached to an Event. */
+  eventId: string | null;
 }
 
 export interface CompetitionDetail extends CompetitionSummary {
@@ -111,6 +113,7 @@ function toSummary(row: CompetitionRow): CompetitionSummary {
     acceptsOtherBouts: row.acceptsOtherBouts === 1,
     signupsNeedApproval: row.signupsNeedApproval === 1,
     placeLimit: row.placeLimit,
+    eventId: row.eventId,
   };
 }
 

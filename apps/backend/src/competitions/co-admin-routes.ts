@@ -102,8 +102,8 @@ export function registerCoAdminRoutes(app: FastifyInstance, database: Kysely<Bac
   });
 }
 
-function requireOwnerOrSystem(role: CompetitionAdminRole | "SYSTEM_ADMIN", action: string): void {
-  if (role === "CO_ADMIN") {
+function requireOwnerOrSystem(role: CompetitionAdminRole | "SYSTEM_ADMIN" | "EVENT_ADMIN", action: string): void {
+  if (role === "CO_ADMIN" || role === "EVENT_ADMIN") {
     throw new HttpError(403, `Only the owner can ${action}.`);
   }
 }

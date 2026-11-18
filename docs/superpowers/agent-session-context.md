@@ -128,10 +128,11 @@ implementation plan is implemented, verified, committed, and pushed on `co-pilot
 permission checks, shared planner access, and focused authorization/migration tests. Backend
 tests (40 files/374 tests), workspace typechecks, backend build, and Event-admin production
 build pass; no packages were installed.
-Parent-Event permissions for attached sheet-mode tournaments and Competitions, plus their
-relationship/detach behavior, remain in Phase 2 because they depend on those relationship
-fields; Phase 2 has not been approved or started. Preserve `.idea/php.xml` as an unrelated
-local change. See the Phase 1 progress ledger for details; do not start Phase 2 without
-separate approval.
+Phase 2 of the implementation plan is implemented and verified (not yet committed):
+Competition.eventId nullable FK with ON DELETE SET NULL, authorization union so Event admins
+can manage attached Competitions, Event-scoped routes for create/attach/detach, and
+competitions in the Event read model. All 336 backend tests pass, TypeScript compiles cleanly.
+Plan: `.junie/plans/phase2-competition-event-relationship.md`. Phase 3 (spreadsheet-mode
+tournament parent-Event permissions) and Phase 6 (cancelled) remain.
 
 This handoff was created on 2026-10-28. If the repository's plans or commit history have moved on, trust the newer repository evidence and update this file rather than following stale status here.

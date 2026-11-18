@@ -248,6 +248,15 @@ export interface ApiEventAdminCandidate {
   username: string;
 }
 
+export interface ApiEventCompetition {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  date: string;
+  visibility: string;
+}
+
 export interface ApiEvent {
   id: string;
   eventName: string;
@@ -259,6 +268,8 @@ export interface ApiEvent {
   rulesets: ApiRuleset[];
   /** The event's fighter colour palette, in order. */
   colors: ApiEventColor[];
+  /** Competitions attached to this Event. */
+  competitions: ApiEventCompetition[];
 }
 
 export interface ApiEventMutationResult {

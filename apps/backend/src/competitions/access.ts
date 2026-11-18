@@ -1,6 +1,7 @@
 import type { AccessUser } from "../access-user.js";
 import type { DbExecutor } from "../db.js";
 import { HttpError } from "../http.js";
+import { isEventAdmin } from "../events/access.js";
 
 interface VisibilityFacts {
   id: string;
@@ -66,12 +67,12 @@ export async function requireCompetitionAccess(executor: DbExecutor, user: Acces
 
 export type CompetitionAdminRole = "OWNER" | "CO_ADMIN";
 
-/** The caller's role on one competition: their admin row, SYSTEM_ADMIN for system admins, or null. */
+/** The caller's role on one competition: their admin row, SYSTEM_ADMIN for system admins, EVENT_ADMIN if authorized via parent Event, or null. */
 export async function competitionAdminRole(
   executor: DbExecutor,
   user: AccessUser,
   competitionId: string,
-): Promise<CompetitionAdminRole | "SYSTEM_ADMIN" | null> {
+): Promise<CompetitionAdminRole | "SYSTEM_ADMIN" | "EVENT_ADMIN" | null> {
   if (user.role === "SYSTEM_ADMIN") {
     return "SYSTEM_ADMIN";
   }
@@ -81,14 +82,28 @@ export async function competitionAdminRole(
     .where("competitionId", "=", competitionId)
     .where("userId", "=", user.id)
     .executeTakeFirst();
-  return row?.role ?? null;
+  if (row) {
+    return row.role;
+  }
+  // If the Competition is attached to an Event, check Event admin membership.
+  const competition = await executor
+    .selectFrom("Competition")
+    .select("eventId")
+    .where("id", "=", competitionId)
+    .executeTakeFirst();
+  if (competition?.eventId) {
+    if (await isEventAdmin(executor, competition.eventId, user)) {
+      return "EVENT_ADMIN";
+    }
+  }
+  return null;
 }
 
 export async function requireCompetitionAdmin(
   executor: DbExecutor,
   user: AccessUser,
   competitionId: string,
-): Promise<CompetitionAdminRole | "SYSTEM_ADMIN"> {
+): Promise<CompetitionAdminRole | "SYSTEM_ADMIN" | "EVENT_ADMIN"> {
   const role = await competitionAdminRole(executor, user, competitionId);
   if (role === null) {
     throw new HttpError(403, "You don't manage this competition.");
@@ -100,6 +115,30 @@ export async function listManagedCompetitionIds(executor: DbExecutor, user: Acce
   if (user.role === "SYSTEM_ADMIN") {
     return "ALL";
   }
-  const rows = await executor.selectFrom("CompetitionAdmin").select("competitionId").where("userId", "=", user.id).execute();
-  return rows.map((row) => row.competitionId);
+  // Competitions where the user is a direct admin.
+  const adminRows = await executor
+    .selectFrom("CompetitionAdmin")
+    .select("competitionId")
+    .where("userId", "=", user.id)
+    .execute();
+  
+  // Competitions attached to Events where the user is an Event admin.
+  const eventAttachedRows = await executor
+    .selectFrom("Competition")
+    .select("id")
+    .whereRef("eventId", "=", (eb) =>
+      eb.selectFrom("EventAdmin")
+        .select("eventId")
+        .where("userId", "=", user.id)
+    )
+    .execute();
+  
+  const ids = new Set<string>();
+  for (const row of adminRows) {
+    ids.add(row.competitionId);
+  }
+  for (const row of eventAttachedRows) {
+    ids.add(row.id);
+  }
+  return [...ids];
 }

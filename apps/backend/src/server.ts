@@ -26,6 +26,7 @@ import { registerClubRoutes } from "./club-routes.js";
 import { registerPeopleRoutes } from "./people-routes.js";
 import { competitionAccessFilter, competitionAdminRole, requireCompetitionAccess } from "./competitions/access.js";
 import { registerCompetitionAdminRoutes } from "./competitions/admin-routes.js";
+import { registerEventLinkRoutes } from "./competitions/event-link-routes.js";
 import { registerParticipantRoutes } from "./competitions/participant-routes.js";
 import { withInviteCodeForAdmins } from "./competitions/signup-routes.js";
 import { requireEventTournamentAdmin } from "./tournaments/access.js";
@@ -313,6 +314,7 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   registerEventColorRoutes(app, database);
   registerPeopleRoutes(app, database);
   registerCompetitionAdminRoutes(app, database);
+  registerEventLinkRoutes(app, database);
   registerParticipantRoutes(app, database);
 
   app.post("/api/v1/auth/enrollment-tokens", async (request) => {

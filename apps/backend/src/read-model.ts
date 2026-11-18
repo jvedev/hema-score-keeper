@@ -768,6 +768,14 @@ export async function loadEvents(executor: DbExecutor, eventIds?: readonly strin
     });
   }
 
+  const competitionRows = await executor
+    .selectFrom("Competition")
+    .select(["id", "name", "slug", "status", "date", "visibility", "eventId"])
+    .where("eventId", "in", resolvedEventIds)
+    .orderBy("name")
+    .execute();
+  const competitionsByEventId = groupBy(competitionRows, (row) => row.eventId);
+
   return eventRows.map((row) => ({
     id: row.id,
     eventName: row.eventName,
@@ -778,6 +786,7 @@ export async function loadEvents(executor: DbExecutor, eventIds?: readonly strin
     arenas: (arenasByEventId.get(row.id) ?? []).map(toApiArena),
     rulesets: (rulesetsByEventId.get(row.id) ?? []).map(toApiRuleset),
     colors: colorsByEventId.get(row.id) ?? [],
+    competitions: competitionsByEventId.get(row.id) ?? [],
   }));
 }
 

@@ -71,7 +71,7 @@ describe("baseline schema on a fresh database", () => {
 
   it("stamps the schema version", () => {
     expect(native.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(1);
+    expect(SCHEMA_VERSION).toBe(2);
   });
 
   it("enables foreign keys", () => {

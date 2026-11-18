@@ -231,6 +231,8 @@ interface CompetitionTable {
   placeLimit: Generated<number | null>;
   /** Only ever shown to the competition's admins. */
   inviteCode: Generated<string | null>;
+  /** When set, this Competition is attached to an Event. Deleting the Event detaches (SET NULL). */
+  eventId: string | null;
 }
 
 interface CompetitionAdminTable {
