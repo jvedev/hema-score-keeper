@@ -1,6 +1,6 @@
 # Unified Event-admin implementation plan
 
-Status: Phase 3 implementation is complete and verified; ready for Phase 4.
+Status: Phase 4 database-mode tournament workspace is incomplete; restore missing functionality and verify it before Phase 5.
 
 Parent UX plan: [`2026-11-07-unified-event-admin-ux.md`](2026-11-07-unified-event-admin-ux.md).
 Detailed concept: [`2026-11-07-unified-event-admin-ux-detail.md`](2026-11-07-unified-event-admin-ux-detail.md).
@@ -304,6 +304,10 @@ spreadsheet-tournament entry alongside the Event-admin component entry.
 - Real-phone, Web Push, or hosting acceptance unrelated to the Event-admin consolidation.
 
 ## Status / next
+
+2026-11-18: Phase 4's new tournament workspace contains placeholder officials, access, live and match panes and does not preserve all existing workflows. UI tests (308), backend tests (336), database-mode smoke (12), all-workspace typecheck and build passed, but these do not establish feature parity. A nullable stage-name crash was reproduced and fixed with a targeted regression test. Resume by comparing the new workspace against `event-view`, implementing missing Phase 4 functionality and meaningful journey tests, and performing browser acceptance; do not proceed to Phase 5 yet.
+
+2026-11-19: the participant-management slice of Phase 4 is implemented and auto-verified per `2026-11-18-complete-participant-management.md` (Task 1 move guards on `PATCH /api/v1/entries/:id`, Task 2 scoped transactional `PATCH /api/v1/entries/:id/participant` + full person editor in `<tournament-workspace-view>`; acceptance journey `node .superpowers/verify/scripts/2026-11-19-participant-journey.mjs` 18/18, backend 355, UI 334, smoke 12, typecheck clean). Not started: porting the remaining placeholder panes (officials, access, matches, live) from `event-view`; the user still owes browser acceptance for the participant work. Open follow-up: the standalone `/api/v1/skills` endpoints are unauthenticated (flagged to the user in the participant plan).
 
 Phase 1 was implemented, committed, and pushed to `origin/co-pilot` as `1366ee0`. It adds an
 `EventAdmin` relation and guarded runtime

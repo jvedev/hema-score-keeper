@@ -45,4 +45,5 @@ export * from "./components/join-card/join-card.js";
 export * from "./components/invite-share/invite-share.js";
 export * from "./components/events-index-view/events-index-view.js";
 export * from "./components/event-overview-view/event-overview-view.js";
+export * from "./components/tournament-workspace-view/tournament-workspace-view.js";
 export * from "./routing/event-admin-router.js";

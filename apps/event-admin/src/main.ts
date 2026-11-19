@@ -2,15 +2,18 @@ import "@hema/ui/event-planner-view";
 import "@hema/ui/event-view";
 import "@hema/ui/events-index-view";
 import "@hema/ui/event-overview-view";
+import "@hema/ui/tournament-workspace-view";
 import {
   parseEventAdminRoute,
   formatEventAdminRoute,
   stripAppBase,
   withAppBase,
   setLocale,
+  escapeHtml,
   type EventAdminRoute,
   type EventsIndexView,
   type EventOverviewView,
+  type TournamentWorkspaceView,
 } from "@hema/ui";
 import {
   createApiClient,
@@ -166,12 +169,14 @@ function renderBreadcrumbs(bar: HTMLElement, route: EventAdminRoute, isDutch: bo
   } else if (route.kind === "tournament-workspace") {
     const eventName = activeEvent?.id === route.eventId ? activeEvent.eventName : (isDutch ? "Evenement" : "Event");
     const eventUrl = withAppBase(`/events/${encodeURIComponent(route.eventId)}`, baseUrl);
+    const tournament = activeEvent?.id === route.eventId ? activeEvent.tournaments.find((t) => t.id === route.tournamentId) : null;
+    const tournamentName = tournament?.name ?? (isDutch ? "Toernooi" : "Tournament");
     bar.innerHTML = `
       <a href="${eventsUrl}" data-route>${eventsLabel}</a>
       <span>/</span>
       <a href="${eventUrl}" data-route>${eventName}</a>
       <span>/</span>
-      <span>${isDutch ? "Toernooi" : "Tournament"}</span>
+      <span>${escapeHtml(tournamentName)}</span>
     `;
   } else if (route.kind === "event-planning") {
     const eventName = activeEvent?.id === route.eventId ? activeEvent.eventName : (isDutch ? "Evenement" : "Event");
@@ -308,16 +313,59 @@ function renderEventOverview(container: HTMLElement, eventId: string): void {
 
 function renderTournamentWorkspace(
   container: HTMLElement,
-  _eventId: string,
-  _tournamentId: string,
+  eventId: string,
+  tournamentId: string,
 ): void {
-  let view = container.querySelector<HTMLElement>("event-view");
+  let view = container.querySelector<TournamentWorkspaceView>("tournament-workspace-view");
   if (!view) {
-    view = document.createElement("event-view");
-    const scoreKeeperUrl = import.meta.env.VITE_SCORE_KEEPER_URL?.trim();
-    if (scoreKeeperUrl) view.setAttribute("score-keeper-url", scoreKeeperUrl);
+    view = document.createElement("tournament-workspace-view") as TournamentWorkspaceView;
+
+    view.addEventListener("stage-advance-requested", async (e: any) => {
+      const stageId = e.detail.stageId;
+      try {
+        await api.updateTournament(tournamentId, { currentStageId: stageId });
+        const refreshedEvent = await api.getEvent(eventId);
+        activeEvent = refreshedEvent;
+        const targetView = container.querySelector<TournamentWorkspaceView>("tournament-workspace-view");
+        if (targetView) targetView.event = refreshedEvent;
+      } catch (err) {
+        console.error("Failed to advance stage:", err);
+      }
+    });
+
+    view.addEventListener("live-activate-requested", async () => {
+      try {
+        await api.activateDatabaseLive(tournamentId);
+        const refreshedEvent = await api.getEvent(eventId);
+        activeEvent = refreshedEvent;
+        const targetView = container.querySelector<TournamentWorkspaceView>("tournament-workspace-view");
+        if (targetView) targetView.event = refreshedEvent;
+      } catch (err) {
+        console.error("Failed to activate live tournament:", err);
+      }
+    });
+
     container.replaceChildren(view);
   }
+
+  const activeView = view;
+  activeView.loading = true;
+  api
+    .getEvent(eventId)
+    .then((event) => {
+      activeEvent = event;
+      activeView.event = event;
+      activeView.tournamentId = tournamentId;
+      activeView.loading = false;
+      const session = api.currentSession();
+      if (session) {
+        renderShell(session, { kind: "tournament-workspace", eventId, tournamentId });
+      }
+    })
+    .catch((err) => {
+      activeView.error = err instanceof Error ? err.message : "Failed to load tournament";
+      activeView.loading = false;
+    });
 }
 
 function renderEventPlanning(container: HTMLElement, eventId: string): void {
@@ -325,11 +373,11 @@ function renderEventPlanning(container: HTMLElement, eventId: string): void {
   if (!view) {
     view = document.createElement("event-planner-view");
     if (eventId) {
-      const url = new URL(window.location.href);
-      url.searchParams.set("eventId", eventId);
-      window.history.replaceState({}, "", url.toString());
+      view.setAttribute("event-id", eventId);
     }
     container.replaceChildren(view);
+  } else if (eventId) {
+    view.setAttribute("event-id", eventId);
   }
 }
 

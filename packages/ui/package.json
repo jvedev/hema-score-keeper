@@ -28,6 +28,10 @@
       "types": "./src/components/event-overview-view/event-overview-view.ts",
       "default": "./src/components/event-overview-view/event-overview-view.ts"
     },
+    "./tournament-workspace-view": {
+      "types": "./src/components/tournament-workspace-view/tournament-workspace-view.ts",
+      "default": "./src/components/tournament-workspace-view/tournament-workspace-view.ts"
+    },
     "./start-screen-view": {
       "types": "./src/components/start-screen-view/start-screen-view.ts",
       "default": "./src/components/start-screen-view/start-screen-view.ts"

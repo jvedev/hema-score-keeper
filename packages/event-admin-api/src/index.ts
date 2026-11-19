@@ -554,6 +554,20 @@ export interface ApiClient {
   ): Promise<ApiEntry>;
   listEntries(): Promise<ApiEntry[]>;
   deleteEntry(id: string): Promise<void>;
+  updateEntryParticipant(
+    id: string,
+    body: {
+      username?: string;
+      judgeVolunteer?: boolean;
+      juryVolunteer?: boolean;
+      tableVolunteer?: boolean;
+      otherVolunteer?: boolean;
+      skills?: Array<{ skillName: string; skillLevel: number | null }>;
+      tournamentId?: string;
+      kind?: EntryKind;
+      seed?: number | null;
+    },
+  ): Promise<ApiEntry>;
   createStage(body: {
     tournamentId: string;
     type: StageType;
@@ -619,7 +633,7 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
       apiSession.store(await apiSession.send<AuthResponse>("POST", "/auth/login", { username, password, rememberMe: true }, false)),
     logout: () => apiSession.logout(),
     listUsers: () => requestJson<ApiUser[]>(baseUrl, "/users"),
-    createUser: (body) => requestJson<ApiUser>(baseUrl, "/users", { method: "POST", body }),
+    createUser: (body) => requestJson<ApiUser>(baseUrl, "/users", { method: "POST", body: { ...body, name: body.username } }),
     updateUser: (id, body) => requestJson<ApiUser>(baseUrl, `/users/${id}`, { method: "PATCH", body }),
     createSkill: (body) => requestJson<ApiSkill>(baseUrl, "/skills", { method: "POST", body }),
     updateSkill: (id, body) => requestJson<ApiSkill>(baseUrl, `/skills/${id}`, { method: "PATCH", body }),
@@ -782,6 +796,7 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
     updateEntry: (id, body) => requestJson<ApiEntry>(baseUrl, `/entries/${id}`, { method: "PATCH", body }),
     listEntries: () => requestJson<ApiEntry[]>(baseUrl, "/entries"),
     deleteEntry: (id) => requestJson<void>(baseUrl, `/entries/${id}`, { method: "DELETE" }),
+    updateEntryParticipant: (id, body) => requestJson<ApiEntry>(baseUrl, `/entries/${id}/participant`, { method: "PATCH", body }),
     createStage: (body) => requestJson<ApiStage>(baseUrl, "/stages", { method: "POST", body }),
     updateStage: (id, body) => requestJson<ApiStage>(baseUrl, `/stages/${id}`, { method: "PATCH", body }),
     listStages: () => requestJson<ApiStage[]>(baseUrl, "/stages"),

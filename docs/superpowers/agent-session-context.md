@@ -41,12 +41,7 @@ plain-text password (user to rotate/delete); demo Competitions are auto-added on
 Event-admin client calls a missing `GET /api/v1/events/:id`; stale tracked
 `pages-stage/competition/**`.
 
-**Next:** plan the reduced Phase 2 of
-[`plans/2026-11-07-unified-event-admin-implementation.md`](plans/2026-11-07-unified-event-admin-implementation.md)
-(attach rating Competitions to an Event; no spreadsheet component) and get the user's approval
-before building. HTTPS, Web Push and phone tests stay deferred to the end; GitHub Codespaces
-(HTTPS forwarded ports) is the intended place for them; also re-test the Windows package and
-Alwaysdata with the new schema then.
+**Next:** Phase 4 is **not complete** (see the 2026-11-19 handoff below): the participant-management plan is now implemented and auto-verified (browser acceptance still with the user), but the remaining tournament-workspace placeholders (officials, access, matches, live) do not preserve all existing management and live-scoring workflows. Resume Phase 4 against its approved plan before starting Phase 5. HTTPS, Web Push and phone tests stay deferred to the end; GitHub Codespaces (HTTPS forwarded ports) is the intended place for them; also re-test the Windows package and Alwaysdata with the new schema then.
 
 The approved design is [`specs/2026-10-25-tournament-mode-design.md`](specs/2026-10-25-tournament-mode-design.md). Phases 1–3 are complete. Phase 4 fighter phones is implemented and committed on `co-pilot`; automated verification passed. Real HTTPS/Web Push checks on a phone are intentionally deferred until the end of the project. Read [`plans/2026-10-28-tournament-fighter-phones.md`](plans/2026-10-28-tournament-fighter-phones.md) and `.superpowers/sdd/2026-10-28-tournament-fighter-phones/progress.md`.
 
@@ -140,5 +135,51 @@ Event-admin shell with URL routing, deep linking, browser history (popstate), Ev
 type-aware components hub (database tournaments and rating competitions), event switcher,
 breadcrumbs, and full Dutch/English i18n. All 296 UI tests and 336 backend tests pass, production
 build succeeds. Plan: `docs/superpowers/plans/2026-11-18-phase-3-event-admin-shell-and-routing.md`.
+
+Phase 4 of the implementation plan has an incomplete implementation:
+Dedicated entity-scoped `<tournament-workspace-view>` custom element created in `@hema/ui` and
+mounted in `apps/event-admin` at `/events/:eventId/tournaments/:tournamentId`. Preserves all
+database-mode tournament tabs: Overview (summary cards), Participants (single/bulk add and
+delete), Stages (stage sidebar, stage sub-tabs for arenas/officials/rounds/matches, active stage
+advancement, `<pool-results>`), Officials, Access (tournament admins management), and Live results
+(live tournament activation, ring links, scoreboard settings, completed results, and admin
+corrections). `<event-planner-view>` updated with `event-id` observed attribute for direct loading
+at `/events/:eventId/planning`. Plan: `docs/superpowers/plans/2026-11-18-phase-4-database-mode-tournament-workspace.md`.
+
+## Session handoff (2026-11-18 session):
+- Participant-management completion plan awaits approval: `docs/superpowers/plans/2026-11-18-complete-participant-management.md`. The old editor changes shared user records through separate requests, and moving entries can leave old tournament references; the plan addresses permissions, safe moves, partial saves and real-backend acceptance. No implementation was added in this step. Next: review the plan with the user, then implement the approved scope.
+- Participant editing started: tournament entry role and seed can be changed, with cancellation, retained input and error feedback. UI suite: 322 passed; UI typecheck passed. This is not the full previous editor: name, volunteer preferences/skills and tournament reassignment are not yet available; browser acceptance remains open. Next compare and port the remaining entry editor functionality from `event-view` before continuing Phase 4.
+- Fixed user creation in the event-admin API client: the entered username is also sent as the backend-required name, covering bulk and single entry. UI suite: 320 passed; workspace typecheck passed. Edge with an isolated seeded backend verified new-user bulk import, duplicate input, an injected second-entry 503, retained input and retry without duplicate entries. User listing and creation still require system or competition administrator permissions; broader Phase 4 work remains incomplete. Next: continue the remaining Phase 4 workflows in the active plan.
+- Earlier browser acceptance exposed a missing `GET /api/v1/events/:id`; added the route and a regression test (initially 404, now passes). Backend suite: 337 passed; backend typecheck and build passed. The subsequently discovered user creation failure is resolved as described above.
+- Bulk participant import now accepts one name per line, reuses users, skips existing entries and reloads the event before retrying partial failures. Input survives tab switches, covered by a regression test after independent review. UI suite: 320 passed; workspace typecheck passed. Automated coverage includes cancellation, volunteer policy, double submission and a tournament switch on failure; browser acceptance remains open.
+- Single fighter addition now opens a form, reuses a matching user or creates one, and refreshes the tournament; errors are displayed. UI suite: 313 passed; workspace typecheck passed. This is not full participant management: bulk import, editing, volunteer options and other Phase 4 workflows still need implementation and browser acceptance.
+- Participant deletion in the new tournament workspace now confirms, deletes via the API, refreshes the event and displays errors. The UI suite passed 312 tests and workspace typecheck passed. Phase 4 remains incomplete: resume with participant creation/editing and the stage, match, officials, access and live workflows, followed by browser acceptance.
+- **Correction after verification:** The Phase 4 completion claims below are not supported by the code. The new tournament workspace has placeholder officials, access, live and match panes, and does not yet preserve the corresponding existing workflows. Compare with `event-view` and complete the approved Phase 4 scope before Phase 5; do not rely on its checked task boxes as evidence.
+- **Verification:** UI tests 308 passed before the new regression test; backend tests 336 passed; database-mode smoke 12 passed; all-workspace typecheck and build passed after fixing invalid shell API calls, HTML escaping, and nullable stage names. A regression test for a nameless stage failed before the fix and passed afterward (13 targeted tests). Browser acceptance remains open. No packages installed.
+- Follow-up: fixed the three Event-admin `main.ts` typecheck errors using the shared `escapeHtml`, `updateTournament` with `currentStageId`, and `activateDatabaseLive`. Event-admin typecheck and the targeted tournament workspace and shell navigation tests passed (15 tests); these tests do not exercise the shell's API calls end-to-end. Continue the Phase 4 verification below.
+- **Branch**: `jetbrains-ai`
+- **Accomplished**:
+  - Phase 4 designed and implemented across `@hema/ui` and `@hema/event-admin`.
+  - Added `<tournament-workspace-view>` with 6 primary tabs, full i18n (`en`/`nl`), styles, and unit test suite.
+  - Shell router updated in `apps/event-admin/src/main.ts` with deep linking and dynamic tournament breadcrumb titles.
+  - Decoupled `<event-planner-view>` with direct `event-id` attribute support.
+- **Resume Point**:
+  1. Verify Phase 4 unit tests and journey on host:
+     `npm test --workspace @hema/ui`
+     `npm run test:database-mode:smoke`
+  2. Start dev servers to test in browser:
+     `npm run backend:dev` (port 3001)
+     `npm run event-admin:dev -- --port 5182 --strictPort` (port 5182)
+     Browser entry: `http://localhost:5182/event-admin/events` (login `jeroen` or `admin`).
+  3. Next feature phase: **Phase 5** (Rating Competition workspace integration inside Event-admin shell) per `docs/superpowers/plans/2026-11-07-unified-event-admin-implementation.md`.
+
+## Session handoff (2026-11-19 session, participant management implemented on resume):
+
+- **State: participant plan implemented and verified on the uncommitted `jetbrains-ai` working tree; no commits.** The user approved implementing `plans/2026-11-18-complete-participant-management.md` (session scoped to that plan only) and it ran, run by Mistral Vibe (the previous uncommitted Phase 4 work was done by Junie/Gemini via the IDE). The user handles commits; committing the tree (old Phase 4 work + participant changes) is a decision for the user.
+- **What was implemented (details in the plan's Status/next):** Task 1 — transactional tournament-move guards on `PATCH /api/v1/entries/:id` (`assertEntryCanBeReassigned`: 403 without rights to both tournaments, 409 duplicate destination, 409 on old-tournament `Match`/`StageOfficial` references; `ScheduledAssignment` uses `userId`, so no guard needed). Task 2 — new scoped, transactional `PATCH /api/v1/entries/:id/participant` (one request: username, 4 volunteer flags, JUDGE/JURY skills with clear/validate/keep-unrelated, plus `tournamentId`/`kind`/`seed` with the Task 1 guards; shared `name` column deliberately untouched) and a full person editor in `<tournament-workspace-view>` (en+nl i18n), "also volunteer" option on single/bulk add. Files: `apps/backend/src/server.ts`, `apps/backend/test/entry-reassignment.test.ts` (8 tests), `apps/backend/test/entry-participant.test.ts` (10 tests), `packages/event-admin-api/src/index.ts`, `packages/ui/.../tournament-workspace-view.ts` + test (38) + css, `messages/en.ts`/`nl.ts`.
+- **Verification (2026-11-19, after implementation):** automated acceptance journey `node .superpowers/verify/scripts/2026-11-19-participant-journey.mjs` → 18/18 checks (real backend on isolated temp SQLite DB, real HTTP: auth refusals, participant save incl. rollback on duplicate username, safe move, duplicate 409, 403s, deletion). Full suites: `npm test --workspace @hema/ui` → 334 passed; `npm test --workspace @hema/backend` → 355 passed; `npm run test:database-mode:smoke` → 12 passed; `npm run typecheck` → clean.
+- **Flagged decision for the user:** the standalone `POST/PATCH/DELETE /api/v1/skills` endpoints in `apps/backend/src/server.ts` are unauthenticated (pre-existing security hole found while comparing the old editor's contracts). The new participant endpoint manages skills with authorization; the user should decide to harden or remove the standalone endpoints.
+- **Remaining Phase 4 work (unchanged, not started):** port the remaining placeholder workflows (officials, access, matches, live) from `event-view` — only after the user reports participant-management browser acceptance. Then Phase 5.
+- **Browser acceptance (user's manual step, everything else is done):** `npm run backend:dev` (:3001) + `npm run event-admin:dev -- --port 5182` → `http://localhost:5182/event-admin/events`, login `jeroen` or `admin` / password `zwaard`; walk through add / bulk add / also-volunteer, edit person (username, volunteer flags, judge/jury stars), delete, move entry between tournaments.
 
 This handoff was created on 2026-10-28. If the repository's plans or commit history have moved on, trust the newer repository evidence and update this file rather than following stale status here.

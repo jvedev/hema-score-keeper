@@ -29,8 +29,22 @@ export class EventPlannerView extends BaseComponent {
   #dragSourceParticipant: { kind: "volunteer" | "fighter"; userId: string; tournamentId: string } | undefined;
   #assigningFighters = false;
 
+  static get observedAttributes(): string[] {
+    return ["event-id"];
+  }
+
+  attributeChangedCallback(name: string, _oldValue: string, newValue: string): void {
+    if (name === "event-id") {
+      this.#eventId = newValue || undefined;
+      if (this.isConnected) {
+        this.renderPlanner();
+      }
+    }
+  }
+
   connectedCallback(): void {
-    this.#eventId = new URLSearchParams(window.location.search).get("eventId") ?? undefined;
+    const attrEventId = this.getAttribute("event-id");
+    this.#eventId = attrEventId || (new URLSearchParams(window.location.search).get("eventId") ?? undefined);
     this.renderPlanner();
     this.registerEvent(this.root, "change", (event) => this.handleChange(event));
     this.registerEvent(this.root, "submit", (event) => {

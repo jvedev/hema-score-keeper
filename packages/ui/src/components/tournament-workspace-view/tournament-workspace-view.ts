@@ -1,0 +1,881 @@
+import css from "./tournament-workspace-view.css?raw";
+import { BaseComponent } from "../base-component/base-component.js";
+import { LOCALE_CHANGE_EVENT, t } from "../../i18n/i18n.js";
+import { escapeHtml } from "../../utils/escape-html.js";
+import { createApiClient, type ApiEvent, type ApiTournament, type ApiStage } from "@hema/event-admin-api";
+
+function skillLevel(skills: Array<{ skillName: string; skillLevel: number }> | undefined, skillName: string): number {
+  return skills?.find((skill) => skill.skillName === skillName && skill.skillLevel > 0)?.skillLevel ?? 0;
+}
+
+export type TournamentTab = "overview" | "participants" | "stages" | "officials" | "access" | "live";
+export type StageSubTab = "overview" | "arenas" | "officials" | "rounds" | "matches" | "pool-results";
+
+export class TournamentWorkspaceView extends BaseComponent {
+  #event: ApiEvent | null = null;
+  #tournamentId: string | null = null;
+  #activeTab: TournamentTab = "overview";
+  #selectedStageId: string | null = null;
+  #stageSubTab: StageSubTab = "overview";
+  #loading = false;
+  #error: string | null = null;
+  #entryError: string | null = null;
+  #deletingEntry = false;
+  #addingEntry = false;
+  #showAddParticipant = false;
+  #participantName = "";
+  #showBulk = false;
+  #bulkNames = "";
+  #editEntry: {
+    id: string;
+    tournamentId: string;
+    username: string;
+    kind: "FIGHTER" | "VOLUNTEER" | "BOTH";
+    seed: string;
+    judgeVolunteer: boolean;
+    juryVolunteer: boolean;
+    tableVolunteer: boolean;
+    otherVolunteer: boolean;
+    judgeSkill: string;
+    jurySkill: string;
+  } | null = null;
+  #savingEntry = false;
+
+  get event(): ApiEvent | null {
+    return this.#event;
+  }
+
+  set event(value: ApiEvent | null) {
+    this.#event = value;
+    this.renderView();
+  }
+
+  get tournamentId(): string | null {
+    return this.#tournamentId;
+  }
+
+  set tournamentId(value: string | null) {
+    if (value !== this.#tournamentId) {
+      this.#showAddParticipant = false;
+      this.#participantName = "";
+      this.#entryError = null;
+      this.#showBulk = false;
+      this.#bulkNames = "";
+      this.#editEntry = null;
+    }
+    this.#tournamentId = value;
+    this.renderView();
+  }
+
+  get activeTab(): TournamentTab {
+    return this.#activeTab;
+  }
+
+  set activeTab(value: TournamentTab) {
+    this.#activeTab = value;
+    this.renderView();
+  }
+
+  get selectedStageId(): string | null {
+    return this.#selectedStageId;
+  }
+
+  set selectedStageId(value: string | null) {
+    this.#selectedStageId = value;
+    this.renderView();
+  }
+
+  get stageSubTab(): StageSubTab {
+    return this.#stageSubTab;
+  }
+
+  set stageSubTab(value: StageSubTab) {
+    this.#stageSubTab = value;
+    this.renderView();
+  }
+
+  get loading(): boolean {
+    return this.#loading;
+  }
+
+  set loading(value: boolean) {
+    this.#loading = value;
+    this.renderView();
+  }
+
+  get error(): string | null {
+    return this.#error;
+  }
+
+  set error(value: string | null) {
+    this.#error = value;
+    this.renderView();
+  }
+
+  connectedCallback(): void {
+    this.renderView();
+    this.registerEvent(window, LOCALE_CHANGE_EVENT, () => this.renderView());
+    this.registerEvent(this.root, "click", (e) => this.handleClick(e));
+    this.registerEvent(this.root, "input", (e) => {
+      const input = e.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+      if (input.name === "usernames") this.#bulkNames = input.value;
+      if (this.#editEntry && input.name === "seed") this.#editEntry.seed = input.value;
+      if (this.#editEntry && input.name === "tournamentId") this.#editEntry.tournamentId = input.value;
+      if (this.#editEntry && input.name === "username") this.#editEntry.username = input.value;
+      if (this.#editEntry && input instanceof HTMLInputElement && input.type === "checkbox") {
+        if (input.name === "judgeVolunteer") this.#editEntry.judgeVolunteer = input.checked;
+        if (input.name === "juryVolunteer") this.#editEntry.juryVolunteer = input.checked;
+        if (input.name === "tableVolunteer") this.#editEntry.tableVolunteer = input.checked;
+        if (input.name === "otherVolunteer") this.#editEntry.otherVolunteer = input.checked;
+      }
+      if (this.#editEntry && input.name === "judgeSkill") this.#editEntry.judgeSkill = input.value;
+      if (this.#editEntry && input.name === "jurySkill") this.#editEntry.jurySkill = input.value;
+      if (this.#editEntry && input.name === "kind" && (input.value === "FIGHTER" || input.value === "VOLUNTEER" || input.value === "BOTH")) this.#editEntry.kind = input.value;
+    });
+    this.registerEvent(this.root, "submit", (e) => {
+      const form = e.target as HTMLFormElement;
+      if (form.dataset.form !== "add-participant" && form.dataset.form !== "add-bulk" && form.dataset.form !== "edit-entry") return;
+      e.preventDefault();
+      if (form.dataset.form === "add-bulk") void this.addBulk(form);
+      else if (form.dataset.form === "edit-entry") void this.saveEntry(form);
+      else void this.addParticipant(form);
+    });
+  }
+
+  private currentTournament(): ApiTournament | undefined {
+    if (!this.#event || !this.#tournamentId) return undefined;
+    return this.#event.tournaments.find((t) => t.id === this.#tournamentId);
+  }
+
+  private handleClick(event: Event): void {
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+
+    const tabBtn = target.closest<HTMLElement>("[data-tab]");
+    if (tabBtn && tabBtn.dataset.tab) {
+      this.#activeTab = tabBtn.dataset.tab as TournamentTab;
+      this.renderView();
+      return;
+    }
+
+    const subTabBtn = target.closest<HTMLElement>("[data-subtab]");
+    if (subTabBtn && subTabBtn.dataset.subtab) {
+      this.#stageSubTab = subTabBtn.dataset.subtab as StageSubTab;
+      this.renderView();
+      return;
+    }
+
+    const stageItem = target.closest<HTMLElement>(".stage-item");
+    if (stageItem && stageItem.dataset.stageId) {
+      this.#selectedStageId = stageItem.dataset.stageId;
+      this.renderView();
+      return;
+    }
+
+    const actionEl = target.closest<HTMLElement>("[data-action]");
+    if (actionEl && actionEl.dataset.action) {
+      const action = actionEl.dataset.action;
+      if (action === "view-participants") {
+        this.#activeTab = "participants";
+        this.renderView();
+      } else if (action === "edit-tournament") {
+        this.dispatchEvent(
+          new CustomEvent("tournament-edit-requested", {
+            bubbles: true,
+            composed: true,
+            detail: { tournamentId: this.#tournamentId },
+          }),
+        );
+      } else if (action === "add-participant") {
+        this.#showAddParticipant = true;
+        this.#entryError = null;
+        this.renderView();
+        this.dispatchEvent(
+          new CustomEvent("participant-add-requested", {
+            bubbles: true,
+            composed: true,
+            detail: { tournamentId: this.#tournamentId, mode: "single" },
+          }),
+        );
+      } else if (action === "cancel-add-participant") {
+        this.#showAddParticipant = false;
+        this.#participantName = "";
+        this.#entryError = null;
+        this.renderView();
+      } else if (action === "add-bulk") {
+        this.#showBulk = true;
+        this.#showAddParticipant = false;
+        this.#entryError = null;
+        this.renderView();
+        this.dispatchEvent(
+          new CustomEvent("participant-add-requested", {
+            bubbles: true,
+            composed: true,
+            detail: { tournamentId: this.#tournamentId, mode: "bulk" },
+          }),
+        );
+      } else if (action === "cancel-bulk") {
+        this.#showBulk = false;
+        this.#bulkNames = "";
+        this.#entryError = null;
+        this.renderView();
+      } else if (action === "delete-entry") {
+        void this.deleteEntry(actionEl.dataset.id);
+      } else if (action === "edit-entry") {
+        const entry = this.currentTournament()?.entries.find((item) => item.id === actionEl.dataset.id);
+        if (entry && !this.#savingEntry) {
+          this.#editEntry = {
+            id: entry.id,
+            tournamentId: entry.tournamentId,
+            username: entry.user?.username ?? "",
+            kind: entry.kind,
+            seed: entry.seed?.toString() ?? "",
+            judgeVolunteer: entry.user?.judgeVolunteer ?? false,
+            juryVolunteer: entry.user?.juryVolunteer ?? false,
+            tableVolunteer: entry.user?.tableVolunteer ?? false,
+            otherVolunteer: entry.user?.otherVolunteer ?? false,
+            judgeSkill: skillLevel(entry.user?.skills, "JUDGE").toString(),
+            jurySkill: skillLevel(entry.user?.skills, "JURY").toString(),
+          };
+          this.#entryError = null;
+          this.renderView();
+        }
+      } else if (action === "cancel-edit-entry" && !this.#savingEntry) {
+        this.#editEntry = null;
+        this.#entryError = null;
+        this.renderView();
+      } else if (action === "make-active-stage") {
+        const stageId = actionEl.dataset.stageId;
+        if (stageId) {
+          this.dispatchEvent(
+            new CustomEvent("stage-advance-requested", {
+              bubbles: true,
+              composed: true,
+              detail: { tournamentId: this.#tournamentId, stageId },
+            }),
+          );
+        }
+      } else if (action === "add-stage") {
+        this.dispatchEvent(
+          new CustomEvent("stage-create-requested", {
+            bubbles: true,
+            composed: true,
+            detail: { tournamentId: this.#tournamentId },
+          }),
+        );
+      } else if (action === "activate-live") {
+        this.dispatchEvent(
+          new CustomEvent("live-activate-requested", {
+            bubbles: true,
+            composed: true,
+            detail: { tournamentId: this.#tournamentId },
+          }),
+        );
+      } else if (action === "correct-result") {
+        const matchId = actionEl.dataset.matchId;
+        if (matchId) {
+          this.dispatchEvent(
+            new CustomEvent("result-correct-requested", {
+              bubbles: true,
+              composed: true,
+              detail: { matchId },
+            }),
+          );
+        }
+      }
+    }
+  }
+
+  private async addBulk(form: HTMLFormElement): Promise<void> {
+    const event = this.#event;
+    const tournament = this.currentTournament();
+    const form_ = new FormData(form);
+    const value = String(form_.get("usernames") ?? "");
+    const alsoVolunteer = form_.get("alsoVolunteer") === "on";
+    const names: string[] = [];
+    for (const line of value.split(/\r?\n/)) {
+      const name = line.trim();
+      if (name && !names.some((item) => item.localeCompare(name, undefined, { sensitivity: "accent" }) === 0)) names.push(name);
+    }
+    if (!event || !tournament || !names.length || this.#addingEntry) return;
+    this.#bulkNames = value;
+    this.#addingEntry = true;
+    this.#entryError = null;
+    this.renderView();
+    const api = createApiClient();
+    const current = () => this.#event?.id === event.id && this.#tournamentId === tournament.id;
+    try {
+      const users = await api.listUsers();
+      const latest = await api.getEvent(event.id);
+      const entries = latest.tournaments.find((item) => item.id === tournament.id)?.entries;
+      if (!entries) throw new Error(t("tournament.notFound"));
+      for (const username of names) {
+        let user = users.find((item) => item.username.localeCompare(username, undefined, { sensitivity: "accent" }) === 0);
+        if (!user) {
+          user = await api.createUser({ username });
+          users.push(user);
+        }
+        if (!entries.some((entry) => entry.userId === user.id)) {
+          const entry = await api.createEntry({ tournamentId: tournament.id, userId: user.id, kind: latest.allFightersAreVolunteers || alsoVolunteer ? "BOTH" : "FIGHTER" });
+          entries.push(entry);
+        }
+      }
+      const refreshed = await api.getEvent(event.id);
+      if (current()) {
+        this.#event = refreshed;
+        this.#showBulk = false;
+        this.#bulkNames = "";
+      }
+    } catch (error) {
+      try {
+        const refreshed = await api.getEvent(event.id);
+        if (current()) this.#event = refreshed;
+      } catch { /* Retrying reloads the event before writing. */ }
+      if (current()) this.#entryError = `${t("tournament.bulkPartialError")} ${error instanceof Error ? error.message : ""}`;
+    } finally {
+      this.#addingEntry = false;
+      this.renderView();
+    }
+  }
+
+  private async addParticipant(form: HTMLFormElement): Promise<void> {
+    const event = this.#event;
+    const tournament = this.currentTournament();
+    const username = String(new FormData(form).get("username") ?? "").trim();
+    if (!event || !tournament || !username || this.#addingEntry) return;
+    this.#participantName = username;
+    this.#addingEntry = true;
+    this.#entryError = null;
+    const button = form.querySelector<HTMLButtonElement>("button[type='submit']");
+    if (button) button.disabled = true;
+    try {
+      const api = createApiClient();
+      const users = await api.listUsers();
+      const user = users.find((item) => item.username.localeCompare(username, undefined, { sensitivity: "accent" }) === 0)
+        ?? await api.createUser({ username });
+      const existing = tournament.entries.find((entry) => entry.userId === user.id);
+      const kind = event.allFightersAreVolunteers || String(new FormData(form).get("alsoVolunteer") ?? "") === "on" ? "BOTH" : "FIGHTER";
+      if (!existing) await api.createEntry({ tournamentId: tournament.id, userId: user.id, kind });
+      const refreshed = await api.getEvent(event.id);
+      if (this.#event?.id === event.id && this.#tournamentId === tournament.id) {
+        this.#event = refreshed;
+        this.#showAddParticipant = false;
+        this.#participantName = "";
+      }
+    } catch (error) {
+      if (this.#event?.id === event.id && this.#tournamentId === tournament.id) {
+        this.#entryError = error instanceof Error ? error.message : t("tournament.addParticipantError");
+      }
+    } finally {
+      this.#addingEntry = false;
+      this.renderView();
+    }
+  }
+
+  private async saveEntry(form: HTMLFormElement): Promise<void> {
+    const event = this.#event;
+    const tournamentId = this.#tournamentId;
+    const editing = this.#editEntry;
+    if (!event || !tournamentId || !editing || this.#savingEntry || !form.reportValidity()) return;
+    const data = new FormData(form);
+    const kind = data.get("kind");
+    const destinationTournamentId = String(data.get("tournamentId") ?? "");
+    const username = String(data.get("username") ?? "").trim();
+    if (kind !== "FIGHTER" && kind !== "VOLUNTEER" && kind !== "BOTH" || !destinationTournamentId || !username) return;
+    const seed = String(data.get("seed") ?? "");
+    const seedValue = seed === "" ? null : Number(seed);
+    editing.kind = kind;
+    editing.seed = seed;
+    editing.tournamentId = destinationTournamentId;
+    editing.username = username;
+    for (const flag of ["judgeVolunteer", "juryVolunteer", "tableVolunteer", "otherVolunteer"] as const) {
+      editing[flag] = data.get(flag) === "on";
+    }
+    this.#savingEntry = true;
+    this.#entryError = null;
+    this.renderView();
+    const current = () => this.#event?.id === event.id && this.#tournamentId === tournamentId;
+    try {
+      const api = createApiClient();
+      await api.updateEntryParticipant(editing.id, {
+        tournamentId: destinationTournamentId,
+        kind,
+        seed: seedValue,
+        username,
+        judgeVolunteer: editing.judgeVolunteer,
+        juryVolunteer: editing.juryVolunteer,
+        tableVolunteer: editing.tableVolunteer,
+        otherVolunteer: editing.otherVolunteer,
+        skills: [
+          { skillName: "JUDGE", skillLevel: Number(editing.judgeSkill) > 0 ? Number(editing.judgeSkill) : null },
+          { skillName: "JURY", skillLevel: Number(editing.jurySkill) > 0 ? Number(editing.jurySkill) : null },
+        ],
+      });
+      const refreshed = await api.getEvent(event.id);
+      if (current()) {
+        this.#event = refreshed;
+        this.#editEntry = null;
+      }
+    } catch (error) {
+      if (current()) this.#entryError = error instanceof Error ? error.message : t("tournament.editParticipantError");
+    } finally {
+      this.#savingEntry = false;
+      this.renderView();
+    }
+  }
+
+  private async deleteEntry(id: string | undefined): Promise<void> {
+    const event = this.#event;
+    const tournamentId = this.#tournamentId;
+    const entry = this.currentTournament()?.entries?.find((item) => item.id === id);
+    if (!event || !entry || this.#deletingEntry || !window.confirm(t("tournament.deleteParticipantConfirm", { name: entry.user?.username ?? entry.id }))) return;
+
+    this.#deletingEntry = true;
+    this.#entryError = null;
+    this.renderView();
+    try {
+      const api = createApiClient();
+      await api.deleteEntry(entry.id);
+      const refreshed = await api.getEvent(event.id);
+      if (this.#event?.id === event.id && this.#tournamentId === tournamentId) this.#event = refreshed;
+    } catch (error) {
+      if (this.#event?.id === event.id && this.#tournamentId === tournamentId) {
+        this.#entryError = error instanceof Error ? error.message : t("tournament.deleteParticipantError");
+      }
+    } finally {
+      this.#deletingEntry = false;
+      this.renderView();
+    }
+  }
+
+  private renderView(): void {
+    if (this.#loading) {
+      this.render(css, `<div class="tournament-loading">${t("tournament.loading")}</div>`);
+      return;
+    }
+
+    if (this.#error) {
+      this.render(css, `<div class="tournament-error">${escapeHtml(this.#error)}</div>`);
+      return;
+    }
+
+    const tournament = this.currentTournament();
+    if (!tournament) {
+      this.render(css, `<div class="tournament-not-found">${t("tournament.notFound")}</div>`);
+      return;
+    }
+
+    const event = this.#event!;
+    const rulesetName = tournament.ruleset?.name ?? event.ruleset?.name ?? null;
+    const isInherited = !tournament.ruleset && !!event.ruleset;
+
+    const rulesetLabel = rulesetName
+      ? isInherited
+        ? t("tournament.rulesetInherited", { name: rulesetName })
+        : t("tournament.rulesetOverride", { name: rulesetName })
+      : t("tournament.noRuleset");
+
+    const participantsCount = tournament.entries?.length ?? 0;
+    const stagesCount = tournament.stages?.length ?? 0;
+    const activeStage = tournament.stages?.find((s: ApiStage) => s.id === tournament.currentStageId) ?? tournament.stages?.[0];
+
+    const tabNames: TournamentTab[] = ["overview", "participants", "stages", "officials", "access", "live"];
+
+    this.render(
+      css,
+      `
+      <div class="tournament-workspace">
+        <header class="tournament-header">
+          <div class="header-meta">
+            <h1 class="tournament-title">${escapeHtml(tournament.name)}</h1>
+            <div class="badges-row">
+              <span class="badge ruleset-badge">${escapeHtml(rulesetLabel)}</span>
+              <span class="badge participant-badge">
+                ${participantsCount === 1 ? t("events.participantsOne") : t("events.participants", { count: participantsCount })}
+              </span>
+              <span class="badge stage-badge">
+                ${stagesCount === 1 ? t("events.stagesOne") : t("events.stages", { count: stagesCount })}
+              </span>
+              ${
+                activeStage
+                  ? `<span class="badge active-stage-badge">${escapeHtml(activeStage.name ?? "")}</span>`
+                  : ""
+              }
+            </div>
+          </div>
+          <div class="header-actions">
+            <button type="button" class="btn-secondary" data-action="edit-tournament">
+              ${t("tournament.edit")}
+            </button>
+          </div>
+        </header>
+
+        <nav class="nav-tabs" aria-label="Tournament navigation">
+          ${tabNames
+            .map(
+              (tab) => `
+            <button
+              type="button"
+              class="nav-tab ${this.#activeTab === tab ? "active" : ""}"
+              data-tab="${tab}"
+            >
+              ${t(`tournament.tabs.${tab}` as any)}
+            </button>
+          `,
+            )
+            .join("")}
+        </nav>
+
+        <main class="tab-pane">
+          ${this.renderTabContent(tournament, activeStage)}
+        </main>
+      </div>
+    `,
+    );
+  }
+
+  private renderTabContent(tournament: ApiTournament, activeStage?: ApiStage): string {
+    switch (this.#activeTab) {
+      case "overview":
+        return this.renderOverviewTab(tournament, activeStage);
+      case "participants":
+        return this.renderParticipantsTab(tournament);
+      case "stages":
+        return this.renderStagesTab(tournament);
+      case "officials":
+        return this.renderOfficialsTab(tournament);
+      case "access":
+        return this.renderAccessTab(tournament);
+      case "live":
+        return this.renderLiveTab(tournament);
+    }
+  }
+
+  private renderOverviewTab(tournament: ApiTournament, activeStage?: ApiStage): string {
+    const entries = tournament.entries ?? [];
+    const stages = tournament.stages ?? [];
+
+    return `
+      <div class="tab-content-overview">
+        <div class="overview-grid">
+          <div class="summary-card summary-card-participants">
+            <div class="summary-card-header">${t("tournament.overview.participantsTitle")}</div>
+            <div class="summary-card-value">${entries.length}</div>
+            <button type="button" class="btn-secondary" data-action="view-participants">
+              ${t("events.openEvent")}
+            </button>
+          </div>
+
+          <div class="summary-card summary-card-stages">
+            <div class="summary-card-header">${t("tournament.overview.stagesTitle")}</div>
+            <div class="summary-card-value">${activeStage ? escapeHtml(activeStage.name ?? "") : t("tournament.noStages")}</div>
+            <div class="summary-card-meta">${stages.length} ${stages.length === 1 ? t("events.stagesOne") : t("events.stages", { count: stages.length })}</div>
+          </div>
+
+          <div class="summary-card summary-card-schedule">
+            <div class="summary-card-header">${t("tournament.overview.scheduleTitle")}</div>
+            <div class="summary-card-value">SQLite</div>
+            <div class="summary-card-meta">Database-mode</div>
+          </div>
+
+          <div class="summary-card summary-card-live">
+            <div class="summary-card-header">${t("tournament.overview.liveTitle")}</div>
+            <div class="summary-card-value">Ready</div>
+            <div class="summary-card-meta">${t("tournament.tabs.live")}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  #renderEditEntryForm(): string {
+    if (!this.#editEntry) return "";
+    const editing = this.#editEntry;
+    const disabled = this.#savingEntry ? "disabled" : "";
+    const kindOptions = (["FIGHTER", "VOLUNTEER", "BOTH"] as const)
+      .map((kind) => `<option value="${kind}" ${editing.kind === kind ? "selected" : ""}>${t(`tournament.kind.${kind}`)}</option>`)
+      .join("");
+    const tournamentOptions = (this.#event?.tournaments ?? [])
+      .map((item) => `<option value="${escapeHtml(item.id)}" ${editing.tournamentId === item.id ? "selected" : ""}>${escapeHtml(item.name)}</option>`)
+      .join("");
+    const volunteerFlags = (["judgeVolunteer", "juryVolunteer", "tableVolunteer", "otherVolunteer"] as const)
+      .map((flag) => `<label class="flag-option"><input type="checkbox" name="${flag}" ${editing[flag] ? "checked" : ""} ${disabled} /> ${t(`tournament.volunteer.${flag}`)}</label>`)
+      .join("");
+    return `<form data-form="edit-entry">
+      <label>${t("tournament.entryName")} <input name="username" value="${escapeHtml(editing.username)}" required ${disabled} /></label>
+      <label>${t("tournament.entryTournament")} <select name="tournamentId" ${disabled}>${tournamentOptions}</select></label>
+      <label>${t("tournament.entryKind")} <select name="kind" ${disabled}>${kindOptions}</select></label>
+      <label>${t("tournament.entrySeed")} <input name="seed" type="number" min="0" step="1" value="${escapeHtml(editing.seed)}" ${disabled} /></label>
+      <fieldset class="person-editor-section">
+        <legend>${t("tournament.volunteerPreferences")}</legend>
+        ${volunteerFlags}
+      </fieldset>
+      <fieldset class="person-editor-section">
+        <legend>${t("tournament.skills")}</legend>
+        ${this.#renderSkillRating("judgeSkill", editing.judgeSkill, t("tournament.volunteer.judgeVolunteer"), disabled)}
+        ${this.#renderSkillRating("jurySkill", editing.jurySkill, t("tournament.volunteer.juryVolunteer"), disabled)}
+      </fieldset>
+      <p class="person-editor-scope-note" data-scope-note>${t("tournament.personSharedScope")}</p>
+      <button type="submit" ${disabled}>${t("tournament.saveParticipant")}</button>
+      <button type="button" data-action="cancel-edit-entry" ${disabled}>${t("tournament.cancelParticipant")}</button>
+    </form>`;
+  }
+
+  #renderSkillRating(name: string, selected: string, label: string, disabled: string): string {
+    const levels = [0, 1, 2, 3, 4, 5];
+    const options = levels
+      .map((level) => `<label class="skill-level"><input type="radio" name="${name}" value="${level}" ${selected === level.toString() ? "checked" : ""} ${disabled} /> ${level}</label>`)
+      .join("");
+    return `<span class="skill-rating-line">${escapeHtml(label)}: ${options}</span>`;
+  }
+
+  private renderParticipantsTab(tournament: ApiTournament): string {
+    const entries = tournament.entries ?? [];
+
+    return `
+      <div class="tab-content-participants">
+        ${this.#entryError ? `<p role="alert">${escapeHtml(this.#entryError)}</p>` : ""}
+        ${this.#renderEditEntryForm()}
+        ${this.#showBulk ? `<form data-form="add-bulk"><label>${t("tournament.bulkNames")} <textarea name="usernames" required ${this.#addingEntry ? "disabled" : ""}>${escapeHtml(this.#bulkNames)}</textarea></label><label class="flag-option"><input type="checkbox" name="alsoVolunteer" ${this.#addingEntry ? "disabled" : ""} /> ${t("tournament.alsoVolunteer")}</label><button type="submit" ${this.#addingEntry ? "disabled" : ""}>${t("tournament.addBulk")}</button><button type="button" data-action="cancel-bulk" ${this.#addingEntry ? "disabled" : ""}>${t("tournament.cancelParticipant")}</button></form>` : ""}
+        ${this.#showAddParticipant ? `<form data-form="add-participant"><label>${t("tournament.participantName")} <input name="username" value="${escapeHtml(this.#participantName)}" required /></label><label class="flag-option"><input type="checkbox" name="alsoVolunteer" ${this.#addingEntry ? "disabled" : ""} /> ${t("tournament.alsoVolunteer")}</label><button type="submit" ${this.#addingEntry ? "disabled" : ""}>${t("tournament.addParticipant")}</button><button type="button" data-action="cancel-add-participant" ${this.#addingEntry ? "disabled" : ""}>${t("tournament.cancelParticipant")}</button></form>` : ""}
+        <div class="table-header-actions">
+          <h3>${t("tournament.tabs.participants")}</h3>
+          <div class="header-actions">
+            <button type="button" class="btn-primary" data-action="add-participant">
+              ${t("tournament.addParticipant")}
+            </button>
+            <button type="button" class="btn-secondary" data-action="add-bulk">
+              ${t("tournament.addBulk")}
+            </button>
+          </div>
+        </div>
+
+        ${
+          entries.length === 0
+            ? `<div class="empty-state">${t("tournament.noParticipants")}</div>`
+            : `
+          <table class="entries-table">
+            <thead>
+              <tr>
+                <th>Seed</th>
+                <th>Naam</th>
+                <th>Rol</th>
+                <th>Acties</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${entries
+                .map(
+                  (entry) => `
+                <tr class="entry-row" data-entry-id="${entry.id}">
+                  <td>${entry.seed ?? "—"}</td>
+                  <td>${escapeHtml(entry.user?.username ?? entry.id)}</td>
+                  <td><span class="badge">${entry.kind}</span></td>
+                  <td>
+                    <button type="button" class="btn-secondary" data-action="edit-entry" data-id="${escapeHtml(entry.id)}" ${this.#savingEntry ? "disabled" : ""}>${t("tournament.editParticipant")}</button>
+                    <button type="button" class="btn-secondary" data-action="delete-entry" data-id="${escapeHtml(entry.id)}" ${this.#deletingEntry ? "disabled" : ""}>
+                      ${t("tournament.deleteParticipant")}
+                    </button>
+                  </td>
+                </tr>
+              `,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        `
+        }
+      </div>
+    `;
+  }
+
+  private renderStagesTab(tournament: ApiTournament): string {
+    const stages = tournament.stages ?? [];
+    const activeStageId = tournament.currentStageId;
+    const selectedStage =
+      stages.find((s) => s.id === this.#selectedStageId) ??
+      stages.find((s) => s.id === activeStageId) ??
+      stages[0];
+
+    const subTabs: StageSubTab[] = ["overview", "arenas", "officials", "rounds", "matches", "pool-results"];
+
+    return `
+      <div class="tab-content-stages">
+        <div class="table-header-actions">
+          <h3>${t("tournament.tabs.stages")}</h3>
+          <button type="button" class="btn-primary" data-action="add-stage">
+            ${t("tournament.addStage")}
+          </button>
+        </div>
+
+        ${
+          stages.length === 0
+            ? `<div class="empty-state">${t("tournament.noStages")}</div>`
+            : `
+          <div class="stage-layout">
+            <aside class="stage-sidebar">
+              ${stages
+                .map(
+                  (stage) => `
+                <div
+                  class="stage-item ${selectedStage?.id === stage.id ? "active" : ""}"
+                  data-stage-id="${stage.id}"
+                >
+                  <h4>${escapeHtml(stage.name ?? "")}</h4>
+                  <div class="badges-row" style="margin-top: 0.25rem;">
+                    <span class="badge">${stage.type}</span>
+                    ${stage.id === activeStageId ? `<span class="badge active-stage-badge">${t("tournament.activeStage")}</span>` : ""}
+                  </div>
+                </div>
+              `,
+                )
+                .join("")}
+            </aside>
+
+            <section class="stage-detail">
+              ${
+                selectedStage
+                  ? `
+                <header class="table-header-actions">
+                  <div>
+                    <h4>${escapeHtml(selectedStage.name ?? "")} (${selectedStage.type})</h4>
+                    <p class="panel-meta" style="margin: 0.25rem 0 0 0; color: #64748b; font-size: 0.8125rem;">
+                      ${selectedStage.rounds?.length ?? 0} rounds · ${selectedStage.arenas?.length ?? 0} arenas
+                    </p>
+                  </div>
+                  ${
+                    selectedStage.id !== activeStageId
+                      ? `
+                    <button type="button" class="btn-secondary" data-action="make-active-stage" data-stage-id="${selectedStage.id}">
+                      ${t("tournament.makeActiveStage")}
+                    </button>
+                  `
+                      : ""
+                  }
+                </header>
+
+                <nav class="sub-tabs">
+                  ${subTabs
+                    .map(
+                      (st) => `
+                    <button
+                      type="button"
+                      class="sub-tab ${this.#stageSubTab === st ? "active" : ""}"
+                      data-subtab="${st}"
+                    >
+                      ${st.charAt(0).toUpperCase() + st.slice(1)}
+                    </button>
+                  `,
+                    )
+                    .join("")}
+                </nav>
+
+                <div class="sub-tab-content">
+                  ${this.renderStageSubTabContent(selectedStage, tournament)}
+                </div>
+              `
+                  : `<div class="empty-state">Selecteer een fase om details te zien.</div>`
+              }
+            </section>
+          </div>
+        `
+        }
+      </div>
+    `;
+  }
+
+  private renderStageSubTabContent(stage: ApiStage, tournament: ApiTournament): string {
+    switch (this.#stageSubTab) {
+      case "overview":
+        return `
+          <div class="stage-overview-pane">
+            <p><strong>Type:</strong> ${stage.type}</p>
+            <p><strong>Min/Max Pool Size:</strong> ${stage.minPoolSize ?? "—"} / ${stage.maxPoolSize ?? "—"}</p>
+          </div>
+        `;
+      case "arenas":
+        return `
+          <div class="stage-arenas-pane">
+            ${
+              stage.arenas?.length
+                ? `<ul>${stage.arenas.map((a) => `<li>Arena ${escapeHtml(a.arenaId)}</li>`).join("")}</ul>`
+                : `<p class="empty-state">Geen arena's gekoppeld aan deze fase.</p>`
+            }
+          </div>
+        `;
+      case "officials":
+        return `
+          <div class="stage-officials-pane">
+            ${
+              stage.officials?.length
+                ? `<ul>${stage.officials.map((o) => `<li>${escapeHtml(o.role)} (${escapeHtml(o.entryId)})</li>`).join("")}</ul>`
+                : `<p class="empty-state">Geen officials toegewezen aan deze fase.</p>`
+            }
+          </div>
+        `;
+      case "rounds":
+        return `
+          <div class="stage-rounds-pane">
+            ${
+              stage.rounds?.length
+                ? `<ul>${stage.rounds.map((r) => `<li>Ronde ${r.roundNumber} (${r.matches?.length ?? 0} matches)</li>`).join("")}</ul>`
+                : `<p class="empty-state">Nog geen rondes aangemaakt.</p>`
+            }
+          </div>
+        `;
+      case "matches":
+        return `
+          <div class="stage-matches-pane">
+            <p class="empty-state">Wedstrijdenoverzicht voor ${escapeHtml(stage.name ?? "")}.</p>
+          </div>
+        `;
+      case "pool-results":
+        return `
+          <div class="stage-pool-results-pane">
+            <pool-results></pool-results>
+          </div>
+        `;
+    }
+  }
+
+  private renderOfficialsTab(_tournament: ApiTournament): string {
+    return `
+      <div class="tab-content-officials">
+        <h3>${t("tournament.tabs.officials")}</h3>
+        <p class="empty-state">Vrijwilligers en officials voor dit toernooi.</p>
+      </div>
+    `;
+  }
+
+  private renderAccessTab(_tournament: ApiTournament): string {
+    return `
+      <div class="tab-content-access">
+        <div class="table-header-actions">
+          <h3>${t("tournament.adminsTitle")}</h3>
+          <button type="button" class="btn-primary" data-action="add-admin">
+            ${t("tournament.addAdmin")}
+          </button>
+        </div>
+        <p class="empty-state">Toernooibeheerders beheren dit specifieke toernooi.</p>
+      </div>
+    `;
+  }
+
+  private renderLiveTab(_tournament: ApiTournament): string {
+    return `
+      <div class="tab-content-live">
+        <div class="table-header-actions">
+          <h3>${t("tournament.tabs.live")}</h3>
+          <button type="button" class="btn-primary" data-action="activate-live">
+            ${t("tournament.liveActivate")}
+          </button>
+        </div>
+        <p class="empty-state">Beheer ringen, tafel- en scorebordkoppelingen en uitslagen.</p>
+      </div>
+    `;
+  }
+}
+
+if (!customElements.get("tournament-workspace-view")) {
+  customElements.define("tournament-workspace-view", TournamentWorkspaceView);
+}

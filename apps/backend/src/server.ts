@@ -784,6 +784,14 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
     });
   });
 
+  app.get("/api/v1/events/:id", async (request) => {
+    const id = requirePathParam(request, "id");
+    return database.transaction().execute(async (trx) => {
+      await syncEventArtifacts(trx, id);
+      return requireEventApi(trx, id);
+    });
+  });
+
   app.post("/api/v1/events", async (request) => {
     const creator = await requireUser(request, database);
     const body = ensureObject(request.body, "Event");
@@ -1599,12 +1607,16 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
     await requireEventTournamentAdmin(database, existing.tournamentId, user);
     const body = ensureObject(request.body, "Entry");
     const changes: Partial<BackendDatabase["Entry"]> = {};
+    let targetTournamentId = existing.tournamentId;
 
     if (body.tournamentId !== undefined) {
-      const tournamentId = requireString(body.tournamentId, "Tournament ID");
-      await requireTournamentRow(database, tournamentId);
-      await requireEventTournamentAdmin(database, tournamentId, user);
-      changes.tournamentId = tournamentId;
+      const destinationId = requireString(body.tournamentId, "Tournament ID");
+      if (destinationId !== existing.tournamentId) {
+        await requireTournamentRow(database, destinationId);
+        await requireEventTournamentAdmin(database, destinationId, user);
+      }
+      targetTournamentId = destinationId;
+      changes.tournamentId = destinationId;
     }
     if (body.userId !== undefined) {
       const userId = requireString(body.userId, "User ID");
@@ -1619,7 +1631,74 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
     }
 
     if (Object.keys(changes).length > 0) {
-      await database.updateTable("Entry").set(changes).where("id", "=", id).execute();
+      await database.transaction().execute(async (trx) => {
+        if (targetTournamentId !== existing.tournamentId) {
+          await assertEntryCanBeReassigned(trx, existing, targetTournamentId);
+        }
+        await trx.updateTable("Entry").set(changes).where("id", "=", id).execute();
+      });
+    }
+    return requireEntryApi(database, id);
+  });
+
+  app.patch("/api/v1/entries/:id/participant", async (request) => {
+    const user = await requireUser(request, database);
+    const id = requirePathParam(request, "id");
+    const entry = await requireEntryRow(database, id);
+    await requireEventTournamentAdmin(database, entry.tournamentId, user);
+    const body = ensureObject(request.body, "Participant");
+
+    const userChanges: Updateable<BackendDatabase["User"]> = {};
+    if (body.username !== undefined) {
+      userChanges.username = requireString(body.username, "Username");
+    }
+    if (body.judgeVolunteer !== undefined) {
+      userChanges.judgeVolunteer = toSqliteBoolean(requireBoolean(body.judgeVolunteer, "Judge volunteer"));
+    }
+    if (body.juryVolunteer !== undefined) {
+      userChanges.juryVolunteer = toSqliteBoolean(requireBoolean(body.juryVolunteer, "Jury volunteer"));
+    }
+    if (body.tableVolunteer !== undefined) {
+      userChanges.tableVolunteer = toSqliteBoolean(requireBoolean(body.tableVolunteer, "Table volunteer"));
+    }
+    if (body.otherVolunteer !== undefined) {
+      userChanges.otherVolunteer = toSqliteBoolean(requireBoolean(body.otherVolunteer, "Other volunteer"));
+    }
+    const skillChanges = parseParticipantSkills(body.skills);
+
+    const entryChanges: Updateable<BackendDatabase["Entry"]> = {};
+    let targetTournamentId = entry.tournamentId;
+    if (body.tournamentId !== undefined) {
+      const destinationId = requireString(body.tournamentId, "Tournament ID");
+      if (destinationId !== entry.tournamentId) {
+        await requireTournamentRow(database, destinationId);
+        await requireEventTournamentAdmin(database, destinationId, user);
+      }
+      targetTournamentId = destinationId;
+      entryChanges.tournamentId = destinationId;
+    }
+    if (body.kind !== undefined) {
+      entryChanges.kind = parseEntryKind(body.kind);
+    }
+    if (body.seed !== undefined) {
+      entryChanges.seed = body.seed === null ? null : requirePositiveInteger(body.seed, "Seed");
+    }
+
+    if (Object.keys(userChanges).length > 0 || skillChanges !== null || Object.keys(entryChanges).length > 0) {
+      await database.transaction().execute(async (trx) => {
+        if (targetTournamentId !== entry.tournamentId) {
+          await assertEntryCanBeReassigned(trx, entry, targetTournamentId);
+        }
+        if (Object.keys(userChanges).length > 0) {
+          await trx.updateTable("User").set(userChanges).where("id", "=", entry.userId).execute();
+        }
+        if (skillChanges !== null) {
+          await applyParticipantSkills(trx, entry.userId, skillChanges);
+        }
+        if (Object.keys(entryChanges).length > 0) {
+          await trx.updateTable("Entry").set(entryChanges).where("id", "=", id).execute();
+        }
+      });
     }
     return requireEntryApi(database, id);
   });
@@ -2078,6 +2157,118 @@ function parseEntryKind(value: unknown): EntryKind {
     throw new HttpError(400, "Entry kind must be FIGHTER, VOLUNTEER, or BOTH.");
   }
   return kind as EntryKind;
+}
+
+/**
+ * Parses the desired JUDGE/JURY skill state for the scoped participant save. A null
+ * payload of `undefined` means "no skill changes"; a `null` level clears the skill.
+ */
+function parseParticipantSkills(
+  value: unknown,
+): Array<{ skillName: "JUDGE" | "JURY"; skillLevel: number | null }> | null {
+  if (value === undefined) return null;
+  if (!Array.isArray(value)) {
+    throw new HttpError(400, "Skills must be a list.");
+  }
+  return value.map((item) => {
+    if (typeof item !== "object" || item === null) {
+      throw new HttpError(400, "Each skill must be an object.");
+    }
+    const skill = item as { skillName?: unknown; skillLevel?: unknown };
+    const skillName = requireString(skill.skillName, "Skill name");
+    if (skillName !== "JUDGE" && skillName !== "JURY") {
+      throw new HttpError(400, `Skill \"${skillName}\" cannot be managed here.`);
+    }
+    const skillLevel = skill.skillLevel === null || skill.skillLevel === undefined
+      ? null
+      : requirePositiveInteger(skill.skillLevel, "Skill level");
+    return { skillName, skillLevel };
+  });
+}
+
+/**
+ * Replaces the saved state of the given skill names with the desired levels, leaving
+ * skill names the editor does not manage untouched, and collapsing any duplicate rows
+ * older data may contain into a single row per managed skill name.
+ */
+async function applyParticipantSkills(
+  executor: DbExecutor,
+  userId: string,
+  changes: Array<{ skillName: "JUDGE" | "JURY"; skillLevel: number | null }>,
+): Promise<void> {
+  for (const { skillName, skillLevel } of changes) {
+    const existing = await executor
+      .selectFrom("Skill")
+      .selectAll()
+      .where("userId", "=", userId)
+      .where("skillName", "=", skillName)
+      .orderBy("id")
+      .execute();
+    if (skillLevel === null) {
+      await executor.deleteFrom("Skill").where("userId", "=", userId).where("skillName", "=", skillName).execute();
+      continue;
+    }
+    if (existing.length === 0) {
+      await executor.insertInto("Skill").values({
+        id: generateId(),
+        userId,
+        skillName,
+        skillLevel,
+      }).execute();
+      continue;
+    }
+    const primary = existing[0]!;
+    if (primary.skillLevel !== skillLevel) {
+      await executor.updateTable("Skill").set({ skillLevel }).where("id", "=", primary.id).execute();
+    }
+    for (const duplicate of existing.slice(1)) {
+      await executor.deleteFrom("Skill").where("id", "=", duplicate.id).execute();
+    }
+  }
+}
+
+/**
+ * Guards a move of an entry into another tournament. Moves may not duplicate the
+ * participant in the destination, and may not leave the old tournament's history
+ * (matches, stage officials) pointing at an entry that is no longer part of it.
+ */
+async function assertEntryCanBeReassigned(
+  executor: DbExecutor,
+  entry: { id: string; userId: string },
+  destinationTournamentId: string,
+): Promise<void> {
+  const duplicate = await executor
+    .selectFrom("Entry")
+    .where("tournamentId", "=", destinationTournamentId)
+    .where("userId", "=", entry.userId)
+    .where("id", "!=", entry.id)
+    .select("id")
+    .executeTakeFirst();
+  if (duplicate !== undefined) {
+    throw new HttpError(409, "The participant already has an entry in the destination tournament.");
+  }
+
+  const matchReference = await executor
+    .selectFrom("Match")
+    .where((expression) =>
+      expression.or([
+        expression("entryAId", "=", entry.id),
+        expression("entryBId", "=", entry.id),
+        expression("winnerEntryId", "=", entry.id),
+      ]),
+    )
+    .select("id")
+    .executeTakeFirst();
+  const officialReference = matchReference === undefined
+    ? await executor
+      .selectFrom("StageOfficial")
+      .where("entryId", "=", entry.id)
+      .select("id")
+      .executeTakeFirst()
+    : undefined;
+  if (matchReference !== undefined || officialReference !== undefined) {
+    throw new HttpError(409, "The entry is still referenced by matches or stage official assignments and cannot be moved.");
+  }
 }
 
 function parseStageOfficialRole(value: unknown): StageOfficialRole {

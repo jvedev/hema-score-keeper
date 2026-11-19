@@ -25,6 +25,16 @@ describe("Event administrators", () => {
     await ctx.app.close();
   });
 
+  it("loads an individual event with the same details as the event list", async () => {
+    const created = await ctx.app.inject({ method: "POST", url: "/api/v1/events", headers: bearer(creator), payload: { eventName: "Browser event" } });
+    const id = created.json().id as string;
+    const list = await ctx.app.inject({ method: "GET", url: "/api/v1/events" });
+    const response = await ctx.app.inject({ method: "GET", url: `/api/v1/events/${id}` });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(list.json().find((event: { id: string }) => event.id === id));
+    expect((await ctx.app.inject({ method: "GET", url: "/api/v1/events/missing" })).statusCode).toBe(404);
+  });
+
   it("requires sign-in to create an Event and assigns its creator as first admin", async () => {
     const anonymous = await ctx.app.inject({
       method: "POST",
