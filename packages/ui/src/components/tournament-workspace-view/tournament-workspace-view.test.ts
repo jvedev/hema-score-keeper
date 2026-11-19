@@ -721,4 +721,35 @@ describe("tournament-workspace-view", () => {
     expect($(".nav-tab.active")?.textContent).toContain("Overzicht");
     expect($(".ruleset-badge")?.textContent).toContain("overgenomen van event");
   });
+
+  describe("Officials tab", () => {
+    beforeEach(() => {
+      view.activeTab = "officials";
+    });
+
+    it("shows stages with no officials", () => {
+      expect($$(".officials-stage-card").length).toBe(1);
+      expect($$(".officials-stage-card h4").length).toBe(1);
+      expect($$(".officials-stage-card h4")[0]?.textContent).toContain("Pool Phase");
+      expect($(".empty-state")?.textContent).toContain("No officials assigned");
+    });
+
+    it("shows add official button for each stage", () => {
+      expect($$("[data-action='add-official']").length).toBe(1);
+    });
+
+    it("opens add official form when add button is clicked", () => {
+      $("[data-action='add-official']")?.click();
+      expect($("form[data-form='add-official']")).not.toBeNull();
+      expect($$("select[name='entryId']").length).toBe(1);
+      expect($$("select[name='role']").length).toBe(1);
+    });
+
+    it("hides add official form when cancel is clicked", () => {
+      $("[data-action='add-official']")?.click();
+      expect($("form[data-form='add-official']")).not.toBeNull();
+      $("[data-action='cancel-add-official']")?.click();
+      expect($("form[data-form='add-official']")).toBeNull();
+    });
+  });
 });

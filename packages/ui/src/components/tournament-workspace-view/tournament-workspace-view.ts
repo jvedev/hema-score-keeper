@@ -2,7 +2,7 @@ import css from "./tournament-workspace-view.css?raw";
 import { BaseComponent } from "../base-component/base-component.js";
 import { LOCALE_CHANGE_EVENT, t } from "../../i18n/i18n.js";
 import { escapeHtml } from "../../utils/escape-html.js";
-import { createApiClient, type ApiEvent, type ApiTournament, type ApiStage } from "@hema/event-admin-api";
+import { createApiClient, type ApiEvent, type ApiTournament, type ApiStage, type ApiEntry, type ApiStageOfficial, type StageOfficialRole } from "@hema/event-admin-api";
 
 function skillLevel(skills: Array<{ skillName: string; skillLevel: number }> | undefined, skillName: string): number {
   return skills?.find((skill) => skill.skillName === skillName && skill.skillLevel > 0)?.skillLevel ?? 0;
@@ -40,6 +40,14 @@ export class TournamentWorkspaceView extends BaseComponent {
     jurySkill: string;
   } | null = null;
   #savingEntry = false;
+  // Officials state
+  #addingOfficial = false;
+  #deletingOfficialId: string | null = null;
+  #showAddOfficial = false;
+  #officialStageId: string | null = null;
+  #officialEntryId: string = "";
+  #officialRole: StageOfficialRole = "JUDGE";
+  #officialsError: string | null = null;
 
   get event(): ApiEvent | null {
     return this.#event;
@@ -134,17 +142,13 @@ export class TournamentWorkspaceView extends BaseComponent {
     });
     this.registerEvent(this.root, "submit", (e) => {
       const form = e.target as HTMLFormElement;
-      if (form.dataset.form !== "add-participant" && form.dataset.form !== "add-bulk" && form.dataset.form !== "edit-entry") return;
+      if (form.dataset.form !== "add-participant" && form.dataset.form !== "add-bulk" && form.dataset.form !== "edit-entry" && form.dataset.form !== "add-official") return;
       e.preventDefault();
       if (form.dataset.form === "add-bulk") void this.addBulk(form);
       else if (form.dataset.form === "edit-entry") void this.saveEntry(form);
+      else if (form.dataset.form === "add-official") void this.addOfficial(form);
       else void this.addParticipant(form);
     });
-  }
-
-  private currentTournament(): ApiTournament | undefined {
-    if (!this.#event || !this.#tournamentId) return undefined;
-    return this.#event.tournaments.find((t) => t.id === this.#tournamentId);
   }
 
   private handleClick(event: Event): void {
@@ -281,6 +285,26 @@ export class TournamentWorkspaceView extends BaseComponent {
               detail: { matchId },
             }),
           );
+        }
+      } else if (action === "add-official") {
+        const stageId = actionEl.dataset.stageId;
+        if (stageId) {
+          this.#officialStageId = stageId;
+          this.#showAddOfficial = true;
+          this.#officialsError = null;
+          this.renderView();
+        }
+      } else if (action === "cancel-add-official") {
+        this.#showAddOfficial = false;
+        this.#officialStageId = null;
+        this.#officialEntryId = "";
+        this.#officialRole = "JUDGE";
+        this.#officialsError = null;
+        this.renderView();
+      } else if (action === "delete-official") {
+        const officialId = actionEl.dataset.officialId;
+        if (officialId && window.confirm(t("tournament.deleteOfficialConfirm"))) {
+          void this.deleteOfficial(officialId);
         }
       }
     }
@@ -446,6 +470,67 @@ export class TournamentWorkspaceView extends BaseComponent {
       this.#deletingEntry = false;
       this.renderView();
     }
+  }
+
+  private async addOfficial(form: HTMLFormElement): Promise<void> {
+    const formData = new FormData(form);
+    const stageId = this.#officialStageId;
+    const entryId = String(formData.get("entryId") ?? "");
+    const role = formData.get("role") as StageOfficialRole | null;
+    if (!stageId || !entryId || !role) return;
+
+    this.#addingOfficial = true;
+    this.#officialsError = null;
+    this.renderView();
+
+    const current = () => this.#event?.id && this.#tournamentId && this.#officialStageId === stageId;
+    try {
+      const api = createApiClient();
+      await api.createStageOfficial(stageId, { entryId, role });
+      const refreshed = await api.getEvent(this.#event!.id);
+      if (current()) {
+        this.#event = refreshed;
+        this.#showAddOfficial = false;
+        this.#officialStageId = null;
+        this.#officialEntryId = "";
+        this.#officialRole = "JUDGE";
+      }
+    } catch (error) {
+      if (current()) {
+        this.#officialsError = error instanceof Error ? error.message : t("tournament.addOfficialError");
+      }
+    } finally {
+      this.#addingOfficial = false;
+      this.renderView();
+    }
+  }
+
+  private async deleteOfficial(id: string): Promise<void> {
+    const event = this.#event;
+    if (!event || this.#deletingOfficialId) return;
+
+    this.#deletingOfficialId = id;
+    this.#officialsError = null;
+    this.renderView();
+
+    const current = () => this.#event?.id === event.id;
+    try {
+      const api = createApiClient();
+      await api.deleteStageOfficial(id);
+      const refreshed = await api.getEvent(event.id);
+      if (current()) this.#event = refreshed;
+    } catch (error) {
+      if (current()) {
+        this.#officialsError = error instanceof Error ? error.message : t("tournament.deleteOfficialError");
+      }
+    } finally {
+      this.#deletingOfficialId = null;
+      this.renderView();
+    }
+  }
+
+  private currentTournament(): ApiTournament | null {
+    return this.#event?.tournaments?.find((t) => t.id === this.#tournamentId) ?? null;
   }
 
   private renderView(): void {
@@ -838,11 +923,91 @@ export class TournamentWorkspaceView extends BaseComponent {
     }
   }
 
-  private renderOfficialsTab(_tournament: ApiTournament): string {
+  private renderOfficialsTab(tournament: ApiTournament): string {
+    const stages = tournament.stages ?? [];
+    const volunteerEntries = tournament.entries?.filter((e) => e.kind !== "FIGHTER") ?? [];
+
     return `
       <div class="tab-content-officials">
-        <h3>${t("tournament.tabs.officials")}</h3>
-        <p class="empty-state">Vrijwilligers en officials voor dit toernooi.</p>
+        <div class="table-header-actions">
+          <h3>${t("tournament.tabs.officials")}</h3>
+        </div>
+        ${this.#officialsError ? `<p role="alert">${escapeHtml(this.#officialsError)}</p>` : ""}
+        ${this.#renderAddOfficialForm(tournament, volunteerEntries)}
+        ${stages.length === 0
+          ? `<p class="empty-state">${t("tournament.noStagesForOfficials")}</p>`
+          : `<div class="officials-list">
+              ${stages
+                .map((stage) => this.#renderStageOfficials(tournament, stage, volunteerEntries))
+                .join("")}
+            </div>`}
+      </div>
+    `;
+  }
+
+  #renderAddOfficialForm(tournament: ApiTournament, volunteerEntries: ApiEntry[]): string {
+    if (!this.#showAddOfficial || !this.#officialStageId) return "";
+    const stage = tournament.stages?.find((s) => s.id === this.#officialStageId);
+    if (!stage) return "";
+
+    const assignedEntryIds = new Set(stage.officials?.map((o) => o.entryId) ?? []);
+    const availableEntries = volunteerEntries.filter((e) => !assignedEntryIds.has(e.id));
+
+    const entryOptions = availableEntries.length > 0
+      ? availableEntries.map((e) => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.user?.username ?? e.id)}</option>`).join("")
+      : `<option value="">${t("tournament.noAvailableOfficials")}</option>`;
+
+    return `
+      <form data-form="add-official" class="officials-form">
+        <input type="hidden" name="stageId" value="${escapeHtml(this.#officialStageId)}" />
+        <label>${t("tournament.officialEntry")}
+          <select name="entryId" ${availableEntries.length === 0 ? "disabled" : ""}>
+            ${entryOptions}
+          </select>
+        </label>
+        <label>${t("tournament.officialRole")}
+          <select name="role">
+            <option value="JUDGE" ${this.#officialRole === "JUDGE" ? "selected" : ""}>${t("tournament.role.JUDGE")}</option>
+            <option value="JURY" ${this.#officialRole === "JURY" ? "selected" : ""}>${t("tournament.role.JURY")}</option>
+            <option value="TABLE" ${this.#officialRole === "TABLE" ? "selected" : ""}>${t("tournament.role.TABLE")}</option>
+          </select>
+        </label>
+        <button type="submit" class="btn-primary" ${this.#addingOfficial || availableEntries.length === 0 ? "disabled" : ""}>
+          ${t("tournament.addOfficial")}
+        </button>
+        <button type="button" class="btn-secondary" data-action="cancel-add-official" ${this.#addingOfficial ? "disabled" : ""}>
+          ${t("tournament.cancelOfficial")}
+        </button>
+      </form>
+    `;
+  }
+
+  #renderStageOfficials(tournament: ApiTournament, stage: ApiStage, volunteerEntries: ApiEntry[]): string {
+    const stageOfficials = stage.officials ?? [];
+    const volunteerEntryMap = new Map(volunteerEntries.map((e) => [e.id, e]));
+
+    return `
+      <div class="officials-stage-card">
+        <h4>${escapeHtml(stage.name ?? t("tournament.unnamedStage"))}</h4>
+        ${stageOfficials.length > 0
+          ? `<ul class="officials-list-for-stage">
+              ${stageOfficials.map((official) => {
+                const entry = volunteerEntryMap.get(official.entryId);
+                return `
+                  <li class="official-item">
+                    <span class="official-name">${escapeHtml(entry?.user?.username ?? official.entryId)}</span>
+                    <span class="official-role">${t(`tournament.role.${official.role}`)}</span>
+                    <button type="button" class="btn-secondary" data-action="delete-official" data-official-id="${escapeHtml(official.id)}" ${this.#deletingOfficialId === official.id ? "disabled" : ""}>
+                      ${t("tournament.deleteOfficial")}
+                    </button>
+                  </li>
+                `;
+              }).join("")}
+            </ul>`
+          : `<p class="empty-state">${t("tournament.noOfficialsForStage")}</p>`}
+        <button type="button" class="btn-primary" data-action="add-official" data-stage-id="${escapeHtml(stage.id)}">
+          ${t("tournament.addOfficialToStage")}
+        </button>
       </div>
     `;
   }
