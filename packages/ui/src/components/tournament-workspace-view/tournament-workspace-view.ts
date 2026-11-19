@@ -2,7 +2,7 @@ import css from "./tournament-workspace-view.css?raw";
 import { BaseComponent } from "../base-component/base-component.js";
 import { LOCALE_CHANGE_EVENT, t } from "../../i18n/i18n.js";
 import { escapeHtml } from "../../utils/escape-html.js";
-import { createApiClient, type ApiEvent, type ApiTournament, type ApiStage, type ApiEntry, type ApiStageOfficial, type StageOfficialRole, type ApiTournamentAdmin, type ApiTournamentAdminCandidate } from "@hema/event-admin-api";
+import { createApiClient, type ApiEvent, type ApiTournament, type ApiStage, type ApiEntry, type ApiStageOfficial, type StageOfficialRole, type ApiTournamentAdmin, type ApiTournamentAdminCandidate, type ApiDatabaseLiveStatus, type ApiLiveRing, type ApiDatabaseLiveResult, type ApiLiveRingColors, type ApiScoreboardSettings, type ApiRingRules, type ApiScoreboardTextSize, type ApiScoreboardTheme } from "@hema/event-admin-api";
 
 function skillLevel(skills: Array<{ skillName: string; skillLevel: number }> | undefined, skillName: string): number {
   return skills?.find((skill) => skill.skillName === skillName && skill.skillLevel > 0)?.skillLevel ?? 0;
@@ -56,6 +56,21 @@ export class TournamentWorkspaceView extends BaseComponent {
   #showAddAdmin = false;
   #adminUserId: string = "";
   #accessError: string | null = null;
+  // Live state
+  #liveStatus: ApiDatabaseLiveStatus | null = null;
+  #liveRings: ApiLiveRing[] = [];
+  #liveResults: ApiDatabaseLiveResult[] = [];
+  #activatingLive = false;
+  #loadingLive = false;
+  #liveError: string | null = null;
+  #editingRingId: string | null = null;
+  #editingRingColors: { leftColor: string; rightColor: string } | null = null;
+  #editingRingSettings: { mirrored: boolean; showNext: boolean; textSize: string; theme: string } | null = null;
+  #savingRing = false;
+  #rotatingKeeperToken: string | null = null;
+  #rotatingScoreboardToken: string | null = null;
+  #showingCorrectionModal = false;
+  #correctingResultId: string | null = null;
 
   get event(): ApiEvent | null {
     return this.#event;
@@ -150,12 +165,13 @@ export class TournamentWorkspaceView extends BaseComponent {
     });
     this.registerEvent(this.root, "submit", (e) => {
       const form = e.target as HTMLFormElement;
-      if (form.dataset.form !== "add-participant" && form.dataset.form !== "add-bulk" && form.dataset.form !== "edit-entry" && form.dataset.form !== "add-official" && form.dataset.form !== "add-admin") return;
+      if (form.dataset.form !== "add-participant" && form.dataset.form !== "add-bulk" && form.dataset.form !== "edit-entry" && form.dataset.form !== "add-official" && form.dataset.form !== "add-admin" && form.dataset.form !== "ring-edit") return;
       e.preventDefault();
       if (form.dataset.form === "add-bulk") void this.addBulk(form);
       else if (form.dataset.form === "edit-entry") void this.saveEntry(form);
       else if (form.dataset.form === "add-official") void this.addOfficial(form);
       else if (form.dataset.form === "add-admin") void this.handleAddAdmin(form);
+      else if (form.dataset.form === "ring-edit") void this.handleRingEdit(form);
       else void this.addParticipant(form);
     });
   }
@@ -169,6 +185,8 @@ export class TournamentWorkspaceView extends BaseComponent {
       this.#activeTab = tabBtn.dataset.tab as TournamentTab;
       if (this.#activeTab === "access") {
         void this.loadTournamentAdmins();
+      } else if (this.#activeTab === "live") {
+        void this.loadLiveData();
       }
       this.renderView();
       return;
@@ -334,6 +352,61 @@ export class TournamentWorkspaceView extends BaseComponent {
         const userName = actionEl.closest("tr")?.querySelector("td")?.textContent ?? "";
         if (userId && window.confirm(t("tournament.removeAdminConfirm", { name: userName }))) {
           void this.removeTournamentAdmin(userId);
+        }
+      } else if (action === "activate-live") {
+        if (window.confirm(t("tournament.activateLiveConfirm"))) {
+          void this.activateLiveTournament();
+        }
+      } else if (action === "rotate-keeper") {
+        const ringId = actionEl.dataset.ringId;
+        const ringName = actionEl.closest("tr")?.querySelector("td")?.textContent ?? "";
+        if (ringId && window.confirm(t("tournament.rotateKeeperConfirm", { name: ringName }))) {
+          void this.rotateKeeperToken(ringId);
+        }
+      } else if (action === "rotate-scoreboard") {
+        const ringId = actionEl.dataset.ringId;
+        const ringName = actionEl.closest("tr")?.querySelector("td")?.textContent ?? "";
+        if (ringId && window.confirm(t("tournament.rotateScoreboardConfirm", { name: ringName }))) {
+          void this.rotateScoreboardToken(ringId);
+        }
+      } else if (action === "edit-ring-colors") {
+        const ringId = actionEl.dataset.ringId;
+        if (ringId) {
+          const ring = this.#liveRings.find((r) => r.id === ringId);
+          if (ring) {
+            this.#editingRingId = ringId;
+            this.#editingRingColors = { leftColor: ring.leftColor, rightColor: ring.rightColor };
+            this.#editingRingSettings = null;
+            this.renderView();
+          }
+        }
+      } else if (action === "edit-ring-settings") {
+        const ringId = actionEl.dataset.ringId;
+        if (ringId) {
+          const ring = this.#liveRings.find((r) => r.id === ringId);
+          if (ring) {
+            this.#editingRingId = ringId;
+            this.#editingRingColors = null;
+            this.#editingRingSettings = {
+              mirrored: ring.scoreboard.mirrored,
+              showNext: ring.scoreboard.showNext,
+              textSize: ring.scoreboard.textSize,
+              theme: ring.scoreboard.theme,
+            };
+            this.renderView();
+          }
+        }
+      } else if (action === "cancel-ring-edit") {
+        this.#editingRingId = null;
+        this.#editingRingColors = null;
+        this.#editingRingSettings = null;
+        this.renderView();
+      } else if (action === "correct-result") {
+        const resultId = actionEl.dataset.resultId;
+        if (resultId) {
+          this.#showingCorrectionModal = true;
+          this.#correctingResultId = resultId;
+          this.renderView();
         }
       }
     }
@@ -579,6 +652,26 @@ export class TournamentWorkspaceView extends BaseComponent {
     await this.addTournamentAdmin();
   }
 
+  private async handleRingEdit(form: HTMLFormElement): Promise<void> {
+    const formData = new FormData(form);
+    const ringId = this.#editingRingId;
+    if (!ringId) return;
+
+    const leftColor = String(formData.get("leftColor") ?? "");
+    const rightColor = String(formData.get("rightColor") ?? "");
+    const mirrored = formData.get("mirrored") !== null;
+    const showNext = formData.get("showNext") !== null;
+    const textSize = String(formData.get("textSize") ?? "MEDIUM") as ApiScoreboardTextSize;
+    const theme = String(formData.get("theme") ?? "DARK") as ApiScoreboardTheme;
+
+    if (this.#editingRingColors) {
+      await this.saveRingColors(ringId, { leftColor, rightColor });
+    }
+    if (this.#editingRingSettings) {
+      await this.saveRingSettings(ringId, { mirrored, showNext, textSize, theme });
+    }
+  }
+
   private async addTournamentAdmin(): Promise<void> {
     const tournamentId = this.#tournamentId;
     const userId = this.#adminUserId;
@@ -625,6 +718,156 @@ export class TournamentWorkspaceView extends BaseComponent {
       }
     } finally {
       this.#removingAdminUserId = null;
+      this.renderView();
+    }
+  }
+
+  private async loadLiveData(): Promise<void> {
+    const tournamentId = this.#tournamentId;
+    if (!tournamentId) return;
+
+    this.#loadingLive = true;
+    this.#liveError = null;
+    this.renderView();
+
+    try {
+      const api = createApiClient();
+      this.#liveStatus = await api.databaseLiveStatus(tournamentId);
+      if (this.#liveStatus?.active && this.#liveStatus.liveTournamentId) {
+        this.#liveRings = await api.liveRings(this.#liveStatus.liveTournamentId);
+        this.#liveResults = await api.databaseLiveResults(tournamentId);
+      } else {
+        this.#liveRings = [];
+        this.#liveResults = [];
+      }
+    } catch (error) {
+      this.#liveError = error instanceof Error ? error.message : t("tournament.loadLiveError");
+    } finally {
+      this.#loadingLive = false;
+      this.renderView();
+    }
+  }
+
+  private async activateLiveTournament(): Promise<void> {
+    const tournamentId = this.#tournamentId;
+    if (!tournamentId) return;
+
+    this.#activatingLive = true;
+    this.#liveError = null;
+    this.renderView();
+
+    const current = () => this.#tournamentId === tournamentId;
+    try {
+      const api = createApiClient();
+      const result = await api.activateDatabaseLive(tournamentId);
+      this.#liveStatus = {
+        active: true,
+        liveTournamentId: result.id,
+        rings: result.projection.rings,
+        bouts: result.projection.bouts,
+      };
+      if (current() && this.#liveStatus.liveTournamentId) {
+        this.#liveRings = await api.liveRings(this.#liveStatus.liveTournamentId);
+        this.#liveResults = await api.databaseLiveResults(tournamentId);
+      }
+    } catch (error) {
+      if (current()) {
+        this.#liveError = error instanceof Error ? error.message : t("tournament.activateLiveError");
+      }
+    } finally {
+      this.#activatingLive = false;
+      this.renderView();
+    }
+  }
+
+  private async rotateKeeperToken(ringId: string): Promise<void> {
+    this.#rotatingKeeperToken = ringId;
+    this.#liveError = null;
+    this.renderView();
+
+    const current = () => this.#liveStatus?.liveTournamentId && this.#editingRingId === null;
+    try {
+      const api = createApiClient();
+      await api.rotateLiveRingKeeperToken(ringId);
+      if (current() && this.#liveStatus?.liveTournamentId) {
+        this.#liveRings = await api.liveRings(this.#liveStatus.liveTournamentId);
+      }
+    } catch (error) {
+      if (current()) {
+        this.#liveError = error instanceof Error ? error.message : t("tournament.rotateKeeperError");
+      }
+    } finally {
+      this.#rotatingKeeperToken = null;
+      this.renderView();
+    }
+  }
+
+  private async rotateScoreboardToken(ringId: string): Promise<void> {
+    this.#rotatingScoreboardToken = ringId;
+    this.#liveError = null;
+    this.renderView();
+
+    const current = () => this.#liveStatus?.liveTournamentId && this.#editingRingId === null;
+    try {
+      const api = createApiClient();
+      await api.rotateLiveRingScoreboardToken(ringId);
+      if (current() && this.#liveStatus?.liveTournamentId) {
+        this.#liveRings = await api.liveRings(this.#liveStatus.liveTournamentId);
+      }
+    } catch (error) {
+      if (current()) {
+        this.#liveError = error instanceof Error ? error.message : t("tournament.rotateScoreboardError");
+      }
+    } finally {
+      this.#rotatingScoreboardToken = null;
+      this.renderView();
+    }
+  }
+
+  private async saveRingColors(ringId: string, colors: ApiLiveRingColors): Promise<void> {
+    this.#savingRing = true;
+    this.#liveError = null;
+    this.renderView();
+
+    const current = () => this.#liveStatus?.liveTournamentId && this.#editingRingId === ringId;
+    try {
+      const api = createApiClient();
+      await api.setLiveRingColors(ringId, colors);
+      if (current() && this.#liveStatus?.liveTournamentId) {
+        this.#liveRings = await api.liveRings(this.#liveStatus.liveTournamentId);
+        this.#editingRingId = null;
+        this.#editingRingColors = null;
+      }
+    } catch (error) {
+      if (current()) {
+        this.#liveError = error instanceof Error ? error.message : t("tournament.saveRingColorsError");
+      }
+    } finally {
+      this.#savingRing = false;
+      this.renderView();
+    }
+  }
+
+  private async saveRingSettings(ringId: string, settings: ApiScoreboardSettings): Promise<void> {
+    this.#savingRing = true;
+    this.#liveError = null;
+    this.renderView();
+
+    const current = () => this.#liveStatus?.liveTournamentId && this.#editingRingId === ringId;
+    try {
+      const api = createApiClient();
+      await api.setLiveRingScoreboardSettings(ringId, settings);
+      if (current() && this.#liveStatus?.liveTournamentId) {
+        this.#liveRings = await api.liveRings(this.#liveStatus.liveTournamentId);
+        this.#editingRingId = null;
+        this.#editingRingSettings = null;
+      }
+    } catch (error) {
+      if (current()) {
+        this.#liveError = error instanceof Error ? error.message : t("tournament.saveRingSettingsError");
+      }
+    } finally {
+      this.#savingRing = false;
       this.renderView();
     }
   }
@@ -1187,15 +1430,189 @@ export class TournamentWorkspaceView extends BaseComponent {
   }
 
   private renderLiveTab(_tournament: ApiTournament): string {
+    const liveStatus = this.#liveStatus;
+    const liveRings = this.#liveRings;
+    const liveResults = this.#liveResults;
+
     return `
       <div class="tab-content-live">
         <div class="table-header-actions">
           <h3>${t("tournament.tabs.live")}</h3>
-          <button type="button" class="btn-primary" data-action="activate-live">
-            ${t("tournament.liveActivate")}
-          </button>
+          ${liveStatus?.active
+            ? `<button type="button" class="btn-secondary" disabled>${t("tournament.liveActive")}</button>`
+            : `<button type="button" class="btn-primary" data-action="activate-live" ${this.#activatingLive ? "disabled" : ""}>
+                ${t("tournament.liveActivate")}
+              </button>`}
         </div>
-        <p class="empty-state">Beheer ringen, tafel- en scorebordkoppelingen en uitslagen.</p>
+        ${this.#liveError ? `<p role="alert">${escapeHtml(this.#liveError)}</p>` : ""}
+        ${this.#loadingLive
+          ? `<p>${t("tournament.loading")}</p>`
+          : `
+            ${liveStatus?.active
+              ? `
+                <div class="live-status">
+                  <p><strong>${t("tournament.liveActive")}</strong>: ${t("tournament.liveStatus", { status: `${liveStatus.rings} ${t("tournament.liveRings")}, ${liveStatus.bouts} bouts` })}</p>
+                </div>
+                
+                <div class="live-section">
+                  <h4>${t("tournament.liveRings")}</h4>
+                  ${liveRings.length === 0
+                    ? `<p class="empty-state">${t("tournament.noLiveRings")}</p>`
+                    : `
+                      <table class="entries-table">
+                        <thead>
+                          <tr>
+                            <th>${t("tournament.entryName")}</th>
+                            <th>${t("tournament.keeperToken")}</th>
+                            <th>${t("tournament.scoreboardToken")}</th>
+                            <th>${t("tournament.actions")}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${liveRings.map((ring) => `
+                            <tr>
+                              <td>${escapeHtml(ring.name)}</td>
+                              <td>
+                                <div class="token-cell">
+                                  <a href="${ring.keeperToken}" target="_blank" rel="noopener noreferrer">${t("tournament.keeperToken")}</a>
+                                  ${ring.activeKeeper
+                                    ? `<p class="token-note">${t("tournament.currentKeeper", { name: ring.activeKeeper.userName })}</p>`
+                                    : `<p class="token-note">${t("tournament.noCurrentKeeper")}</p>`}
+                                  <button type="button" class="btn-secondary" data-action="rotate-keeper" data-ring-id="${escapeHtml(ring.id)}" ${this.#rotatingKeeperToken === ring.id ? "disabled" : ""}>
+                                    ${t("tournament.rotateKeeper")}
+                                  </button>
+                                </div>
+                              </td>
+                              <td>
+                                <div class="token-cell">
+                                  <a href="${ring.scoreboardToken}" target="_blank" rel="noopener noreferrer">${t("tournament.scoreboardToken")}</a>
+                                  <button type="button" class="btn-secondary" data-action="rotate-scoreboard" data-ring-id="${escapeHtml(ring.id)}" ${this.#rotatingScoreboardToken === ring.id ? "disabled" : ""}>
+                                    ${t("tournament.rotateScoreboard")}
+                                  </button>
+                                </div>
+                              </td>
+                              <td>
+                                <button type="button" class="btn-secondary" data-action="edit-ring-colors" data-ring-id="${escapeHtml(ring.id)}">
+                                  ${t("tournament.ringColors")}
+                                </button>
+                                <button type="button" class="btn-secondary" data-action="edit-ring-settings" data-ring-id="${escapeHtml(ring.id)}">
+                                  ${t("tournament.ringSettings")}
+                                </button>
+                              </td>
+                            </tr>
+                          `).join("")}
+                        </tbody>
+                      </table>
+                    `}
+                </div>
+                
+                <div class="live-section">
+                  <h4>${t("tournament.liveResults")}</h4>
+                  ${liveResults.length === 0
+                    ? `<p class="empty-state">${t("tournament.noLiveResults")}</p>`
+                    : `
+                      <table class="entries-table">
+                        <thead>
+                          <tr>
+                            <th>${t("tournament.entryName")}</th>
+                            <th>${t("tournament.fighterLeft")}</th>
+                            <th>${t("tournament.fighterRight")}</th>
+                            <th>Score</th>
+                            <th>${t("tournament.actions")}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${liveResults.map((result) => `
+                            <tr>
+                              <td>${escapeHtml(result.label)}</td>
+                              <td>${escapeHtml(result.fighterLeft)}</td>
+                              <td>${escapeHtml(result.fighterRight)}</td>
+                              <td>${result.score.left}-${result.score.right}${result.score.doubles > 0 ? ` (${result.score.doubles}D)` : ""}</td>
+                              <td>
+                                <button type="button" class="btn-secondary" data-action="correct-result" data-result-id="${escapeHtml(result.boutId)}">
+                                  Correct
+                                </button>
+                              </td>
+                            </tr>
+                          `).join("")}
+                        </tbody>
+                      </table>
+                    `}
+                </div>
+              `
+              : `<p class="empty-state">${t("tournament.liveInactive")}</p>`}
+          `}
+        ${this.#editingRingId
+          ? this.renderRingEditModal()
+          : ""}
+      </div>
+    `;
+  }
+
+  private renderRingEditModal(): string {
+    const ring = this.#liveRings.find((r) => r.id === this.#editingRingId);
+    if (!ring) return "";
+
+    const colors = this.#editingRingColors ?? { leftColor: ring.leftColor, rightColor: ring.rightColor };
+    const settings = this.#editingRingSettings ?? {
+      mirrored: ring.scoreboard.mirrored,
+      showNext: ring.scoreboard.showNext,
+      textSize: ring.scoreboard.textSize,
+      theme: ring.scoreboard.theme,
+    };
+
+    return `
+      <div class="modal-backdrop" data-modal="ring-edit">
+        <div class="modal-card">
+          <h3>${t("tournament.ringColors")} & ${t("tournament.ringSettings")}</h3>
+          <form data-form="ring-edit">
+            <fieldset>
+              <legend>${t("tournament.ringColors")}</legend>
+              <label>
+                ${t("tournament.fighterLeft")}
+                <input name="leftColor" type="color" value="${escapeHtml(colors.leftColor)}" />
+              </label>
+              <label>
+                ${t("tournament.fighterRight")}
+                <input name="rightColor" type="color" value="${escapeHtml(colors.rightColor)}" />
+              </label>
+            </fieldset>
+            <fieldset>
+              <legend>${t("tournament.ringSettings")}</legend>
+              <label class="flag-option">
+                <input name="mirrored" type="checkbox" ${settings.mirrored ? "checked" : ""} />
+                ${t("tournament.scoreboardMirrored")}
+              </label>
+              <label class="flag-option">
+                <input name="showNext" type="checkbox" ${settings.showNext ? "checked" : ""} />
+                ${t("tournament.scoreboardShowNext")}
+              </label>
+              <label>
+                ${t("tournament.scoreboardTextSize")}
+                <select name="textSize">
+                  <option value="SMALL" ${settings.textSize === "SMALL" ? "selected" : ""}>${t("tournament.textSizeSmall")}</option>
+                  <option value="MEDIUM" ${settings.textSize === "MEDIUM" ? "selected" : ""}>${t("tournament.textSizeMedium")}</option>
+                  <option value="LARGE" ${settings.textSize === "LARGE" ? "selected" : ""}>${t("tournament.textSizeLarge")}</option>
+                </select>
+              </label>
+              <label>
+                ${t("tournament.scoreboardTheme")}
+                <select name="theme">
+                  <option value="DARK" ${settings.theme === "DARK" ? "selected" : ""}>${t("tournament.themeDark")}</option>
+                  <option value="LIGHT" ${settings.theme === "LIGHT" ? "selected" : ""}>${t("tournament.themeLight")}</option>
+                </select>
+              </label>
+            </fieldset>
+            <div class="modal-actions">
+              <button type="submit" class="btn-primary" ${this.#savingRing ? "disabled" : ""}>
+                ${t("tournament.saveParticipant")}
+              </button>
+              <button type="button" class="btn-secondary" data-action="cancel-ring-edit" ${this.#savingRing ? "disabled" : ""}>
+                ${t("tournament.cancelParticipant")}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     `;
   }

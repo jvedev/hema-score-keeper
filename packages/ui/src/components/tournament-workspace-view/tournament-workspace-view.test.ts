@@ -779,4 +779,19 @@ describe("tournament-workspace-view", () => {
       expect($(".empty-state")?.textContent).toContain("No tournament administrators yet");
     });
   });
+
+  describe("Live tab", () => {
+    beforeEach(() => {
+      view.activeTab = "live";
+    });
+
+    it("shows activate live button when not active", () => {
+      expect($("[data-action='activate-live']")).not.toBeNull();
+      expect($("[data-action='activate-live']")?.textContent).toContain("Activate live tournament");
+    });
+
+    it("shows empty state when not active", () => {
+      expect($(".empty-state")?.textContent).toContain("Not live yet");
+    });
+  });
 });
