@@ -546,6 +546,8 @@ export const nl: Record<MessageKey, string> = {
   "tournament.entrySeed": "Plaatsing",
   "tournament.entryTournament": "Toernooi",
   "tournament.entryName": "Naam",
+  "tournament.role": "Rol",
+  "tournament.actions": "Acties",
   "tournament.volunteerPreferences": "Vrijwilligersvoorkeuren",
   "tournament.volunteer.judgeVolunteer": "Scheidsrechter",
   "tournament.volunteer.juryVolunteer": "Jury",

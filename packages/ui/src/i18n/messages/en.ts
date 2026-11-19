@@ -544,6 +544,8 @@ export const en = {
   "tournament.entrySeed": "Seed",
   "tournament.entryTournament": "Tournament",
   "tournament.entryName": "Name",
+  "tournament.role": "Role",
+  "tournament.actions": "Actions",
   "tournament.volunteerPreferences": "Volunteer preferences",
   "tournament.volunteer.judgeVolunteer": "Judge",
   "tournament.volunteer.juryVolunteer": "Jury",

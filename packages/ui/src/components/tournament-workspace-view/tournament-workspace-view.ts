@@ -742,10 +742,10 @@ export class TournamentWorkspaceView extends BaseComponent {
           <table class="entries-table">
             <thead>
               <tr>
-                <th>Seed</th>
-                <th>Naam</th>
-                <th>Rol</th>
-                <th>Acties</th>
+                <th>${t("tournament.entrySeed")}</th>
+                <th>${t("tournament.participantName")}</th>
+                <th>${t("tournament.role")}</th>
+                <th>${t("tournament.actions")}</th>
               </tr>
             </thead>
             <tbody>
