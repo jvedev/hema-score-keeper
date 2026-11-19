@@ -752,4 +752,31 @@ describe("tournament-workspace-view", () => {
       expect($("form[data-form='add-official']")).toBeNull();
     });
   });
+
+  describe("Access tab", () => {
+    beforeEach(() => {
+      view.activeTab = "access";
+    });
+
+    it("shows add admin button", () => {
+      expect($("[data-action='add-admin']")).not.toBeNull();
+    });
+
+    it("opens add admin form when add button is clicked", () => {
+      $("[data-action='add-admin']")?.click();
+      expect($("form[data-form='add-admin']")).not.toBeNull();
+      expect($("select[name='userId']")).not.toBeNull();
+    });
+
+    it("hides add admin form when cancel is clicked", () => {
+      $("[data-action='add-admin']")?.click();
+      expect($("form[data-form='add-admin']")).not.toBeNull();
+      $("[data-action='cancel-add-admin']")?.click();
+      expect($("form[data-form='add-admin']")).toBeNull();
+    });
+
+    it("shows empty state when no admins exist", () => {
+      expect($(".empty-state")?.textContent).toContain("No tournament administrators yet");
+    });
+  });
 });

@@ -2,7 +2,7 @@ import css from "./tournament-workspace-view.css?raw";
 import { BaseComponent } from "../base-component/base-component.js";
 import { LOCALE_CHANGE_EVENT, t } from "../../i18n/i18n.js";
 import { escapeHtml } from "../../utils/escape-html.js";
-import { createApiClient, type ApiEvent, type ApiTournament, type ApiStage, type ApiEntry, type ApiStageOfficial, type StageOfficialRole } from "@hema/event-admin-api";
+import { createApiClient, type ApiEvent, type ApiTournament, type ApiStage, type ApiEntry, type ApiStageOfficial, type StageOfficialRole, type ApiTournamentAdmin, type ApiTournamentAdminCandidate } from "@hema/event-admin-api";
 
 function skillLevel(skills: Array<{ skillName: string; skillLevel: number }> | undefined, skillName: string): number {
   return skills?.find((skill) => skill.skillName === skillName && skill.skillLevel > 0)?.skillLevel ?? 0;
@@ -48,6 +48,14 @@ export class TournamentWorkspaceView extends BaseComponent {
   #officialEntryId: string = "";
   #officialRole: StageOfficialRole = "JUDGE";
   #officialsError: string | null = null;
+  // Access state
+  #tournamentAdmins: ApiTournamentAdmin[] = [];
+  #tournamentAdminCandidates: ApiTournamentAdminCandidate[] = [];
+  #addingAdmin = false;
+  #removingAdminUserId: string | null = null;
+  #showAddAdmin = false;
+  #adminUserId: string = "";
+  #accessError: string | null = null;
 
   get event(): ApiEvent | null {
     return this.#event;
@@ -142,11 +150,12 @@ export class TournamentWorkspaceView extends BaseComponent {
     });
     this.registerEvent(this.root, "submit", (e) => {
       const form = e.target as HTMLFormElement;
-      if (form.dataset.form !== "add-participant" && form.dataset.form !== "add-bulk" && form.dataset.form !== "edit-entry" && form.dataset.form !== "add-official") return;
+      if (form.dataset.form !== "add-participant" && form.dataset.form !== "add-bulk" && form.dataset.form !== "edit-entry" && form.dataset.form !== "add-official" && form.dataset.form !== "add-admin") return;
       e.preventDefault();
       if (form.dataset.form === "add-bulk") void this.addBulk(form);
       else if (form.dataset.form === "edit-entry") void this.saveEntry(form);
       else if (form.dataset.form === "add-official") void this.addOfficial(form);
+      else if (form.dataset.form === "add-admin") void this.handleAddAdmin(form);
       else void this.addParticipant(form);
     });
   }
@@ -158,6 +167,9 @@ export class TournamentWorkspaceView extends BaseComponent {
     const tabBtn = target.closest<HTMLElement>("[data-tab]");
     if (tabBtn && tabBtn.dataset.tab) {
       this.#activeTab = tabBtn.dataset.tab as TournamentTab;
+      if (this.#activeTab === "access") {
+        void this.loadTournamentAdmins();
+      }
       this.renderView();
       return;
     }
@@ -305,6 +317,23 @@ export class TournamentWorkspaceView extends BaseComponent {
         const officialId = actionEl.dataset.officialId;
         if (officialId && window.confirm(t("tournament.deleteOfficialConfirm"))) {
           void this.deleteOfficial(officialId);
+        }
+      } else if (action === "add-admin") {
+        this.#showAddAdmin = true;
+        this.#adminUserId = "";
+        this.#accessError = null;
+        void this.loadTournamentAdmins();
+        this.renderView();
+      } else if (action === "cancel-add-admin") {
+        this.#showAddAdmin = false;
+        this.#adminUserId = "";
+        this.#accessError = null;
+        this.renderView();
+      } else if (action === "remove-admin") {
+        const userId = actionEl.dataset.userId;
+        const userName = actionEl.closest("tr")?.querySelector("td")?.textContent ?? "";
+        if (userId && window.confirm(t("tournament.removeAdminConfirm", { name: userName }))) {
+          void this.removeTournamentAdmin(userId);
         }
       }
     }
@@ -525,6 +554,77 @@ export class TournamentWorkspaceView extends BaseComponent {
       }
     } finally {
       this.#deletingOfficialId = null;
+      this.renderView();
+    }
+  }
+
+  private async loadTournamentAdmins(): Promise<void> {
+    const tournamentId = this.#tournamentId;
+    if (!tournamentId) return;
+
+    this.#accessError = null;
+    try {
+      const api = createApiClient();
+      this.#tournamentAdmins = await api.tournamentAdmins(tournamentId);
+      this.#tournamentAdminCandidates = await api.tournamentAdminCandidates(tournamentId);
+    } catch (error) {
+      this.#accessError = error instanceof Error ? error.message : t("tournament.loadAccessError");
+    }
+  }
+
+  private async handleAddAdmin(form: HTMLFormElement): Promise<void> {
+    const formData = new FormData(form);
+    this.#adminUserId = String(formData.get("userId") ?? "");
+    if (!this.#adminUserId) return;
+    await this.addTournamentAdmin();
+  }
+
+  private async addTournamentAdmin(): Promise<void> {
+    const tournamentId = this.#tournamentId;
+    const userId = this.#adminUserId;
+    if (!tournamentId || !userId) return;
+
+    this.#addingAdmin = true;
+    this.#accessError = null;
+    this.renderView();
+
+    const current = () => this.#tournamentId === tournamentId;
+    try {
+      const api = createApiClient();
+      this.#tournamentAdmins = await api.addTournamentAdmin(tournamentId, userId);
+      this.#tournamentAdminCandidates = await api.tournamentAdminCandidates(tournamentId);
+      if (current()) {
+        this.#showAddAdmin = false;
+        this.#adminUserId = "";
+      }
+    } catch (error) {
+      this.#accessError = error instanceof Error ? error.message : t("tournament.addAdminError");
+    } finally {
+      this.#addingAdmin = false;
+      this.renderView();
+    }
+  }
+
+  private async removeTournamentAdmin(userId: string): Promise<void> {
+    const tournamentId = this.#tournamentId;
+    if (!tournamentId || !userId) return;
+
+    this.#removingAdminUserId = userId;
+    this.#accessError = null;
+    this.renderView();
+
+    const current = () => this.#tournamentId === tournamentId;
+    try {
+      const api = createApiClient();
+      await api.removeTournamentAdmin(tournamentId, userId);
+      this.#tournamentAdmins = this.#tournamentAdmins.filter((a) => a.userId !== userId);
+      this.#tournamentAdminCandidates = await api.tournamentAdminCandidates(tournamentId);
+    } catch (error) {
+      if (current()) {
+        this.#accessError = error instanceof Error ? error.message : t("tournament.removeAdminError");
+      }
+    } finally {
+      this.#removingAdminUserId = null;
       this.renderView();
     }
   }
@@ -1013,6 +1113,10 @@ export class TournamentWorkspaceView extends BaseComponent {
   }
 
   private renderAccessTab(_tournament: ApiTournament): string {
+    const tournamentId = this.#tournamentId;
+    const admins = this.#tournamentAdmins;
+    const candidates = this.#tournamentAdminCandidates;
+
     return `
       <div class="tab-content-access">
         <div class="table-header-actions">
@@ -1021,7 +1125,63 @@ export class TournamentWorkspaceView extends BaseComponent {
             ${t("tournament.addAdmin")}
           </button>
         </div>
-        <p class="empty-state">Toernooibeheerders beheren dit specifieke toernooi.</p>
+        ${this.#accessError ? `<p role="alert">${escapeHtml(this.#accessError)}</p>` : ""}
+        ${this.#showAddAdmin
+          ? `
+            <form data-form="add-admin" class="admin-form">
+              <label>
+                ${t("tournament.selectAdminCandidate")}
+                <select name="userId" required>
+                  <option value="">${t("tournament.selectAdminCandidate")}</option>
+                  ${candidates
+                    .map(
+                      (c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)} (${escapeHtml(c.username)})</option>`,
+                    )
+                    .join("")}
+                </select>
+              </label>
+              <button type="submit" ${this.#addingAdmin ? "disabled" : ""}>
+                ${t("tournament.addAdmin")}
+              </button>
+              <button type="button" data-action="cancel-add-admin" ${this.#addingAdmin ? "disabled" : ""}>
+                ${t("tournament.cancelAddAdmin")}
+              </button>
+            </form>
+          `
+          : ""}
+        ${
+          admins.length === 0
+            ? `<p class="empty-state">${t("tournament.noAdmins")}</p>`
+            : `
+              <table class="entries-table">
+                <thead>
+                  <tr>
+                    <th>${t("tournament.entryName")}</th>
+                    <th>${t("tournament.actions")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${admins
+                    .map(
+                      (admin) => `
+                    <tr>
+                      <td>${escapeHtml(admin.user.name)} (${escapeHtml(admin.user.username)})</td>
+                      <td>
+                        <button type="button" class="btn-secondary" data-action="remove-admin" data-user-id="${escapeHtml(admin.userId)}" ${this.#removingAdminUserId === admin.userId ? "disabled" : ""}>
+                          ${t("tournament.removeAdmin")}
+                        </button>
+                      </td>
+                    </tr>
+                  `,
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            `
+        }
+        ${candidates.length === 0 && admins.length > 0 && !this.#showAddAdmin
+          ? `<p class="empty-state">${t("tournament.noAdminCandidates")}</p>`
+          : ""}
       </div>
     `;
   }
