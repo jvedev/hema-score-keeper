@@ -5,6 +5,7 @@
   color: #e8edf5;
   background: #101721;
   padding: 1.5rem;
+  min-height: 100%;
 }
 
 /* Scrollbar styling for better visibility */
@@ -112,12 +113,13 @@
 
 .btn-secondary {
   background: #18212d;
-  color: #e8edf5;
+  color: #ffffff;
   border-color: #344256;
 }
 
 .btn-secondary:hover {
   background: #344256;
+  color: #ffffff;
 }
 
 .btn-secondary:disabled {
