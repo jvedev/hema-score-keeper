@@ -1,8 +1,8 @@
 :host {
   display: block;
   min-height: 100vh;
-  background: #0d1117;
-  color: #f2f5f7;
+  background: var(--admin-page);
+  color: var(--admin-text);
 }
 
 .planner {
@@ -39,7 +39,7 @@
 }
 
 .planner-header a {
-  color: #8fb2ff;
+  color: var(--admin-accent);
 }
 
 .planner-header label,
@@ -60,20 +60,26 @@ button {
 select,
 input {
   min-width: 0;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--admin-line);
   border-radius: 0.45rem;
   padding: 0.35rem 0.45rem;
-  background: #0f1623;
+  background: var(--admin-page);
   color: inherit;
 }
 
+/* Plain buttons are quiet outlines; the few main actions below use the ink fill. */
 button {
-  border: 0;
+  border: 1px solid var(--admin-line);
   border-radius: 0.45rem;
   padding: 0.45rem 0.65rem;
-  background: linear-gradient(180deg, #2d66ff, #1b4ad8);
-  color: #fff;
+  background: transparent;
+  color: var(--admin-text);
   cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--admin-line-strong);
+  background: var(--admin-raised);
 }
 
 button:disabled {
@@ -93,9 +99,9 @@ button:disabled {
   gap: 1rem;
   align-items: end;
   padding: 0.8rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--admin-line);
   border-radius: 0.8rem;
-  background: #111723;
+  background: var(--admin-page);
 }
 
 .planner-active-slot {
@@ -105,7 +111,7 @@ button:disabled {
   gap: 0.75rem;
   padding: 0.65rem 0.75rem;
   border-radius: 0.65rem;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--admin-raised);
 }
 
 .badge-row {
@@ -116,7 +122,7 @@ button:disabled {
 
 .badge {
   align-items: center;
-  background: #20283a;
+  background: var(--admin-surface);
   border-radius: 999px;
   color: white;
   display: inline-flex;
@@ -126,12 +132,12 @@ button:disabled {
 }
 
 .badge.badge-muted {
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--admin-muted);
 }
 
 .empty-state {
-  background: #101621;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--admin-page);
+  border: 1px solid var(--admin-line);
   border-radius: 0.9rem;
   padding: 0.9rem;
 }
@@ -148,8 +154,8 @@ button:disabled {
 }
 
 .modal-card {
-  background: #111723;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--admin-page);
+  border: 1px solid var(--admin-line);
   border-radius: 1rem;
   box-shadow: 0 1.2rem 3rem rgba(0, 0, 0, 0.45);
   display: grid;
@@ -190,9 +196,9 @@ button:disabled {
 }
 
 .suggestion-card {
-  background: #101621;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-left: 0.35rem solid var(--tournament-color, #2d66ff);
+  background: var(--admin-page);
+  border: 1px solid var(--admin-line);
+  border-left: 0.35rem solid var(--tournament-color, var(--admin-accent));
   border-radius: 0.9rem;
   display: grid;
   gap: 0.75rem;
@@ -210,13 +216,13 @@ button:disabled {
 }
 
 .suggestion-card-header p {
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--admin-muted);
   margin: 0.25rem 0 0;
 }
 
 .suggestion-pill {
   align-self: start;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--admin-raised);
   border-radius: 999px;
   font-size: 0.8rem;
   padding: 0.35rem 0.65rem;
@@ -230,7 +236,7 @@ button:disabled {
 }
 
 .suggestion-metrics span {
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--admin-muted);
   display: block;
   font-size: 0.75rem;
 }
@@ -241,10 +247,10 @@ button:disabled {
 }
 
 .suggestion-warning {
-  background: rgba(229, 72, 77, 0.12);
-  border: 1px solid rgba(229, 72, 77, 0.35);
+  background: color-mix(in srgb, var(--admin-danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--admin-danger) 35%, transparent);
   border-radius: 0.6rem;
-  color: #ffb6b9;
+  color: var(--admin-danger);
   padding: 0.65rem 0.75rem;
 }
 
@@ -277,9 +283,9 @@ button:disabled {
   height: calc(100vh - 11rem);
   min-height: 0;
   padding: 0.8rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--admin-line);
   border-radius: 0.8rem;
-  background: #111723;
+  background: var(--admin-page);
 }
 
 .phase-sidebar-content {
@@ -322,11 +328,20 @@ button:disabled {
 
 .random-assign-button {
   width: 100%;
-  background: linear-gradient(180deg, #3b7cff, #2554d9);
+  border-color: var(--admin-primary-bg);
+  background: var(--admin-primary-bg);
+  color: var(--admin-primary-text);
 }
 
 .planner-mode-tabs button[aria-pressed="false"] {
-  background: #20283a;
+  background: var(--admin-surface);
+  color: var(--admin-muted);
+}
+
+.planner-mode-tabs button[aria-pressed="true"] {
+  border-color: var(--admin-accent);
+  background: var(--admin-raised);
+  color: var(--admin-accent);
 }
 
 .volunteer-source {
@@ -335,14 +350,14 @@ button:disabled {
   position: relative;
   width: 100%;
   margin-top: 0.4rem;
-  background: #20283a;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-line);
   text-align: left;
 }
 
 .fighter-source {
   align-items: center;
-  background: color-mix(in srgb, var(--tournament-color) 16%, #20283a);
+  background: color-mix(in srgb, var(--tournament-color) 16%, var(--admin-surface));
   border: 1px solid color-mix(in srgb, var(--tournament-color) 52%, transparent);
   border-left: 0.35rem solid var(--tournament-color);
   display: grid;
@@ -374,7 +389,7 @@ button:disabled {
 }
 
 .fighter-source-text span {
-  color: rgba(255, 255, 255, 0.62);
+  color: var(--admin-muted);
   font-size: 0.72rem;
 }
 
@@ -391,7 +406,7 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--admin-muted);
   font-size: 0.72rem;
 }
 
@@ -400,7 +415,7 @@ button:disabled {
 }
 
 .volunteer-skill-stars {
-  color: #ffc96b;
+  color: var(--admin-accent);
   letter-spacing: 0.08em;
 }
 
@@ -409,8 +424,8 @@ button:disabled {
   align-items: center;
   border-radius: 999px;
   padding: 0.1rem 0.4rem;
-  background: rgba(255, 201, 107, 0.14);
-  color: #ffc96b;
+  background: color-mix(in srgb, var(--admin-accent) 14%, transparent);
+  color: var(--admin-accent);
   font-size: 0.68rem;
   line-height: 1;
 }
@@ -425,9 +440,9 @@ button:disabled {
   min-width: 12rem;
   max-width: min(18rem, 72vw);
   padding: 0.5rem 0.55rem;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--admin-line);
   border-radius: 0.4rem;
-  background: #111723;
+  background: var(--admin-page);
   box-shadow: 0 0.5rem 1.2rem rgba(0, 0, 0, 0.35);
   pointer-events: none;
 }
@@ -435,7 +450,7 @@ button:disabled {
 .volunteer-tooltip-name {
   font-size: 0.8rem;
   font-weight: 700;
-  color: #f2f5f7;
+  color: var(--admin-text);
 }
 
 .volunteer-source[data-hovered="true"] .volunteer-tooltip,
@@ -449,7 +464,7 @@ button:disabled {
 }
 
 .volunteer-tooltip-heading {
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--admin-muted);
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -465,7 +480,7 @@ button:disabled {
   padding: 0.55rem;
   border-left: 0.35rem solid var(--tournament-color);
   border-radius: 0.45rem;
-  background: color-mix(in srgb, var(--tournament-color) 10%, #101621);
+  background: color-mix(in srgb, var(--tournament-color) 10%, var(--admin-page));
 }
 
 .tournament-phases h3,
@@ -479,7 +494,7 @@ button:disabled {
   padding: 0.55rem;
   border-left: 0.35rem solid var(--tournament-color);
   border-radius: 0.45rem;
-  background: color-mix(in srgb, var(--tournament-color) 10%, #101621);
+  background: color-mix(in srgb, var(--tournament-color) 10%, var(--admin-page));
 }
 
 .phase-source {
@@ -488,19 +503,19 @@ button:disabled {
   margin-top: 0.35rem;
   border: 1px solid color-mix(in srgb, var(--tournament-color) 55%, transparent);
   border-left: 0.3rem solid var(--tournament-color);
-  background: color-mix(in srgb, var(--tournament-color) 18%, #101621);
+  background: color-mix(in srgb, var(--tournament-color) 18%, var(--admin-page));
   text-align: left;
 }
 
 .phase-source:hover {
-  background: color-mix(in srgb, var(--tournament-color) 28%, #101621);
+  background: color-mix(in srgb, var(--tournament-color) 28%, var(--admin-page));
 }
 
 .timeline-scroll {
   overflow: auto;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--admin-line);
   border-radius: 0.8rem;
-  background: #111723;
+  background: var(--admin-page);
 }
 
 .timeline-grid {
@@ -512,8 +527,8 @@ button:disabled {
 .slot-header,
 .arena-label,
 .schedule-cell {
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid var(--admin-line);
+  border-bottom: 1px solid var(--admin-line);
 }
 
 .arena-corner,
@@ -522,7 +537,7 @@ button:disabled {
   left: 0;
   z-index: 2;
   padding: 0.75rem;
-  background: #20283a;
+  background: var(--admin-surface);
   font-weight: 700;
 }
 
@@ -539,8 +554,8 @@ button:disabled {
   width: 100%;
   margin-top: 0.5rem;
   padding: 0.3rem;
-  background: #111723;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--admin-page);
+  border: 1px solid var(--admin-line);
   font-size: 0.75rem;
 }
 
@@ -551,7 +566,7 @@ button:disabled {
   min-width: 0;
   padding: 0.45rem;
   border-top: 0.35rem solid var(--slot-color);
-  background: #111723;
+  background: var(--admin-page);
 }
 
 .slot-header.active-slot {
@@ -577,8 +592,8 @@ button:disabled {
   margin-top: 0.25rem;
   padding: 0.15rem 0.45rem;
   border-radius: 999px;
-  background: rgba(143, 178, 255, 0.18);
-  color: #bcd0ff;
+  background: color-mix(in srgb, var(--admin-accent) 18%, transparent);
+  color: var(--admin-accent);
   font-size: 0.72rem;
   font-weight: 700;
 }
@@ -613,7 +628,7 @@ button:disabled {
 .slot-header .icon-button,
 .phase-card button {
   margin-top: 0.4rem;
-  background: #a61b1b;
+  background: color-mix(in srgb, var(--admin-danger) 16%, transparent);
 }
 
 .schedule-cell {
@@ -625,18 +640,18 @@ button:disabled {
   gap: 0.35rem;
   min-height: 7rem;
   padding: 0.4rem;
-  background: #101621;
+  background: var(--admin-page);
 }
 
 .schedule-cell[data-drop-active="true"] {
-  outline: 0.2rem dashed #2d66ff;
+  outline: 0.2rem dashed var(--admin-accent);
   outline-offset: -0.3rem;
-  background: rgba(45, 102, 255, 0.18);
+  background: color-mix(in srgb, var(--admin-accent) 18%, transparent);
 }
 
 .drop-hint {
   margin: auto;
-  color: rgba(255, 255, 255, 0.46);
+  color: var(--admin-muted);
   font-size: 0.8rem;
   text-align: center;
 }
@@ -647,7 +662,7 @@ button:disabled {
 
 .break-slot,
 .break-cell {
-  background: repeating-linear-gradient(-45deg, #2c2025, #2c2025 0.6rem, #3b272d 0.6rem, #3b272d 1.2rem);
+  background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--admin-danger) 16%, transparent), color-mix(in srgb, var(--admin-danger) 16%, transparent) 0.6rem, color-mix(in srgb, var(--admin-danger) 16%, transparent) 0.6rem, color-mix(in srgb, var(--admin-danger) 16%, transparent) 1.2rem);
 }
 
 .phase-card {
@@ -657,7 +672,7 @@ button:disabled {
   border: 1px solid color-mix(in srgb, var(--tournament-color) 50%, transparent);
   border-left: 0.35rem solid var(--tournament-color);
   border-radius: 0.3rem;
-  background: color-mix(in srgb, var(--tournament-color) 16%, #20283a);
+  background: color-mix(in srgb, var(--tournament-color) 16%, var(--admin-surface));
   box-shadow: 0 1px 0.3rem rgb(0 0 0 / 30%);
   cursor: grab;
 }
@@ -668,7 +683,7 @@ button:disabled {
 }
 
 .phase-card span {
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--admin-muted);
   font-size: 0.72rem;
 }
 
@@ -676,7 +691,7 @@ button:disabled {
   float: right;
   margin-top: 0.3rem;
   padding: 0.1rem 0.35rem;
-  background: #a61b1b;
+  background: color-mix(in srgb, var(--admin-danger) 16%, transparent);
 }
 
 .assignment-dropzones {
@@ -690,7 +705,7 @@ button:disabled {
   gap: 0.35rem;
   min-height: 1.8rem;
   padding: 0.25rem;
-  border: 1px dashed rgba(255, 255, 255, 0.28);
+  border: 1px dashed var(--admin-line);
   border-radius: 0.25rem;
   font-size: 0.72rem;
 }
@@ -703,34 +718,34 @@ button:disabled {
 }
 
 .assignment-dropzone-count {
-  color: rgba(255, 255, 255, 0.58);
+  color: var(--admin-muted);
   font-size: 0.7rem;
 }
 
 .assignment-dropzone-hint {
-  color: rgba(255, 255, 255, 0.48);
+  color: var(--admin-muted);
   font-size: 0.68rem;
 }
 
 .assignment-dropzone[data-drop-possible="true"] {
-  border-color: #5f92ff;
-  background: rgba(45, 102, 255, 0.18);
+  border-color: var(--admin-accent);
+  background: color-mix(in srgb, var(--admin-accent) 18%, transparent);
   box-shadow: inset 0 0 0 1px rgba(143, 178, 255, 0.22);
 }
 
 .assignment-dropzone[data-drop-possible="false"] {
-  border-color: rgba(229, 72, 77, 0.45);
-  background: rgba(229, 72, 77, 0.14);
+  border-color: color-mix(in srgb, var(--admin-danger) 45%, transparent);
+  background: color-mix(in srgb, var(--admin-danger) 14%, transparent);
 }
 
 .assignment-dropzone[data-drop-active="true"][data-drop-possible="true"] {
-  border-color: #7ef0a3;
-  background: rgba(86, 204, 126, 0.22);
+  border-color: var(--admin-positive);
+  background: color-mix(in srgb, var(--admin-positive) 22%, transparent);
 }
 
 .assignment-dropzone[data-drop-active="true"][data-drop-possible="false"] {
-  border-color: #ff6d6d;
-  background: rgba(229, 72, 77, 0.24);
+  border-color: var(--admin-danger);
+  background: color-mix(in srgb, var(--admin-danger) 24%, transparent);
 }
 
 .assignment-volunteers {
@@ -746,11 +761,11 @@ button:disabled {
   position: relative;
   padding: 0.15rem 0.3rem;
   border-radius: 0.2rem;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--admin-raised);
 }
 
 .assignment-dropzone[data-role="FIGHTER"] .assignment-volunteer {
-  background: color-mix(in srgb, var(--tournament-color) 14%, rgba(255, 255, 255, 0.1));
+  background: color-mix(in srgb, var(--tournament-color) 14%, var(--admin-raised));
 }
 
 .fighter-assignment-volunteers {
@@ -767,17 +782,17 @@ button:disabled {
   min-height: 2rem;
   padding: 0.2rem 0.35rem;
   border-radius: 0.25rem;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--admin-raised);
 }
 
 .fighter-assignment-slot-empty {
-  border: 1px dashed rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.45);
+  border: 1px dashed var(--admin-line);
+  color: var(--admin-muted);
 }
 
 .fighter-assignment-slot-filled {
   border: 1px solid color-mix(in srgb, var(--tournament-color) 35%, transparent);
-  background: color-mix(in srgb, var(--tournament-color) 14%, rgba(255, 255, 255, 0.08));
+  background: color-mix(in srgb, var(--tournament-color) 14%, var(--admin-raised));
 }
 
 .fighter-assignment-slot-name {
@@ -792,19 +807,19 @@ button:disabled {
   min-height: 0;
   padding: 0 0.3rem;
   background: transparent;
-  color: #ffb6b9;
+  color: var(--admin-danger);
 }
 
 .assignment-dropzone em {
-  color: rgba(255, 255, 255, 0.48);
+  color: var(--admin-muted);
 }
 
 .planner-error {
   padding: 0.7rem;
   border-radius: 0.4rem;
-  border: 1px solid rgba(229, 72, 77, 0.4);
-  background: rgba(229, 72, 77, 0.16);
-  color: #ffb6b9;
+  border: 1px solid color-mix(in srgb, var(--admin-danger) 40%, transparent);
+  background: color-mix(in srgb, var(--admin-danger) 16%, transparent);
+  color: var(--admin-danger);
 }
 
 .planner-empty {
@@ -844,4 +859,11 @@ button:disabled {
   .suggestion-metrics {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+/* Page title: the display face, as in the competition apps. */
+.planner-header h1 {
+  font-family: var(--admin-font-display);
+  font-weight: 800;
+  letter-spacing: 0.01em;
 }

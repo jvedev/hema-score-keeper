@@ -2,7 +2,7 @@ import { ApiError, ApiSession, type AuthResponse, type AuthUser, type Session, S
 
 export { ApiError };
 
-export type StageType = "POOL" | "ELIMINATION" | "SEMI_FINAL" | "FINAL";
+export type StageType = "POOL" | "ELIMINATION" | "SEMI_FINAL" | "BRONZE_FINAL" | "FINAL";
 export type EntryKind = "FIGHTER" | "VOLUNTEER" | "BOTH";
 export type StageOfficialRole = "JUDGE" | "JURY" | "TABLE";
 export type ScheduleRole = "JUDGE" | "JURY" | "TABLE" | "FIGHTER";
@@ -29,6 +29,19 @@ export interface ApiMatchParameters {
 export interface ApiRulesetDefinition {
   weaponClass: string;
   matchParameters: ApiMatchParameters;
+  /** Elimination bracket rules; anything missing uses the defaults (see `bracketSettings` in @hema/ranking). */
+  bracket?: ApiBracketSettings;
+}
+
+export interface ApiBracketSettings {
+  /** Seeding rule name, default "by-pool-place". */
+  seeding?: string;
+  /** Pairing rule name, default "standard-pools-apart". */
+  pairing?: string;
+  /** Default true: the two semi-final losers fight for third place. */
+  bronzeMatch?: boolean;
+  /** Default false: when true the bronze match and the final are their own stages. */
+  separateFinalStages?: boolean;
 }
 
 export interface ApiRuleset {
@@ -120,6 +133,10 @@ export interface ApiMatch {
   scoreB: number | null;
   ruleset: ApiRuleset | null;
   scheduledMatch: ApiScheduledMatch | null;
+  /** Elimination brackets only: round (0 = first), position in that round and kind; null for pool matches. */
+  bracketRound: number | null;
+  bracketPosition: number | null;
+  bracketKind: "MAIN" | "BRONZE" | null;
 }
 
 export interface ApiScheduledMatch {
@@ -481,6 +498,8 @@ export interface ApiClient {
     body: { scheduledPhaseId: string; order: number },
   ): Promise<ApiMatch>;
   unscheduleMatch(id: string): Promise<void>;
+  /** Fills an elimination stage's bracket from the finished pools before it (again, while nothing was fought). */
+  fillBracket(stageId: string): Promise<ApiStage>;
   createScheduledAssignment(
     scheduledPhaseId: string,
     body: { userId: string; role: ScheduleRole },
@@ -722,6 +741,7 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
       requestJson<ApiMatch>(baseUrl, `/matches/${id}/schedule`, { method: "PUT", body }),
     unscheduleMatch: (id) =>
       requestJson<void>(baseUrl, `/matches/${id}/schedule`, { method: "DELETE" }),
+    fillBracket: (stageId) => requestJson<ApiStage>(baseUrl, `/stages/${stageId}/bracket`, { method: "POST" }),
     createScheduledAssignment: (scheduledPhaseId, body) =>
       requestJson<ApiScheduledAssignment>(baseUrl, `/scheduled-phases/${scheduledPhaseId}/assignments`, {
         method: "POST",

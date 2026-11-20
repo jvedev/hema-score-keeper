@@ -8,7 +8,7 @@ type NativeDatabase = InstanceType<typeof BetterSqlite3>;
  * Until the first production release, schema changes edit the baseline directly and the dev database is
  * recreated (`npm run backend:db:reset`); real migrations keyed on this version come once production data exists.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /** Every table of the baseline, in creation (dependency) order. Must list exactly the tables of `BackendDatabase`. */
 export const BACKEND_TABLES = [
@@ -309,7 +309,12 @@ CREATE TABLE "Match" (
   "winnerEntryId" TEXT REFERENCES "Entry" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
   "scoreA" INTEGER,
   "scoreB" INTEGER,
-  "rulesetId" TEXT REFERENCES "Ruleset" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+  "rulesetId" TEXT REFERENCES "Ruleset" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  -- Elimination brackets: where the match sits in the tree (round 0 = first round, position top to bottom)
+  -- and whether it is a main-bracket or the bronze match. Null for pool matches.
+  "bracketRound" INTEGER,
+  "bracketPosition" INTEGER,
+  "bracketKind" TEXT CHECK ("bracketKind" IN ('MAIN', 'BRONZE'))
 );
 CREATE INDEX "Match_roundId_idx" ON "Match" ("roundId");
 CREATE INDEX "Match_arenaId_idx" ON "Match" ("arenaId");

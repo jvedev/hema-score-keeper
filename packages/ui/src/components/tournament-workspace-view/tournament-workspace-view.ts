@@ -2,6 +2,10 @@ import css from "./tournament-workspace-view.css?raw";
 import { BaseComponent } from "../base-component/base-component.js";
 import { LOCALE_CHANGE_EVENT, t } from "../../i18n/i18n.js";
 import { escapeHtml } from "../../utils/escape-html.js";
+import { nextStage, orderStages } from "./stage-order.js";
+import "../pool-results/pool-results.js";
+import type { PoolResults } from "../pool-results/pool-results.js";
+import { matchPlayed, nextFreeOrder, poolPhaseFor, roundStatus, stageMatchRows, stagePhaseOptions } from "./stage-matches.js";
 import { createApiClient, type ApiEvent, type ApiTournament, type ApiStage, type ApiEntry, type ApiStageOfficial, type StageOfficialRole, type ApiTournamentAdmin, type ApiTournamentAdminCandidate, type ApiDatabaseLiveStatus, type ApiLiveRing, type ApiDatabaseLiveResult, type ApiLiveRingColors, type ApiScoreboardSettings, type ApiRingRules, type ApiScoreboardTextSize, type ApiScoreboardTheme, type ApiMatch, type ApiRound, type StageType } from "@hema/event-admin-api";
 
 function skillLevel(skills: Array<{ skillName: string; skillLevel: number }> | undefined, skillName: string): number {
@@ -9,14 +13,45 @@ function skillLevel(skills: Array<{ skillName: string; skillLevel: number }> | u
 }
 
 export type TournamentTab = "overview" | "participants" | "stages" | "officials" | "access" | "live";
-export type StageSubTab = "overview" | "arenas" | "officials" | "rounds" | "matches" | "pool-results";
+
+interface StageFormState {
+  mode: "create" | "edit";
+  stageId: string | null;
+  type: StageType;
+  name: string;
+  /** "" = no ruleset of its own (the tournament's or event's ruleset applies). */
+  rulesetId: string;
+  minPoolSize: string;
+  maxPoolSize: string;
+  preferredPoolSize: string;
+  eliminationParticipantCount: string;
+  timeBetweenMatchesMinutes: string;
+}
+
+/** The match being planned: pool matches only change their order; bracket matches also their phase. */
+interface PlanFormState {
+  matchId: string;
+  stageId: string;
+  pool: boolean;
+  phaseId: string;
+  order: string;
+}
+
+const STAGE_FORM_FIELDS = [
+  "name",
+  "rulesetId",
+  "minPoolSize",
+  "maxPoolSize",
+  "preferredPoolSize",
+  "eliminationParticipantCount",
+  "timeBetweenMatchesMinutes",
+] as const;
 
 export class TournamentWorkspaceView extends BaseComponent {
   #event: ApiEvent | null = null;
   #tournamentId: string | null = null;
   #activeTab: TournamentTab = "overview";
   #selectedStageId: string | null = null;
-  #stageSubTab: StageSubTab = "overview";
   #loading = false;
   #error: string | null = null;
   #entryError: string | null = null;
@@ -56,20 +91,22 @@ export class TournamentWorkspaceView extends BaseComponent {
   #showAddAdmin = false;
   #adminUserId: string = "";
   #accessError: string | null = null;
-  // Stage management state
-  #showAddStage = false;
-  #stageName = "";
-  #stageType: StageType = "POOL";
-  #stageMinPoolSize = "";
-  #stageMaxPoolSize = "";
-  #addingStage = false;
+  // Tournament form state
+  #showEditTournament = false;
+  #savingTournament = false;
+  #tournamentError: string | null = null;
+  #poolResultsFullscreen = false;
+  #fillingBracket = false;
+  // Match planning: one match at a time; pool matches only change order, bracket matches also their phase.
+  #planForm: PlanFormState | null = null;
+  #planSaving = false;
+  #planError: string | null = null;
+  // Stage form state: one form for creating and editing; the typed values survive re-renders.
+  #stageForm: StageFormState | null = null;
+  #savingStage = false;
+  #stageFormError: string | null = null;
   #stageError: string | null = null;
   #deletingStageId: string | null = null;
-  #showEditStage: string | null = null;
-  #editStageName: string = "";
-  #editStageMinPoolSize: string = "";
-  #editStageMaxPoolSize: string = "";
-  #savingStage = false;
   // Live state
   #liveStatus: ApiDatabaseLiveStatus | null = null;
   #liveRings: ApiLiveRing[] = [];
@@ -107,6 +144,12 @@ export class TournamentWorkspaceView extends BaseComponent {
       this.#showBulk = false;
       this.#bulkNames = "";
       this.#editEntry = null;
+      this.#showEditTournament = false;
+      this.#tournamentError = null;
+      this.#stageForm = null;
+      this.#stageFormError = null;
+      this.#planForm = null;
+      this.#planError = null;
     }
     this.#tournamentId = value;
     this.renderView();
@@ -127,15 +170,6 @@ export class TournamentWorkspaceView extends BaseComponent {
 
   set selectedStageId(value: string | null) {
     this.#selectedStageId = value;
-    this.renderView();
-  }
-
-  get stageSubTab(): StageSubTab {
-    return this.#stageSubTab;
-  }
-
-  set stageSubTab(value: StageSubTab) {
-    this.#stageSubTab = value;
     this.renderView();
   }
 
@@ -161,6 +195,9 @@ export class TournamentWorkspaceView extends BaseComponent {
     this.renderView();
     this.registerEvent(window, LOCALE_CHANGE_EVENT, () => this.renderView());
     this.registerEvent(this.root, "click", (e) => this.handleClick(e));
+    this.registerEvent(this.root, "keydown", (e) => {
+      if ((e as KeyboardEvent).key === "Escape" && this.#poolResultsFullscreen) this.closePoolResultsFullscreen();
+    });
     this.registerEvent(this.root, "input", (e) => {
       const input = e.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
       if (input.name === "usernames") this.#bulkNames = input.value;
@@ -176,18 +213,32 @@ export class TournamentWorkspaceView extends BaseComponent {
       if (this.#editEntry && input.name === "judgeSkill") this.#editEntry.judgeSkill = input.value;
       if (this.#editEntry && input.name === "jurySkill") this.#editEntry.jurySkill = input.value;
       if (this.#editEntry && input.name === "kind" && (input.value === "FIGHTER" || input.value === "VOLUNTEER" || input.value === "BOTH")) this.#editEntry.kind = input.value;
+      if (this.#stageForm && input.closest("form.stage-form")) this.updateStageFormField(input);
+      if (this.#planForm && input.name === "order" && input.closest("form[data-form='plan-match']")) this.#planForm.order = input.value;
+    });
+    this.registerEvent(this.root, "change", (e) => {
+      const input = e.target as HTMLSelectElement;
+      if (this.#planForm && input.name === "scheduledPhaseId" && input.closest("form[data-form='plan-match']")) {
+        this.choosePlanPhase(input.value);
+        return;
+      }
+      if (this.#stageForm && input.name === "type" && input.closest("form.stage-form")) {
+        this.updateStageFormField(input);
+        this.renderView();
+      }
     });
     this.registerEvent(this.root, "submit", (e) => {
       const form = e.target as HTMLFormElement;
-      if (form.dataset.form !== "add-participant" && form.dataset.form !== "add-bulk" && form.dataset.form !== "edit-entry" && form.dataset.form !== "add-official" && form.dataset.form !== "add-admin" && form.dataset.form !== "ring-edit" && form.dataset.form !== "add-stage" && form.dataset.form !== "edit-stage") return;
+      if (form.dataset.form !== "add-participant" && form.dataset.form !== "add-bulk" && form.dataset.form !== "edit-entry" && form.dataset.form !== "add-official" && form.dataset.form !== "add-admin" && form.dataset.form !== "ring-edit" && form.dataset.form !== "add-stage" && form.dataset.form !== "edit-stage" && form.dataset.form !== "edit-tournament" && form.dataset.form !== "plan-match") return;
       e.preventDefault();
       if (form.dataset.form === "add-bulk") void this.addBulk(form);
       else if (form.dataset.form === "edit-entry") void this.saveEntry(form);
       else if (form.dataset.form === "add-official") void this.addOfficial(form);
       else if (form.dataset.form === "add-admin") void this.handleAddAdmin(form);
       else if (form.dataset.form === "ring-edit") void this.handleRingEdit(form);
-      else if (form.dataset.form === "add-stage") void this.handleAddStage(form);
-      else if (form.dataset.form === "edit-stage") void this.handleEditStage(form);
+      else if (form.dataset.form === "add-stage" || form.dataset.form === "edit-stage") void this.submitStageForm(form);
+      else if (form.dataset.form === "edit-tournament") void this.saveTournament(form);
+      else if (form.dataset.form === "plan-match") void this.savePlan(form);
       else void this.addParticipant(form);
     });
   }
@@ -208,52 +259,34 @@ export class TournamentWorkspaceView extends BaseComponent {
       return;
     }
 
-    const subTabBtn = target.closest<HTMLElement>("[data-subtab]");
-    if (subTabBtn && subTabBtn.dataset.subtab) {
-      this.#stageSubTab = subTabBtn.dataset.subtab as StageSubTab;
-      this.renderView();
-      return;
-    }
-
-    const stageItem = target.closest<HTMLElement>(".stage-item");
-    if (stageItem && stageItem.dataset.stageId) {
-      this.#selectedStageId = stageItem.dataset.stageId;
-      this.renderView();
-      return;
-    }
-    // Handle stage selection from buttons with data-stage-id but no data-action
-    const stageButton = target.closest<HTMLElement>("[data-stage-id]:not([data-action])");
-    if (stageButton && stageButton.dataset.stageId) {
-      this.#selectedStageId = stageButton.dataset.stageId;
-      this.renderView();
-      return;
-    }
-
+    // Buttons inside a stage row (edit, delete) must run their own action, so actions come before selection.
     const actionEl = target.closest<HTMLElement>("[data-action]");
-    if (actionEl && actionEl.dataset.action) {
+    if (!actionEl?.dataset.action) {
+      const stageItem = target.closest<HTMLElement>("[data-stage-id]");
+      if (stageItem?.dataset.stageId) {
+        this.#selectedStageId = stageItem.dataset.stageId;
+        this.renderView();
+      }
+      return;
+    }
+    {
       const action = actionEl.dataset.action;
       if (action === "view-participants") {
         this.#activeTab = "participants";
         this.renderView();
       } else if (action === "edit-tournament") {
-        this.dispatchEvent(
-          new CustomEvent("tournament-edit-requested", {
-            bubbles: true,
-            composed: true,
-            detail: { tournamentId: this.#tournamentId },
-          }),
-        );
+        this.#showEditTournament = true;
+        this.#tournamentError = null;
+        this.renderView();
+        this.root.querySelector<HTMLInputElement>("form[data-form='edit-tournament'] input[name='name']")?.focus();
+      } else if (action === "cancel-edit-tournament" && !this.#savingTournament) {
+        this.#showEditTournament = false;
+        this.#tournamentError = null;
+        this.renderView();
       } else if (action === "add-participant") {
         this.#showAddParticipant = true;
         this.#entryError = null;
         this.renderView();
-        this.dispatchEvent(
-          new CustomEvent("participant-add-requested", {
-            bubbles: true,
-            composed: true,
-            detail: { tournamentId: this.#tournamentId, mode: "single" },
-          }),
-        );
       } else if (action === "cancel-add-participant") {
         this.#showAddParticipant = false;
         this.#participantName = "";
@@ -264,13 +297,6 @@ export class TournamentWorkspaceView extends BaseComponent {
         this.#showAddParticipant = false;
         this.#entryError = null;
         this.renderView();
-        this.dispatchEvent(
-          new CustomEvent("participant-add-requested", {
-            bubbles: true,
-            composed: true,
-            detail: { tournamentId: this.#tournamentId, mode: "bulk" },
-          }),
-        );
       } else if (action === "cancel-bulk") {
         this.#showBulk = false;
         this.#bulkNames = "";
@@ -301,44 +327,6 @@ export class TournamentWorkspaceView extends BaseComponent {
         this.#editEntry = null;
         this.#entryError = null;
         this.renderView();
-      } else if (action === "make-active-stage") {
-        const stageId = actionEl.dataset.stageId;
-        if (stageId) {
-          this.dispatchEvent(
-            new CustomEvent("stage-advance-requested", {
-              bubbles: true,
-              composed: true,
-              detail: { tournamentId: this.#tournamentId, stageId },
-            }),
-          );
-        }
-      } else if (action === "add-stage") {
-        this.dispatchEvent(
-          new CustomEvent("stage-create-requested", {
-            bubbles: true,
-            composed: true,
-            detail: { tournamentId: this.#tournamentId },
-          }),
-        );
-      } else if (action === "activate-live") {
-        this.dispatchEvent(
-          new CustomEvent("live-activate-requested", {
-            bubbles: true,
-            composed: true,
-            detail: { tournamentId: this.#tournamentId },
-          }),
-        );
-      } else if (action === "correct-result") {
-        const matchId = actionEl.dataset.matchId;
-        if (matchId) {
-          this.dispatchEvent(
-            new CustomEvent("result-correct-requested", {
-              bubbles: true,
-              composed: true,
-              detail: { matchId },
-            }),
-          );
-        }
       } else if (action === "add-official") {
         const stageId = actionEl.dataset.stageId;
         if (stageId) {
@@ -432,43 +420,50 @@ export class TournamentWorkspaceView extends BaseComponent {
           this.renderView();
         }
       } else if (action === "add-stage") {
-        this.#showAddStage = true;
-        this.#stageError = null;
-        this.renderView();
-      } else if (action === "cancel-add-stage") {
-        this.#showAddStage = false;
-        this.#stageName = "";
-        this.#stageType = "POOL";
-        this.#stageMinPoolSize = "";
-        this.#stageMaxPoolSize = "";
-        this.#stageError = null;
-        this.renderView();
+        this.openStageForm(null);
       } else if (action === "edit-stage") {
-        const stageId = actionEl.dataset.stageId;
-        const tournament = this.currentTournament();
-        if (stageId && tournament) {
-          const stage = tournament.stages?.find((s) => s.id === stageId);
-          if (stage) {
-            this.#showEditStage = stageId;
-            this.#editStageName = stage.name ?? "";
-            this.#editStageMinPoolSize = stage.minPoolSize?.toString() ?? "";
-            this.#editStageMaxPoolSize = stage.maxPoolSize?.toString() ?? "";
-            this.#stageError = null;
-            this.renderView();
-          }
-        }
-      } else if (action === "cancel-edit-stage") {
-        this.#showEditStage = null;
-        this.#editStageName = "";
-        this.#editStageMinPoolSize = "";
-        this.#editStageMaxPoolSize = "";
-        this.#stageError = null;
+        const stage = this.currentTournament()?.stages?.find((item) => item.id === actionEl.dataset.stageId);
+        if (stage) this.openStageForm(stage);
+      } else if (action === "cancel-stage-form" && !this.#savingStage) {
+        this.#stageForm = null;
+        this.#stageFormError = null;
         this.renderView();
       } else if (action === "delete-stage") {
         const stageId = actionEl.dataset.stageId;
-        const stageName = actionEl.closest(".stage-item")?.querySelector("h4")?.textContent ?? "";
+        const stageName = actionEl.dataset.stageName ?? "";
         if (stageId && window.confirm(t("tournament.deleteStageConfirm", { name: stageName }))) {
           void this.deleteStage(stageId);
+        }
+      } else if (action === "go-stages" || action === "go-live") {
+        this.#activeTab = action === "go-stages" ? "stages" : "live";
+        if (this.#activeTab === "live") void this.loadLiveData();
+        this.renderView();
+      } else if (action === "fill-bracket") {
+        const stageId = actionEl.dataset.stageId;
+        const refill = actionEl.dataset.filled === "true";
+        if (stageId && (!refill || window.confirm(t("tournament.bracketRefillConfirm")))) void this.fillBracket(stageId);
+      } else if (action === "open-pool-results-fullscreen") {
+        this.#poolResultsFullscreen = true;
+        this.renderView();
+        this.root.querySelector<HTMLButtonElement>("[data-action='close-pool-results-fullscreen']")?.focus();
+      } else if (action === "close-pool-results-fullscreen") {
+        this.closePoolResultsFullscreen();
+      } else if (action === "plan-match") {
+        this.openPlan(actionEl.dataset.matchId ?? "");
+      } else if (action === "cancel-plan" && !this.#planSaving) {
+        this.#planForm = null;
+        this.#planError = null;
+        this.renderView();
+      } else if (action === "unschedule-match") {
+        void this.unschedulePlannedMatch();
+      } else if (action === "open-planning") {
+        if (this.#event) {
+          this.dispatchEvent(new CustomEvent("planning-requested", { bubbles: true, composed: true, detail: { eventId: this.#event.id } }));
+        }
+      } else if (action === "next-stage") {
+        const stageId = actionEl.dataset.stageId;
+        if (stageId && window.confirm(t("tournament.nextStageConfirm", { name: actionEl.dataset.stageName ?? "" }))) {
+          void this.makeActiveStage(stageId);
         }
       } else if (action === "make-active-stage") {
         const stageId = actionEl.dataset.stageId;
@@ -719,25 +714,6 @@ export class TournamentWorkspaceView extends BaseComponent {
     await this.addTournamentAdmin();
   }
 
-  private async handleAddStage(form: HTMLFormElement): Promise<void> {
-    const formData = new FormData(form);
-    this.#stageName = String(formData.get("name") ?? "");
-    this.#stageType = String(formData.get("type") ?? "POOL") as StageType;
-    this.#stageMinPoolSize = String(formData.get("minPoolSize") ?? "");
-    this.#stageMaxPoolSize = String(formData.get("maxPoolSize") ?? "");
-    await this.createStage();
-  }
-
-  private async handleEditStage(form: HTMLFormElement): Promise<void> {
-    const formData = new FormData(form);
-    const stageId = this.#showEditStage;
-    if (!stageId) return;
-    this.#editStageName = String(formData.get("name") ?? "");
-    this.#editStageMinPoolSize = String(formData.get("minPoolSize") ?? "");
-    this.#editStageMaxPoolSize = String(formData.get("maxPoolSize") ?? "");
-    await this.saveStage(stageId);
-  }
-
   private async handleRingEdit(form: HTMLFormElement): Promise<void> {
     const formData = new FormData(form);
     const ringId = this.#editingRingId;
@@ -958,41 +934,342 @@ export class TournamentWorkspaceView extends BaseComponent {
     }
   }
 
-  private async createStage(): Promise<void> {
-    const tournamentId = this.#tournamentId;
-    if (!tournamentId) return;
+  private findMatch(matchId: string): { stage: ApiStage; round: ApiRound; match: ApiMatch } | null {
+    for (const stage of this.currentTournament()?.stages ?? []) {
+      for (const round of stage.rounds ?? []) {
+        const match = round.matches?.find((item) => item.id === matchId);
+        if (match) return { stage, round, match };
+      }
+    }
+    return null;
+  }
 
-    this.#addingStage = true;
-    this.#stageError = null;
+  private openPlan(matchId: string): void {
+    const found = this.findMatch(matchId);
+    const event = this.#event;
+    if (!found || !event || this.#planSaving) return;
+    const { stage, round, match } = found;
+    const pool = stage.type === "POOL";
+    const phaseId = pool
+      ? (poolPhaseFor(event, stage, match, round)?.phaseId ?? "")
+      : (match.scheduledMatch?.scheduledPhaseId ?? stagePhaseOptions(event, stage.id)[0]?.phaseId ?? "");
+    const order = match.scheduledMatch && match.scheduledMatch.scheduledPhaseId === phaseId
+      ? match.scheduledMatch.order
+      : phaseId
+        ? nextFreeOrder(event, phaseId, match.id)
+        : 1;
+    this.#planForm = { matchId, stageId: stage.id, pool, phaseId, order: String(order) };
+    this.#planError = null;
     this.renderView();
+  }
 
-    const current = () => this.#tournamentId === tournamentId;
+  private choosePlanPhase(phaseId: string): void {
+    const form = this.#planForm;
+    const event = this.#event;
+    const found = form ? this.findMatch(form.matchId) : null;
+    if (!form || !event || !found) return;
+    form.phaseId = phaseId;
+    const scheduled = found.match.scheduledMatch;
+    form.order = String(scheduled && scheduled.scheduledPhaseId === phaseId ? scheduled.order : nextFreeOrder(event, phaseId, found.match.id));
+    this.renderView();
+  }
+
+  private async savePlan(element: HTMLFormElement): Promise<void> {
+    const form = this.#planForm;
+    const eventId = this.#event?.id;
+    if (!form || !eventId || this.#planSaving) return;
+    const orderInput = element.querySelector<HTMLInputElement>("input[name='order']");
+    if (orderInput) form.order = orderInput.value;
+    const order = Number(form.order.trim());
+    if (!form.phaseId) return;
+    if (!Number.isInteger(order) || order < 1) {
+      this.#planError = t("tournament.planOrderInvalid");
+      this.renderView();
+      return;
+    }
+    await this.runPlanChange(eventId, form, (api) => api.scheduleMatch(form.matchId, { scheduledPhaseId: form.phaseId, order }));
+  }
+
+  private async unschedulePlannedMatch(): Promise<void> {
+    const form = this.#planForm;
+    const eventId = this.#event?.id;
+    if (!form || !eventId || form.pool || this.#planSaving) return;
+    await this.runPlanChange(eventId, form, (api) => api.unscheduleMatch(form.matchId));
+  }
+
+  private async runPlanChange(eventId: string, form: PlanFormState, change: (api: ReturnType<typeof createApiClient>) => Promise<unknown>): Promise<void> {
+    this.#planSaving = true;
+    this.#planError = null;
+    this.renderView();
+    const current = () => this.#planForm === form && this.#event?.id === eventId;
     try {
       const api = createApiClient();
-      const newStage = await api.createStage({
-        tournamentId,
-        type: this.#stageType,
-        name: this.#stageName || null,
-        minPoolSize: this.#stageMinPoolSize ? Number(this.#stageMinPoolSize) : null,
-        maxPoolSize: this.#stageMaxPoolSize ? Number(this.#stageMaxPoolSize) : null,
-      });
+      await change(api);
+      const refreshed = await api.getEvent(eventId);
       if (current()) {
-        const refreshed = await api.getEvent(this.#event!.id);
         this.#event = refreshed;
-        this.#showAddStage = false;
-        this.#stageName = "";
-        this.#stageType = "POOL";
-        this.#stageMinPoolSize = "";
-        this.#stageMaxPoolSize = "";
+        this.#planForm = null;
+      }
+    } catch (error) {
+      if (current()) this.#planError = error instanceof Error ? error.message : t("tournament.planSaveError");
+    } finally {
+      this.#planSaving = false;
+      this.renderView();
+    }
+  }
+
+  private renderPlanForm(): string {
+    const form = this.#planForm;
+    const event = this.#event;
+    const found = form ? this.findMatch(form.matchId) : null;
+    if (!form || !event || !found) return "";
+    const disabled = this.#planSaving ? "disabled" : "";
+    const error = this.#planError ? `<p class="form-error" role="alert">${escapeHtml(this.#planError)}</p>` : "";
+    const cancel = `<button type="button" class="btn-secondary" data-action="cancel-plan" ${disabled}>${t("tournament.cancelStage")}</button>`;
+    if (form.pool) {
+      const phase = poolPhaseFor(event, found.stage, found.match, found.round);
+      if (!phase) {
+        return `<form data-form="plan-match" class="plan-form">
+            <p class="plan-hint">${t("tournament.planPoolNeedsSchedule")}</p>
+            <div class="form-actions">${cancel}</div>
+          </form>`;
+      }
+      return `<form data-form="plan-match" class="plan-form" novalidate>
+          <p class="plan-phase">${t("tournament.planPoolPhase", { phase: escapeHtml(phase.label) })}</p>
+          <label>${t("tournament.planOrder")}
+            <input name="order" type="number" inputmode="numeric" min="1" step="1" value="${escapeHtml(form.order)}" ${disabled} />
+          </label>
+          ${error}
+          <div class="form-actions">
+            <button type="submit" class="btn-primary" ${disabled}>${t("tournament.planSave")}</button>
+            ${cancel}
+          </div>
+        </form>`;
+    }
+    const options = stagePhaseOptions(event, found.stage.id);
+    if (options.length === 0) {
+      return `<form data-form="plan-match" class="plan-form">
+          <p class="plan-hint">${t("tournament.planBracketNeedsSchedule")}</p>
+          <div class="form-actions">${cancel}</div>
+        </form>`;
+    }
+    return `<form data-form="plan-match" class="plan-form" novalidate>
+        <label>${t("tournament.planPhase")}
+          <select name="scheduledPhaseId" ${disabled}>
+            ${options.map((option) => `<option value="${escapeHtml(option.phaseId)}" ${option.phaseId === form.phaseId ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+          </select>
+        </label>
+        <label>${t("tournament.planOrder")}
+          <input name="order" type="number" inputmode="numeric" min="1" step="1" value="${escapeHtml(form.order)}" ${disabled} />
+        </label>
+        ${error}
+        <div class="form-actions">
+          <button type="submit" class="btn-primary" ${disabled}>${t("tournament.planSave")}</button>
+          ${found.match.scheduledMatch ? `<button type="button" class="btn-secondary" data-action="unschedule-match" ${disabled}>${t("tournament.planUnschedule")}</button>` : ""}
+          ${cancel}
+        </div>
+      </form>`;
+  }
+
+  private async fillBracket(stageId: string): Promise<void> {
+    const tournamentId = this.#tournamentId;
+    const eventId = this.#event?.id;
+    if (!tournamentId || !eventId || this.#fillingBracket) return;
+    this.#fillingBracket = true;
+    this.#stageError = null;
+    this.renderView();
+    const current = () => this.#tournamentId === tournamentId && this.#event?.id === eventId;
+    try {
+      const api = createApiClient();
+      await api.fillBracket(stageId);
+      const refreshed = await api.getEvent(eventId);
+      if (current()) this.#event = refreshed;
+    } catch (error) {
+      if (current()) this.#stageError = error instanceof Error ? error.message : t("tournament.bracketFillError");
+    } finally {
+      this.#fillingBracket = false;
+      this.renderView();
+    }
+  }
+
+  private openStageForm(stage: ApiStage | null): void {
+    if (this.#savingStage) return;
+    const text = (value: number | null | undefined) => (value === null || value === undefined ? "" : String(value));
+    this.#stageForm = stage
+      ? {
+          mode: "edit",
+          stageId: stage.id,
+          type: stage.type,
+          name: stage.name ?? "",
+          rulesetId: stage.ruleset?.id ?? "",
+          minPoolSize: text(stage.minPoolSize),
+          maxPoolSize: text(stage.maxPoolSize),
+          preferredPoolSize: text(stage.preferredPoolSize),
+          eliminationParticipantCount: text(stage.eliminationParticipantCount),
+          timeBetweenMatchesMinutes: text(stage.timeBetweenMatchesMinutes),
+        }
+      : {
+          mode: "create",
+          stageId: null,
+          type: "POOL",
+          name: "",
+          rulesetId: "",
+          minPoolSize: "",
+          maxPoolSize: "",
+          preferredPoolSize: "",
+          eliminationParticipantCount: "",
+          timeBetweenMatchesMinutes: "",
+        };
+    this.#stageFormError = null;
+    this.renderView();
+    this.root.querySelector<HTMLInputElement>("form.stage-form input[name='name']")?.focus();
+  }
+
+  private updateStageFormField(input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): void {
+    const form = this.#stageForm;
+    if (!form) return;
+    if (input.name === "type" && (input.value === "POOL" || input.value === "ELIMINATION" || input.value === "SEMI_FINAL" || input.value === "BRONZE_FINAL" || input.value === "FINAL")) {
+      form.type = input.value;
+    } else if ((STAGE_FORM_FIELDS as readonly string[]).includes(input.name)) {
+      form[input.name as (typeof STAGE_FORM_FIELDS)[number]] = input.value;
+    }
+  }
+
+  /** The request body for the form, or a message saying what to fix. Empty number fields leave the server's default. */
+  private stageFormBody(form: StageFormState): { body: Record<string, unknown> } | { error: string } {
+    const number = (value: string, minimum: number): number | null | "invalid" => {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+      const parsed = Number(trimmed);
+      return Number.isInteger(parsed) && parsed >= minimum ? parsed : "invalid";
+    };
+    const body: Record<string, unknown> = {
+      type: form.type,
+      name: form.name.trim() || null,
+      rulesetId: form.rulesetId || null,
+    };
+    if (form.type === "POOL") {
+      const min = number(form.minPoolSize, 1);
+      const max = number(form.maxPoolSize, 1);
+      const preferred = number(form.preferredPoolSize, 1);
+      if (min === "invalid" || max === "invalid" || preferred === "invalid") return { error: t("tournament.stageSizeWholeNumber") };
+      const effectiveMin = min ?? 4;
+      const effectiveMax = max ?? 6;
+      const effectivePreferred = preferred ?? 5;
+      if (effectiveMin > effectiveMax) return { error: t("tournament.stageMinAboveMax") };
+      if (effectivePreferred < effectiveMin || effectivePreferred > effectiveMax) return { error: t("tournament.stagePreferredOutside") };
+      body.minPoolSize = min;
+      body.maxPoolSize = max;
+      body.preferredPoolSize = preferred;
+    } else if (form.type === "ELIMINATION") {
+      const count = number(form.eliminationParticipantCount, 2);
+      if (count === "invalid") return { error: t("tournament.stageEliminationCountInvalid") };
+      body.eliminationParticipantCount = count;
+    }
+    const minutes = number(form.timeBetweenMatchesMinutes, 1);
+    if (minutes === "invalid") return { error: t("tournament.stageMinutesInvalid") };
+    body.timeBetweenMatchesMinutes = minutes;
+    return { body };
+  }
+
+  private async submitStageForm(element: HTMLFormElement): Promise<void> {
+    // Read the fields as they are now: values set without an input event (autofill) count too.
+    element.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input[name], select[name]").forEach((input) => this.updateStageFormField(input));
+    const form = this.#stageForm;
+    const tournamentId = this.#tournamentId;
+    const eventId = this.#event?.id;
+    if (!form || !tournamentId || !eventId || this.#savingStage) return;
+    const result = this.stageFormBody(form);
+    if ("error" in result) {
+      this.#stageFormError = result.error;
+      this.renderView();
+      return;
+    }
+    this.#savingStage = true;
+    this.#stageFormError = null;
+    this.renderView();
+    const current = () => this.#tournamentId === tournamentId && this.#stageForm === form;
+    try {
+      const api = createApiClient();
+      if (form.mode === "create") {
+        await api.createStage({ tournamentId, ...result.body } as Parameters<typeof api.createStage>[0]);
+      } else {
+        await api.updateStage(form.stageId!, result.body as Parameters<typeof api.updateStage>[1]);
+      }
+      const refreshed = await api.getEvent(eventId);
+      if (current()) {
+        this.#event = refreshed;
+        this.#stageForm = null;
       }
     } catch (error) {
       if (current()) {
-        this.#stageError = error instanceof Error ? error.message : t("tournament.createStageError");
+        this.#stageFormError = error instanceof Error ? error.message : t(form.mode === "create" ? "tournament.createStageError" : "tournament.saveStageError");
       }
     } finally {
-      this.#addingStage = false;
+      this.#savingStage = false;
       this.renderView();
     }
+  }
+
+  private renderStageForm(tournament: ApiTournament): string {
+    const form = this.#stageForm;
+    if (!form) return "";
+    const event = this.#event!;
+    const disabled = this.#savingStage ? "disabled" : "";
+    const inheritedName = tournament.ruleset?.name ?? event.ruleset?.name ?? null;
+    const inherited = inheritedName ? t("tournament.stageRulesetInherit", { name: inheritedName }) : t("tournament.rulesetNone");
+    const typeOption = (value: StageType, key: string) =>
+      `<option value="${value}" ${form.type === value ? "selected" : ""}>${t(key as never)}</option>`;
+    const numberField = (name: string, label: string, value: string, placeholder: string, minimum = 1) => `
+      <label>${label}
+        <input name="${name}" type="number" inputmode="numeric" min="${minimum}" step="1" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" ${disabled} />
+      </label>`;
+    return `
+      <form data-form="${form.mode === "create" ? "add-stage" : "edit-stage"}" class="stage-form" novalidate>
+        <h3>${t(form.mode === "create" ? "tournament.stageFormCreate" : "tournament.stageFormEdit")}</h3>
+        <div class="stage-form-grid">
+          <label>${t("tournament.stageName")}
+            <input name="name" maxlength="120" value="${escapeHtml(form.name)}" ${disabled} />
+          </label>
+          <label>${t("tournament.stageType")}
+            <select name="type" ${disabled}>
+              ${typeOption("POOL", "tournament.stageTypePool")}
+              ${typeOption("ELIMINATION", "tournament.stageTypeElimination")}
+              ${typeOption("SEMI_FINAL", "tournament.stageTypeSemiFinal")}
+              ${typeOption("BRONZE_FINAL", "tournament.stageTypeBronzeFinal")}
+              ${typeOption("FINAL", "tournament.stageTypeFinal")}
+            </select>
+          </label>
+          <label>${t("tournament.rulesetLabel")}
+            <select name="rulesetId" ${disabled}>
+              <option value="" ${form.rulesetId === "" ? "selected" : ""}>${escapeHtml(inherited)}</option>
+              ${(event.rulesets ?? [])
+                .map((ruleset) => `<option value="${escapeHtml(ruleset.id)}" ${ruleset.id === form.rulesetId ? "selected" : ""}>${escapeHtml(ruleset.name)}</option>`)
+                .join("")}
+            </select>
+          </label>
+          ${numberField("timeBetweenMatchesMinutes", t("tournament.stageMinutesBetween"), form.timeBetweenMatchesMinutes, "2")}
+        </div>
+        ${
+          form.type === "POOL"
+            ? `<fieldset class="stage-form-grid pool-fields">
+                <legend>${t("tournament.stagePoolSizes")}</legend>
+                ${numberField("minPoolSize", t("tournament.minPoolSize"), form.minPoolSize, "4")}
+                ${numberField("preferredPoolSize", t("tournament.preferredPoolSize"), form.preferredPoolSize, "5")}
+                ${numberField("maxPoolSize", t("tournament.maxPoolSize"), form.maxPoolSize, "6")}
+              </fieldset>`
+            : form.type === "ELIMINATION"
+              ? `<div class="stage-form-grid elimination-fields">
+                  ${numberField("eliminationParticipantCount", t("tournament.stageEliminationCount"), form.eliminationParticipantCount, t("tournament.stageEliminationCountAuto"), 2)}
+                </div>`
+              : ""
+        }
+        ${this.#stageFormError ? `<p class="form-error" role="alert">${escapeHtml(this.#stageFormError)}</p>` : ""}
+        <div class="form-actions">
+          <button type="submit" class="btn-primary" ${disabled}>${t(form.mode === "create" ? "tournament.createStage" : "tournament.saveStage")}</button>
+          <button type="button" class="btn-secondary" data-action="cancel-stage-form" ${disabled}>${t("tournament.cancelStage")}</button>
+        </div>
+      </form>`;
   }
 
   private async deleteStage(stageId: string): Promise<void> {
@@ -1049,34 +1326,63 @@ export class TournamentWorkspaceView extends BaseComponent {
     }
   }
 
-  private async saveStage(stageId: string): Promise<void> {
+  private renderTournamentForm(tournament: ApiTournament, event: ApiEvent): string {
+    const disabled = this.#savingTournament ? "disabled" : "";
+    const rulesets = event.rulesets ?? [];
+    const current = tournament.ruleset?.id ?? "";
+    const inherited = event.ruleset?.name
+      ? t("tournament.rulesetUseEvent", { name: event.ruleset.name })
+      : t("tournament.rulesetNone");
+    return `
+      <form data-form="edit-tournament" class="tournament-form">
+        <h2>${t("tournament.editTitle")}</h2>
+        <label>${t("tournament.nameLabel")}
+          <input name="name" required maxlength="120" value="${escapeHtml(tournament.name)}" ${disabled} />
+        </label>
+        <label>${t("tournament.rulesetLabel")}
+          <select name="rulesetId" ${disabled}>
+            <option value="" ${current === "" ? "selected" : ""}>${escapeHtml(inherited)}</option>
+            ${rulesets
+              .map((ruleset) => `<option value="${escapeHtml(ruleset.id)}" ${ruleset.id === current ? "selected" : ""}>${escapeHtml(ruleset.name)}</option>`)
+              .join("")}
+          </select>
+        </label>
+        ${this.#tournamentError ? `<p class="form-error" role="alert">${escapeHtml(this.#tournamentError)}</p>` : ""}
+        <div class="form-actions">
+          <button type="submit" class="btn-primary" ${disabled}>${t("tournament.saveTournament")}</button>
+          <button type="button" class="btn-secondary" data-action="cancel-edit-tournament" ${disabled}>${t("tournament.cancelParticipant")}</button>
+        </div>
+      </form>`;
+  }
+
+  private async saveTournament(form: HTMLFormElement): Promise<void> {
     const tournamentId = this.#tournamentId;
-    if (!tournamentId) return;
-
-    this.#savingStage = true;
-    this.#stageError = null;
+    const eventId = this.#event?.id;
+    if (!tournamentId || !eventId || this.#savingTournament) return;
+    const data = new FormData(form);
+    const name = String(data.get("name") ?? "").trim();
+    const rulesetId = String(data.get("rulesetId") ?? "") || null;
+    if (!name) return;
+    this.#savingTournament = true;
+    this.#tournamentError = null;
     this.renderView();
-
-    const current = () => this.#tournamentId === tournamentId && this.#showEditStage === stageId;
+    const current = () => this.#tournamentId === tournamentId && this.#event?.id === eventId;
     try {
       const api = createApiClient();
-      const body: Partial<ApiStage> = {
-        name: this.#editStageName || null,
-        minPoolSize: this.#editStageMinPoolSize ? Number(this.#editStageMinPoolSize) : null,
-        maxPoolSize: this.#editStageMaxPoolSize ? Number(this.#editStageMaxPoolSize) : null,
-      };
-      await api.updateStage(stageId, body);
+      await api.updateTournament(tournamentId, { name, rulesetId });
+      const refreshed = await api.getEvent(eventId);
       if (current()) {
-        const refreshed = await api.getEvent(this.#event!.id);
         this.#event = refreshed;
-        this.#showEditStage = null;
+        this.#showEditTournament = false;
+        // The shell shows the tournament's name in its breadcrumb.
+        this.dispatchEvent(new CustomEvent("event-refreshed", { bubbles: true, composed: true, detail: { event: refreshed } }));
       }
     } catch (error) {
       if (current()) {
-        this.#stageError = error instanceof Error ? error.message : t("tournament.saveStageError");
+        this.#tournamentError = error instanceof Error ? error.message : t("tournament.saveTournamentError");
       }
     } finally {
-      this.#savingStage = false;
+      this.#savingTournament = false;
       this.renderView();
     }
   }
@@ -1114,7 +1420,7 @@ export class TournamentWorkspaceView extends BaseComponent {
 
     const participantsCount = tournament.entries?.length ?? 0;
     const stagesCount = tournament.stages?.length ?? 0;
-    const activeStage = tournament.stages?.find((s: ApiStage) => s.id === tournament.currentStageId) ?? tournament.stages?.[0];
+    const activeStage = tournament.stages?.find((s: ApiStage) => s.id === tournament.currentStageId);
 
     const tabNames: TournamentTab[] = ["overview", "participants", "stages", "officials", "access", "live"];
 
@@ -1141,11 +1447,12 @@ export class TournamentWorkspaceView extends BaseComponent {
             </div>
           </div>
           <div class="header-actions">
-            <button type="button" class="btn-secondary" data-action="edit-tournament">
+            <button type="button" class="btn-secondary" data-action="edit-tournament" ${this.#showEditTournament ? "disabled" : ""}>
               ${t("tournament.edit")}
             </button>
           </div>
         </header>
+        ${this.#showEditTournament ? this.renderTournamentForm(tournament, event) : ""}
 
         <nav class="nav-tabs" aria-label="Tournament navigation">
           ${tabNames
@@ -1169,6 +1476,23 @@ export class TournamentWorkspaceView extends BaseComponent {
       </div>
     `,
     );
+    this.hydratePoolResults(tournament);
+  }
+
+  private closePoolResultsFullscreen(): void {
+    this.#poolResultsFullscreen = false;
+    this.renderView();
+    this.root.querySelector<HTMLButtonElement>("[data-action='open-pool-results-fullscreen']")?.focus();
+  }
+
+  /** `<pool-results>` gets its data as properties, so it is filled after each render. */
+  private hydratePoolResults(tournament: ApiTournament): void {
+    const event = this.#event;
+    const stages = tournament.stages ?? [];
+    const stage =
+      stages.find((item) => item.id === this.#selectedStageId) ?? stages.find((item) => item.id === tournament.currentStageId) ?? stages[0];
+    if (!event || !stage) return;
+    this.root.querySelectorAll<PoolResults>("pool-results").forEach((element) => element.setData(event, stage, tournament));
   }
 
   private renderTabContent(tournament: ApiTournament, activeStage?: ApiStage): string {
@@ -1188,41 +1512,84 @@ export class TournamentWorkspaceView extends BaseComponent {
     }
   }
 
-  private renderOverviewTab(tournament: ApiTournament, activeStage?: ApiStage): string {
+  private renderOverviewTab(tournament: ApiTournament, _activeStage?: ApiStage): string {
     const entries = tournament.entries ?? [];
-    const stages = tournament.stages ?? [];
-
+    const fighters = entries.filter((entry) => entry.kind !== "VOLUNTEER").length;
+    const volunteers = entries.filter((entry) => entry.kind !== "FIGHTER").length;
+    const stages = orderStages(tournament.stages ?? []);
+    const event = this.#event!;
+    const rulesetName = tournament.ruleset?.name ?? event.ruleset?.name ?? null;
     return `
       <div class="tab-content-overview">
-        <div class="overview-grid">
-          <div class="summary-card summary-card-participants">
-            <div class="summary-card-header">${t("tournament.overview.participantsTitle")}</div>
-            <div class="summary-card-value">${entries.length}</div>
-            <button type="button" class="btn-secondary" data-action="view-participants">
-              ${t("events.openEvent")}
-            </button>
+        ${this.renderNextStep(tournament)}
+        <dl class="overview-facts">
+          <div>
+            <dt>${t("tournament.factsParticipants")}</dt>
+            <dd>
+              ${fighters === 1 ? t("tournament.factsFightersOne") : t("tournament.factsFighters", { count: fighters })}
+              · ${t("tournament.factsVolunteers", { count: volunteers })}
+              <button type="button" class="btn-link" data-action="view-participants">${t("tournament.factsOpenParticipants")}</button>
+            </dd>
           </div>
-
-          <div class="summary-card summary-card-stages">
-            <div class="summary-card-header">${t("tournament.overview.stagesTitle")}</div>
-            <div class="summary-card-value">${activeStage ? escapeHtml(activeStage.name ?? "") : t("tournament.noStages")}</div>
-            <div class="summary-card-meta">${stages.length} ${stages.length === 1 ? t("events.stagesOne") : t("events.stages", { count: stages.length })}</div>
+          <div>
+            <dt>${t("tournament.factsStages")}</dt>
+            <dd>${stages.length ? stages.map((stage) => escapeHtml(this.stageName(stage))).join(" → ") : t("tournament.noStages")}</dd>
           </div>
-
-          <div class="summary-card summary-card-schedule">
-            <div class="summary-card-header">${t("tournament.overview.scheduleTitle")}</div>
-            <div class="summary-card-value">SQLite</div>
-            <div class="summary-card-meta">Database-mode</div>
+          <div>
+            <dt>${t("tournament.rulesetLabel")}</dt>
+            <dd>${rulesetName ? escapeHtml(rulesetName) : t("tournament.rulesetNone")}</dd>
           </div>
-
-          <div class="summary-card summary-card-live">
-            <div class="summary-card-header">${t("tournament.overview.liveTitle")}</div>
-            <div class="summary-card-value">Ready</div>
-            <div class="summary-card-meta">${t("tournament.tabs.live")}</div>
-          </div>
-        </div>
+        </dl>
       </div>
     `;
+  }
+
+  /** What the tournament admin should do now, worked out from the stages and their matches. */
+  private renderNextStep(tournament: ApiTournament): string {
+    const stages = orderStages(tournament.stages ?? []);
+    const current = stages.find((stage) => stage.id === tournament.currentStageId);
+    const box = (text: string, action?: { name: string; label: string }) => `
+      <section class="next-step" aria-labelledby="next-step-title">
+        <h3 id="next-step-title">${t("tournament.nextStepTitle")}</h3>
+        <p>${text}</p>
+        ${action ? `<button type="button" class="btn-primary" data-action="${action.name}">${action.label}</button>` : ""}
+      </section>`;
+    if (stages.length === 0) {
+      return box(t("tournament.nextAddStage"), { name: "go-stages", label: t("tournament.openStages") });
+    }
+    if (!current) {
+      return box(t("tournament.nextChooseStage"), { name: "go-stages", label: t("tournament.openStages") });
+    }
+    const name = escapeHtml(this.stageName(current));
+    const matches = (current.rounds ?? []).flatMap((round) => round.matches ?? []);
+    if (matches.length === 0) {
+      return current.type === "POOL"
+        ? box(t("tournament.nextSchedulePools", { stage: name }), { name: "open-planning", label: t("tournament.openPlanning") })
+        : box(t("tournament.nextNoMatches", { stage: name }), { name: "go-stages", label: t("tournament.openStages") });
+    }
+    const played = matches.filter(matchPlayed).length;
+    if (played < matches.length) {
+      return box(t("tournament.nextProgress", { played, total: matches.length, stage: name }), { name: "go-live", label: t("tournament.openLive") });
+    }
+    const following = nextStage(stages, current.id);
+    return following
+      ? box(t("tournament.nextMoveOn", { stage: name, next: escapeHtml(this.stageName(following)) }), { name: "go-stages", label: t("tournament.openStages") })
+      : box(t("tournament.nextFinished"));
+  }
+
+  private stageName(stage: Pick<ApiStage, "name">): string {
+    return stage.name ?? t("tournament.unnamedStage");
+  }
+
+  private stageTypeLabel(type: StageType): string {
+    const keys: Record<string, string> = {
+      POOL: "tournament.stageTypePool",
+      ELIMINATION: "tournament.stageTypeElimination",
+      SEMI_FINAL: "tournament.stageTypeSemiFinal",
+      BRONZE_FINAL: "tournament.stageTypeBronzeFinal",
+      FINAL: "tournament.stageTypeFinal",
+    };
+    return keys[type] ? t(keys[type] as never) : type;
   }
 
   #renderEditEntryForm(): string {
@@ -1327,150 +1694,143 @@ export class TournamentWorkspaceView extends BaseComponent {
   }
 
   private renderStagesTab(tournament: ApiTournament): string {
-    const stages = tournament.stages ?? [];
-    const activeStageId = tournament.currentStageId;
+    const stages = orderStages(tournament.stages ?? []);
+    const currentStageId = tournament.currentStageId ?? null;
     const selectedStage =
-      stages.find((s) => s.id === this.#selectedStageId) ??
-      stages.find((s) => s.id === activeStageId) ??
-      stages[0];
-
-    const subTabs: StageSubTab[] = ["overview", "arenas", "officials", "rounds", "matches", "pool-results"];
-
+      stages.find((stage) => stage.id === this.#selectedStageId) ?? stages.find((stage) => stage.id === currentStageId) ?? stages[0];
     return `
-      <div class="tab-content-stages">
+      <div class="tab-content-stages stages-tab">
         <div class="table-header-actions">
           <h3>${t("tournament.tabs.stages")}</h3>
-          <button type="button" class="btn-primary" data-action="add-stage">
-            ${t("tournament.addStage")}
-          </button>
+          <button type="button" class="btn-primary" data-action="add-stage">${t("tournament.addStage")}</button>
         </div>
-        ${this.#stageError ? `<p role="alert">${escapeHtml(this.#stageError)}</p>` : ""}
-        ${this.#showAddStage
-          ? `
-            <form data-form="add-stage" class="stage-form">
-              <label>${t("tournament.stageName")} <input name="name" value="${escapeHtml(this.#stageName)}" ${this.#addingStage ? "disabled" : ""} /></label>
-              <label>
-                ${t("tournament.stageType")}
-                <select name="type" ${this.#addingStage ? "disabled" : ""}>
-                  <option value="POOL" ${this.#stageType === "POOL" ? "selected" : ""}>${t("tournament.stageTypePool")}</option>
-                  <option value="ELIMINATION" ${this.#stageType === "ELIMINATION" ? "selected" : ""}>${t("tournament.stageTypeElimination")}</option>
-                  <option value="SEMI_FINAL" ${this.#stageType === "SEMI_FINAL" ? "selected" : ""}>${t("tournament.stageTypeSemiFinal")}</option>
-                  <option value="FINAL" ${this.#stageType === "FINAL" ? "selected" : ""}>${t("tournament.stageTypeFinal")}</option>
-                </select>
-              </label>
-              <label>${t("tournament.minPoolSize")} <input name="minPoolSize" type="number" value="${escapeHtml(this.#stageMinPoolSize)}" ${this.#addingStage ? "disabled" : ""} /></label>
-              <label>${t("tournament.maxPoolSize")} <input name="maxPoolSize" type="number" value="${escapeHtml(this.#stageMaxPoolSize)}" ${this.#addingStage ? "disabled" : ""} /></label>
-              <button type="submit" ${this.#addingStage ? "disabled" : ""}>${t("tournament.addStage")}</button>
-              <button type="button" data-action="cancel-add-stage" ${this.#addingStage ? "disabled" : ""}>${t("tournament.cancelStage")}</button>
-            </form>
-          `
-          : ""}
-        ${this.#showEditStage
-          ? `
-            <form data-form="edit-stage" class="stage-form">
-              <label>${t("tournament.stageName")} <input name="name" value="${escapeHtml(this.#editStageName)}" ${this.#savingStage ? "disabled" : ""} /></label>
-              <label>${t("tournament.minPoolSize")} <input name="minPoolSize" type="number" value="${escapeHtml(this.#editStageMinPoolSize)}" ${this.#savingStage ? "disabled" : ""} /></label>
-              <label>${t("tournament.maxPoolSize")} <input name="maxPoolSize" type="number" value="${escapeHtml(this.#editStageMaxPoolSize)}" ${this.#savingStage ? "disabled" : ""} /></label>
-              <button type="submit" ${this.#savingStage ? "disabled" : ""}>${t("tournament.saveStage")}</button>
-              <button type="button" data-action="cancel-edit-stage" ${this.#savingStage ? "disabled" : ""}>${t("tournament.cancelParticipant")}</button>
-            </form>
-          `
-          : ""}
-
+        ${this.renderStageForm(tournament)}
         ${
-          stages.length === 0
+          stages.length === 0 || !selectedStage
             ? `<div class="empty-state">${t("tournament.noStages")}</div>`
-            : `
-          <div class="stage-layout">
-            <aside class="stage-sidebar">
-              ${stages
-                .map(
-                  (stage) => `
-                <div
-                  class="stage-item ${selectedStage?.id === stage.id ? "active" : ""}"
-                  data-stage-id="${stage.id}"
-                >
-                  <div class="stage-item-header">
-                    <h4>${escapeHtml(stage.name ?? t("tournament.unnamedStage"))}</h4>
-                    <div class="stage-item-actions">
-                      <button type="button" class="btn-secondary" data-action="edit-stage" data-stage-id="${stage.id}" ${this.#deletingStageId === stage.id || this.#showEditStage === stage.id ? "disabled" : ""}>
-                        ${t("tournament.editStage")}
-                      </button>
-                      <button type="button" class="btn-secondary" data-action="delete-stage" data-stage-id="${stage.id}" ${this.#deletingStageId === stage.id ? "disabled" : ""}>
-                        ${t("tournament.deleteStage")}
-                      </button>
-                    </div>
-                  </div>
-                  <div class="badges-row" style="margin-top: 0.25rem;">
-                    <span class="badge">${stage.type}</span>
-                    ${stage.id === activeStageId ? `<span class="badge active-stage-badge">${t("tournament.activeStage")}</span>` : ""}
-                  </div>
-                </div>
-              `,
-                )
-                .join("")}
-            </aside>
-
-            <section class="stage-detail">
-              ${
-                selectedStage
-                  ? `
-                <header class="table-header-actions">
-                  <div>
-                    <h4>${escapeHtml(selectedStage.name ?? "")} (${selectedStage.type})</h4>
-                    <p class="panel-meta" style="margin: 0.25rem 0 0 0; color: #64748b; font-size: 0.8125rem;">
-                      ${selectedStage.rounds?.length ?? 0} rounds · ${selectedStage.arenas?.length ?? 0} arenas
-                    </p>
-                  </div>
-                  ${
-                    selectedStage.id !== activeStageId
-                      ? `
-                    <button type="button" class="btn-secondary" data-action="make-active-stage" data-stage-id="${selectedStage.id}">
-                      ${t("tournament.makeActiveStage")}
-                    </button>
-                  `
-                      : ""
-                  }
-                </header>
-
-                <nav class="sub-tabs">
-                  ${subTabs
-                    .map(
-                      (st) => `
-                    <button
-                      type="button"
-                      class="sub-tab ${this.#stageSubTab === st ? "active" : ""}"
-                      data-subtab="${st}"
-                    >
-                      ${st.charAt(0).toUpperCase() + st.slice(1)}
-                    </button>
-                  `,
-                    )
-                    .join("")}
-                </nav>
-
-                <div class="sub-tab-content">
-                  ${this.renderStageSubTabContent(selectedStage, tournament)}
-                </div>
-              `
-                  : `<div class="empty-state">Selecteer een fase om details te zien.</div>`
-              }
-            </section>
-          </div>
-        `
+            : `${this.renderStagePath(stages, currentStageId, selectedStage.id)}
+               ${this.renderStagePage(stages, selectedStage, tournament, currentStageId)}`
         }
       </div>
     `;
   }
 
-  private renderStageRounds(stage: ApiStage, _tournament: ApiTournament): string {
-    const rounds = stage.rounds ?? [];
-
+  /** The stages in fighting order, each marked done, current or still to come. */
+  private renderStagePath(stages: ApiStage[], currentStageId: string | null, selectedId: string): string {
+    const currentIndex = stages.findIndex((stage) => stage.id === currentStageId);
+    const stateLabels = { done: t("tournament.stageStateDone"), current: t("tournament.stageStateCurrent"), upcoming: t("tournament.stageStateUpcoming") };
     return `
-      <div class="stage-rounds-pane">
+      <ol class="stage-path" aria-label="${escapeHtml(t("tournament.stagePathLabel"))}">
+        ${stages
+          .map((stage, index) => {
+            const state = currentIndex === -1 || index > currentIndex ? "upcoming" : index === currentIndex ? "current" : "done";
+            const matches = (stage.rounds ?? []).flatMap((round) => round.matches ?? []);
+            const played = matches.filter(matchPlayed).length;
+            const selected = stage.id === selectedId;
+            return `
+              <li class="stage-path-item is-${state} ${selected ? "selected" : ""}" data-state="${state}">
+                <button type="button" class="stage-path-step" data-stage-id="${escapeHtml(stage.id)}" ${selected ? 'aria-current="true"' : ""}>
+                  <span class="stage-path-type">${this.stageTypeLabel(stage.type)}</span>
+                  <span class="stage-path-name">${escapeHtml(this.stageName(stage))}</span>
+                  <span class="stage-path-meta">${stateLabels[state]}${matches.length ? ` · ${played}/${matches.length}` : ""}</span>
+                </button>
+              </li>`;
+          })
+          .join("")}
+      </ol>`;
+  }
+
+  /** One page per stage: what it is, where it is fought and its matches, without sub-tabs. */
+  private renderStagePage(stages: ApiStage[], stage: ApiStage, tournament: ApiTournament, currentStageId: string | null): string {
+    const busy = this.#deletingStageId === stage.id || this.#stageForm?.stageId === stage.id ? "disabled" : "";
+    return `
+      <section class="stage-page" aria-labelledby="stage-page-title">
+        <header class="stage-page-header">
+          <div>
+            <h3 id="stage-page-title">${escapeHtml(this.stageName(stage))}</h3>
+            <span class="badge">${this.stageTypeLabel(stage.type)}</span>
+            ${stage.id === currentStageId ? `<span class="badge active-stage-badge">${t("tournament.activeStage")}</span>` : ""}
+          </div>
+          <div class="stage-page-actions">
+            ${
+              stage.type === "ELIMINATION"
+                ? (() => {
+                    const filled = (stage.rounds ?? []).some((round) => (round.matches ?? []).length > 0);
+                    return `<button type="button" class="${filled ? "btn-secondary" : "btn-primary"}" data-action="fill-bracket" data-stage-id="${escapeHtml(stage.id)}" data-filled="${filled}" ${this.#fillingBracket ? "disabled" : ""}>${t(filled ? "tournament.bracketRefill" : "tournament.bracketFill")}</button>`;
+                  })()
+                : ""
+            }
+            ${this.renderStageProgression(stages, stage, currentStageId)}
+            <button type="button" class="btn-secondary" data-action="edit-stage" data-stage-id="${escapeHtml(stage.id)}" ${busy}>${t("tournament.editStage")}</button>
+            <button type="button" class="btn-secondary" data-action="delete-stage" data-stage-id="${escapeHtml(stage.id)}" data-stage-name="${escapeHtml(this.stageName(stage))}" ${this.#deletingStageId === stage.id ? "disabled" : ""}>${t("tournament.deleteStage")}</button>
+          </div>
+        </header>
+        ${this.#stageError ? `<p class="form-error stage-page-error" role="alert">${escapeHtml(this.#stageError)}</p>` : ""}
+        ${this.renderStageSummary(stage, tournament)}
+        ${this.renderStageSection("arenas", stage, tournament)}
+        ${this.renderStageSection("officials", stage, tournament)}
+        ${stage.type === "POOL" ? this.renderStageSection("pool-results", stage, tournament) : ""}
+        ${this.renderStageRounds(stage, tournament)}
+        ${this.renderStageMatches(stage, tournament)}
+      </section>`;
+  }
+
+  private renderStageSummary(stage: ApiStage, tournament: ApiTournament): string {
+    const event = this.#event!;
+    const inherited = tournament.ruleset?.name ?? event.ruleset?.name ?? null;
+    const ruleset = stage.ruleset?.name ?? (inherited ? t("tournament.stageRulesetInherit", { name: inherited }) : t("tournament.rulesetNone"));
+    const sizes =
+      stage.type === "POOL"
+        ? `<div><dt>${t("tournament.stagePoolSizes")}</dt><dd>${t("tournament.summaryPoolSizes", {
+            min: stage.minPoolSize ?? 4,
+            max: stage.maxPoolSize ?? 6,
+            preferred: stage.preferredPoolSize ?? 5,
+          })}</dd></div>`
+        : stage.type === "ELIMINATION"
+          ? `<div><dt>${t("tournament.summaryBracket")}</dt><dd>${
+              stage.eliminationParticipantCount
+                ? t("tournament.summaryBracketCount", { count: stage.eliminationParticipantCount })
+                : t("tournament.stageEliminationCountAuto")
+            }</dd></div>`
+          : "";
+    return `
+      <dl class="stage-summary">
+        <div><dt>${t("tournament.rulesetLabel")}</dt><dd>${escapeHtml(ruleset)}</dd></div>
+        ${sizes}
+        <div><dt>${t("tournament.summaryTiming")}</dt><dd>${t("tournament.summaryMinutes", { minutes: stage.timeBetweenMatchesMinutes })}</dd></div>
+      </dl>`;
+  }
+
+  /** For the current stage: move on to the next one, or say it is the last; for another stage: make it current. */
+  private renderStageProgression(stages: ApiStage[], stage: ApiStage, currentStageId: string | null): string {
+    if (stage.id !== currentStageId) {
+      return `<button type="button" class="btn-secondary" data-action="make-active-stage" data-stage-id="${escapeHtml(stage.id)}">
+          ${t("tournament.makeActiveStage")}
+        </button>`;
+    }
+    const next = nextStage(stages, stage.id);
+    if (!next) {
+      return `<span class="badge last-stage-badge">${t("tournament.lastStage")}</span>`;
+    }
+    const name = next.name ?? t("tournament.unnamedStage");
+    return `<button type="button" class="btn-primary" data-action="next-stage" data-stage-id="${escapeHtml(next.id)}" data-stage-name="${escapeHtml(name)}">
+        ${t("tournament.nextStage", { name: escapeHtml(name) })}
+      </button>`;
+  }
+
+  private renderStageRounds(stage: ApiStage, _tournament: ApiTournament): string {
+    const rounds = [...(stage.rounds ?? [])].sort((left, right) => left.roundNumber - right.roundNumber);
+    const statusLabel = {
+      empty: t("tournament.roundEmpty"),
+      "not-started": t("tournament.roundNotStarted"),
+      "in-progress": t("tournament.roundInProgress"),
+      done: t("tournament.roundDone"),
+    } as const;
+    return `
+      <div class="stage-rounds-pane stage-section">
         <div class="table-header-actions">
           <h4>${t("tournament.rounds")}</h4>
-          <span class="badge">${rounds.length} ${t("tournament.rounds")}</span>
+          <span class="badge">${rounds.length}</span>
         </div>
         ${
           rounds.length === 0
@@ -1479,22 +1839,23 @@ export class TournamentWorkspaceView extends BaseComponent {
               <table class="entries-table">
                 <thead>
                   <tr>
-                    <th>#</th>
-                    <th>${t("tournament.matches")}</th>
+                    <th>${t("tournament.round")}</th>
+                    <th>${t("tournament.matchesPlayed")}</th>
                     <th>${t("tournament.status")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   ${rounds
-                    .map(
-                      (round) => `
+                    .map((round) => {
+                      const status = roundStatus(round);
+                      const played = (round.matches ?? []).filter(matchPlayed).length;
+                      return `
                         <tr>
-                          <td>${round.roundNumber}</td>
-                          <td>${round.matches?.length ?? 0}</td>
-                          <td><span class="badge">${round.matches?.length ? t("tournament.completed") : t("tournament.pending")}</span></td>
-                        </tr>
-                      `,
-                    )
+                          <td>${round.roundNumber + 1}</td>
+                          <td>${played} / ${round.matches?.length ?? 0}</td>
+                          <td><span class="badge round-status round-status-${status}">${statusLabel[status]}</span></td>
+                        </tr>`;
+                    })
                     .join("")}
                 </tbody>
               </table>
@@ -1505,112 +1866,135 @@ export class TournamentWorkspaceView extends BaseComponent {
   }
 
   private renderStageMatches(stage: ApiStage, tournament: ApiTournament): string {
-    const matches = stage.rounds?.flatMap((r) => r.matches ?? []) ?? [];
-    const entriesById = new Map(
-      tournament.entries?.map((e) => [e.id, e] as const) ?? [],
-    );
-
+    const rows = stageMatchRows(this.#event!, tournament, stage);
+    const dash = "—";
+    const groups: Array<{ arena: string; rows: typeof rows }> = [];
+    for (const row of rows) {
+      const arena = row.arena ?? t("tournament.noRingYet");
+      const group = groups.find((item) => item.arena === arena);
+      if (group) group.rows.push(row);
+      else groups.push({ arena, rows: [row] });
+    }
+    // Rings in the Event's arena order; matches without a ring last.
+    const arenaOrder = new Map((this.#event?.arenas ?? []).map((arena) => [arena.name, arena.order] as const));
+    groups.sort((left, right) => (arenaOrder.get(left.arena) ?? Number.MAX_SAFE_INTEGER) - (arenaOrder.get(right.arena) ?? Number.MAX_SAFE_INTEGER));
     return `
-      <div class="stage-matches-pane">
+      <div class="stage-matches-pane stage-section">
         <div class="table-header-actions">
           <h4>${t("tournament.matches")}</h4>
-          <span class="badge">${matches.length} ${t("tournament.matches")}</span>
+          <span class="badge">${rows.filter((row) => row.played).length} / ${rows.length}</span>
         </div>
         ${
-          matches.length === 0
+          rows.length === 0
             ? `<p class="empty-state">${t("tournament.noMatches")}</p>`
-            : `
-              <table class="entries-table">
-                <thead>
-                  <tr>
-                    <th>${t("tournament.round")}</th>
-                    <th>${t("tournament.arena")}</th>
-                    <th>${t("tournament.fighterLeft")}</th>
-                    <th>${t("tournament.fighterRight")}</th>
-                    <th>Score</th>
-                    <th>${t("tournament.status")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${matches
-                    .map(
-                      (match) => {
-                        const entryA = entriesById.get(match.entryAId ?? "");
-                        const entryB = entriesById.get(match.entryBId ?? "");
-                        const round = stage.rounds?.find((r) => r.id === match.roundId);
-                        const score = match.scoreA !== null && match.scoreB !== null
-                          ? `${match.scoreA}-${match.scoreB}`
-                          : "—";
-                        const status = match.winnerEntryId
-                          ? t("tournament.completed")
-                          : t("tournament.pending");
-                        return `
-                          <tr>
-                            <td>${round?.roundNumber ?? "—"}</td>
-                            <td>${match.arenaId ?? "—"}</td>
-                            <td>${entryA?.user?.username ?? entryA?.id ?? "—"}</td>
-                            <td>${entryB?.user?.username ?? entryB?.id ?? "—"}</td>
-                            <td>${score}</td>
-                            <td><span class="badge">${status}</span></td>
+            : groups
+                .map(
+                  (group) => `
+              <section class="ring-group">
+                <h5>${escapeHtml(group.arena)}</h5>
+                <table class="entries-table matches-table">
+                  <thead>
+                    <tr>
+                      <th>${t("tournament.round")}</th>
+                      <th>${t("tournament.ringOrder")}</th>
+                      <th>${t("tournament.fighterLeft")}</th>
+                      <th>${t("tournament.fighterRight")}</th>
+                      <th>${t("tournament.score")}</th>
+                      <th>${t("tournament.winner")}</th>
+                      <th><span class="visually-hidden">${t("tournament.planColumn")}</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${group.rows
+                      .map(
+                        (row) => `
+                          <tr class="${row.played ? "match-played" : "match-open"}">
+                            <td>${row.roundNumber}</td>
+                            <td ${row.slot ? `title="${escapeHtml(t("tournament.scheduledIn", { slot: row.slot }))}"` : ""}>${row.order ?? dash}</td>
+                            <td>${escapeHtml(row.left ?? t("tournament.toBeDecided"))}</td>
+                            <td>${escapeHtml(row.right ?? t("tournament.toBeDecided"))}</td>
+                            <td class="score-cell">${escapeHtml(row.score ?? dash)}</td>
+                            <td>${row.draw ? t("tournament.draw") : escapeHtml(row.winner ?? dash)}</td>
+                            <td>${
+                              row.played
+                                ? ""
+                                : `<button type="button" class="btn-secondary btn-small" data-action="plan-match" data-match-id="${escapeHtml(row.id)}" ${this.#planForm?.matchId === row.id ? "disabled" : ""}>${t("tournament.planMatch")}</button>`
+                            }</td>
                           </tr>
-                        `;
-                      },
-                    )
-                    .join("")}
-                </tbody>
-              </table>
-            `
+                          ${this.#planForm?.matchId === row.id ? `<tr class="plan-row"><td colspan="7">${this.renderPlanForm()}</td></tr>` : ""}`,
+                      )
+                      .join("")}
+                  </tbody>
+                </table>
+              </section>`,
+                )
+                .join("")
         }
       </div>
     `;
   }
 
-  private renderStageSubTabContent(stage: ApiStage, tournament: ApiTournament): string {
-    switch (this.#stageSubTab) {
-      case "overview":
-        return `
-          <div class="stage-overview-pane">
-            <p><strong>Type:</strong> ${stage.type}</p>
-            <p><strong>Min/Max Pool Size:</strong> ${stage.minPoolSize ?? "—"} / ${stage.maxPoolSize ?? "—"}</p>
-          </div>
-        `;
+  private renderStageSection(section: "arenas" | "officials" | "pool-results", stage: ApiStage, tournament: ApiTournament): string {
+    switch (section) {
       case "arenas":
         return `
-          <div class="stage-arenas-pane">
+          <div class="stage-arenas-pane stage-section">
             <div class="table-header-actions">
               <h4>${t("tournament.arenas")}</h4>
               <span class="badge">${stage.arenas?.length ?? 0}</span>
             </div>
             ${
               stage.arenas?.length
-                ? `<ul>${stage.arenas.map((a) => `<li>${t("tournament.arena")} ${escapeHtml(a.arenaId)}</li>`).join("")}</ul>`
+                ? `<ul class="stage-arena-list">${[...stage.arenas]
+                    .sort((left, right) => (left.arena?.order ?? 0) - (right.arena?.order ?? 0))
+                    .map((item) => `<li>${escapeHtml(item.arena?.name ?? t("tournament.arena"))}</li>`)
+                    .join("")}</ul>`
                 : `<p class="empty-state">${t("tournament.noArenas")}</p>`
             }
+            <p class="planning-note">${t("tournament.stageArenasFromPlanning")}</p>
+            <button type="button" class="btn-secondary" data-action="open-planning">${t("tournament.openPlanning")}</button>
           </div>
         `;
       case "officials":
         return `
-          <div class="stage-officials-pane">
+          <div class="stage-officials-pane stage-section">
             <div class="table-header-actions">
               <h4>${t("tournament.tabs.officials")}</h4>
               <span class="badge">${stage.officials?.length ?? 0}</span>
             </div>
             ${
               stage.officials?.length
-                ? `<ul>${stage.officials.map((o) => `<li>${escapeHtml(o.role)} (${escapeHtml(o.entryId)})</li>`).join("")}</ul>`
+                ? `<ul>${stage.officials
+                    .map((official) => {
+                      const entry = tournament.entries?.find((item) => item.id === official.entryId);
+                      const name = entry?.user?.username ?? t("tournament.unknownPerson");
+                      return `<li>${escapeHtml(name)} · ${t(`tournament.role.${official.role}` as never)}</li>`;
+                    })
+                    .join("")}</ul>`
                 : `<p class="empty-state">${t("tournament.noOfficialsForStage")}</p>`
             }
           </div>
         `;
-      case "rounds":
-        return this.renderStageRounds(stage, tournament);
-      case "matches":
-        return this.renderStageMatches(stage, tournament);
       case "pool-results":
         return `
-          <div class="stage-pool-results-pane">
+          <div class="stage-pool-results-pane stage-section">
+            <div class="table-header-actions">
+              <h4>${t("tournament.poolResults")}</h4>
+              <button type="button" class="btn-secondary" data-action="open-pool-results-fullscreen">${t("tournament.fullScreen")}</button>
+            </div>
             <pool-results></pool-results>
           </div>
+          ${
+            this.#poolResultsFullscreen
+              ? `<div class="pool-results-fullscreen" role="dialog" aria-modal="true" aria-label="${escapeHtml(t("tournament.poolResults"))}">
+                  <div class="pool-results-fullscreen-header">
+                    <h2>${escapeHtml(stage.name ?? t("tournament.poolResults"))}</h2>
+                    <button type="button" class="btn-secondary" data-action="close-pool-results-fullscreen">${t("tournament.closeFullScreen")}</button>
+                  </div>
+                  <pool-results></pool-results>
+                </div>`
+              : ""
+          }
         `;
     }
   }

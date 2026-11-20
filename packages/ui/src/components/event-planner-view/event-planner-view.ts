@@ -1191,6 +1191,8 @@ function stageLabel(type: string): string {
       return "Elimination";
     case "SEMI_FINAL":
       return "Semi-final";
+    case "BRONZE_FINAL":
+      return "Bronze final";
     case "FINAL":
       return "Final";
     default:
@@ -1240,7 +1242,7 @@ function buildTournamentSuggestion(
   eventRuleset: ApiRuleset | null,
 ): TournamentSuggestion {
   const poolStage = tournament.stages.find((stage) => stage.type === "POOL");
-  const eliminationStage = tournament.stages.find((stage) => stage.type === "ELIMINATION" || stage.type === "SEMI_FINAL" || stage.type === "FINAL");
+  const eliminationStage = tournament.stages.find((stage) => stage.type === "ELIMINATION" || stage.type === "SEMI_FINAL" || stage.type === "BRONZE_FINAL" || stage.type === "FINAL");
   const participantCount = tournament.entries.filter((entry) => entry.kind !== "VOLUNTEER").length;
   const ruleset = resolveStageRuleset(poolStage?.ruleset ?? tournament.ruleset ?? eventRuleset);
   const minPoolSize = poolStage?.minPoolSize ?? 4;

@@ -51,7 +51,8 @@ const stageTypeOrder: Record<StageType, number> = {
   POOL: 0,
   ELIMINATION: 1,
   SEMI_FINAL: 2,
-  FINAL: 3,
+  BRONZE_FINAL: 3,
+  FINAL: 4,
 };
 
 export function generateId(): string {
@@ -94,7 +95,7 @@ function groupBy<T, K>(values: readonly T[], key: (value: T) => K): Map<K, T[]> 
   return grouped;
 }
 
-function compareStageRows(left: StageRow, right: StageRow): number {
+export function compareStageRows(left: StageRow, right: StageRow): number {
   return stageTypeOrder[left.type] - stageTypeOrder[right.type]
     || (left.name ?? "").localeCompare(right.name ?? "")
     || left.id.localeCompare(right.id);
@@ -558,6 +559,9 @@ export async function loadEvents(executor: DbExecutor, eventIds?: readonly strin
       scoreB: row.scoreB,
       ruleset: row.rulesetId ? rulesetById.get(row.rulesetId) ?? null : null,
       scheduledMatch: scheduledMatchById.get(row.id) ?? null,
+      bracketRound: row.bracketRound,
+      bracketPosition: row.bracketPosition,
+      bracketKind: row.bracketKind,
     };
     const bucket = matchesByRoundId.get(row.roundId);
     if (bucket) {

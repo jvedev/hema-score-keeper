@@ -27,6 +27,7 @@ import { registerPeopleRoutes } from "./people-routes.js";
 import { competitionAccessFilter, competitionAdminRole, requireCompetitionAccess } from "./competitions/access.js";
 import { registerCompetitionAdminRoutes } from "./competitions/admin-routes.js";
 import { registerEventLinkRoutes } from "./competitions/event-link-routes.js";
+import { registerBracketRoutes } from "./tournaments/bracket-routes.js";
 import { registerParticipantRoutes } from "./competitions/participant-routes.js";
 import { withInviteCodeForAdmins } from "./competitions/signup-routes.js";
 import { requireEventTournamentAdmin } from "./tournaments/access.js";
@@ -315,6 +316,7 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   registerPeopleRoutes(app, database);
   registerCompetitionAdminRoutes(app, database);
   registerEventLinkRoutes(app, database);
+  registerBracketRoutes(app, database);
   registerParticipantRoutes(app, database);
 
   app.post("/api/v1/auth/enrollment-tokens", async (request) => {
@@ -2145,7 +2147,7 @@ function requireTimeOfDay(value: unknown): number {
 
 function parseStageType(value: unknown): StageType {
   const type = requireString(value, "Stage type");
-  if (!["POOL", "ELIMINATION", "SEMI_FINAL", "FINAL"].includes(type)) {
+  if (!["POOL", "ELIMINATION", "SEMI_FINAL", "BRONZE_FINAL", "FINAL"].includes(type)) {
     throw new HttpError(400, "Stage type must be POOL, ELIMINATION, SEMI_FINAL, or FINAL.");
   }
   return type as StageType;

@@ -188,3 +188,36 @@ The original list, kept for reference:
 - The schema for live bouts in tournaments (reuse `Match`/`Exchange`, or the phase-3 `Bout` model) — pick the one that keeps exchanges as the single source of truth and lets competition and tournament share views.
 - How the backend is packaged to run on the venue laptop.
 - Phase plans: one plan per phase, in `docs/superpowers/plans/`, each approved by the user before building.
+
+## 11. Brackets in database mode (user decisions, 2026-11-20)
+
+With spreadsheet mode dropped (2026-11-17), the apps now generate the elimination bracket and advance
+winners themselves; the earlier exclusion ("the sheet works it out") no longer applies. Plan:
+`plans/2026-11-20-phase-4-stages-and-matches.md`, Part C.
+
+- **Stage structure:** one bracket stage by default. A tournament has a Pools stage and one
+  Elimination stage that holds the whole bracket; its rounds are the bracket rounds (for example
+  quarter-finals, semi-finals, final and bronze). New tournaments no longer get a separate Semi-final
+  stage.
+- **Separate final stages (setting, user 2026-11-20):** optionally the bronze match and the final are
+  their own stages, after the Elimination stage: Elimination (up to the semi-finals), then Bronze
+  final, then Final. Reason: when an Event has several tournaments (for example "Women+ longsword" and
+  "Open longsword"), their bronze finals and finals are often fought in their own time slots, for
+  example together at the end of the day. Like other stages they are then placed in time slots in the
+  Event planner. The setting is off by default (everything in the Elimination stage) and sits with
+  the other bracket rules in the ruleset. Automatic advancing works across the stages: semi-final
+  winners go to the Final stage's match, the losers to the Bronze final stage's match. With the
+  bronze match switched off there is no Bronze final stage.
+- **Seeding (pluggable rule):** default "by pool place": all pool winners first, then all second
+  places, and so on; within the same place by the pool ranking rules (match points, then points
+  scored, then fewest conceded). Seeding is a named rule chosen in the ruleset, implemented behind a
+  small rule interface so other rules can be added or swapped easily.
+- **Pairing (pluggable rule):** default "standard, pools apart": classic bracket order (1 v 8, 4 v 5,
+  2 v 7, 3 v 6 for eight places) with byes for the top seeds when there are fewer fighters than
+  places; when two fighters from the same pool would meet in the first round, swap with the nearest
+  seed so they do not. Also a ruleset rule.
+- **Bronze match:** on by default, can be switched off in the ruleset; the two semi-final losers
+  fight for third place.
+- **Advancing:** automatic. When a bracket match result is saved or corrected, the winner is placed
+  in the next match (and semi-final losers in the bronze match). A correction re-places them while
+  the next match has not started; otherwise it is refused with a clear message.

@@ -1,9 +1,8 @@
 :host {
   display: block;
-  font-family: var(--font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
-  /* Dark theme to match event-admin header */
-  color: #e8edf5;
-  background: #101721;
+  font-family: var(--admin-font-body);
+  color: var(--admin-text);
+  background: var(--admin-page);
   padding: 1.5rem;
   min-height: 100%;
 }
@@ -15,16 +14,16 @@
 }
 
 :host::-webkit-scrollbar-track {
-  background: #18212d;
+  background: var(--admin-surface);
 }
 
 :host::-webkit-scrollbar-thumb {
-  background: #52647a;
+  background: var(--admin-line-strong);
   border-radius: 5px;
 }
 
 :host::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--admin-line-strong);
 }
 
 .tournament-workspace {
@@ -36,11 +35,10 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 1.5rem;
-  background: #18212d;
-  padding: 1.5rem;
-  border-radius: 8px;
-  border: 1px solid #344256;
+  /* The page title sits on the page itself; the tabs below draw the separating line. */
+  margin-bottom: 1rem;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .header-meta {
@@ -53,7 +51,7 @@
   margin: 0;
   font-size: 1.5rem;
   font-weight: 600;
-  color: #fff;
+  color: var(--admin-text);
 }
 
 .badges-row {
@@ -70,21 +68,21 @@
   font-size: 0.8125rem;
   font-weight: 500;
   border-radius: 9999px;
-  background: #18212d;
-  color: #94a3b8;
-  border: 1px solid #344256;
+  background: var(--admin-surface);
+  color: var(--admin-muted);
+  border: 1px solid var(--admin-line);
 }
 
 .ruleset-badge {
-  background: #101721;
-  color: #38bdf8;
-  border-color: #38bdf8;
+  background: var(--admin-page);
+  color: var(--admin-accent);
+  border-color: var(--admin-accent);
 }
 
 .active-stage-badge {
-  background: #101721;
-  color: #34d399;
-  border-color: #34d399;
+  background: var(--admin-page);
+  color: var(--admin-positive);
+  border-color: var(--admin-positive);
 }
 
 .header-actions {
@@ -103,23 +101,23 @@
 }
 
 .btn-primary {
-  background: #2867bd;
-  color: #ffffff;
+  background: var(--admin-primary-bg);
+  color: var(--admin-primary-text);
 }
 
 .btn-primary:hover {
-  background: #3b82f6;
+  background: var(--admin-primary-bg);
 }
 
 .btn-secondary {
-  background: #18212d;
-  color: #ffffff;
-  border-color: #344256;
+  background: var(--admin-surface);
+  color: var(--admin-text);
+  border-color: var(--admin-line);
 }
 
 .btn-secondary:hover {
-  background: #344256;
-  color: #ffffff;
+  background: var(--admin-raised);
+  color: var(--admin-text);
 }
 
 .btn-secondary:disabled {
@@ -129,7 +127,7 @@
 
 .nav-tabs {
   display: flex;
-  border-bottom: 2px solid #344256;
+  border-bottom: 2px solid var(--admin-line);
   margin-bottom: 1.5rem;
   gap: 0.5rem;
 }
@@ -142,46 +140,28 @@
   margin-bottom: -2px;
   font-size: 0.9375rem;
   font-weight: 500;
-  color: #94a3b8;
+  color: var(--admin-muted);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .nav-tab:hover {
-  color: #38bdf8;
+  color: var(--admin-accent);
 }
 
 .nav-tab.active {
-  color: #38bdf8;
-  border-bottom-color: #38bdf8;
+  color: var(--admin-accent);
+  border-bottom-color: var(--admin-accent);
 }
 
+/* Tab content flows on the page (no box of its own, no inner scroll area): the page scrolls as a whole. */
 .tab-pane {
-  background: #18212d;
-  padding: 1.5rem;
-  border-radius: 8px;
-  border: 1px solid #344256;
-  max-height: 70vh;
-  overflow-y: auto;
+  padding: 0.5rem 0 2rem;
 }
 
-.tab-pane::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
 
-.tab-pane::-webkit-scrollbar-track {
-  background: #101721;
-}
 
-.tab-pane::-webkit-scrollbar-thumb {
-  background: #52647a;
-  border-radius: 5px;
-}
 
-.tab-pane::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
 
 /* Overview Cards Grid */
 .overview-grid {
@@ -192,8 +172,8 @@
 
 .summary-card {
   padding: 1.25rem;
-  background: #18212d;
-  border: 1px solid #344256;
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-line);
   border-radius: 8px;
   display: flex;
   flex-direction: column;
@@ -203,14 +183,14 @@
 .summary-card-header {
   font-size: 0.875rem;
   font-weight: 500;
-  color: #94a3b8;
+  color: var(--admin-muted);
   margin-bottom: 0.5rem;
 }
 
 .summary-card-value {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #fff;
+  color: var(--admin-text);
   margin-bottom: 1rem;
 }
 
@@ -225,34 +205,34 @@
 .entries-table {
   width: 100%;
   border-collapse: collapse;
-  color: #e8edf5;
+  color: var(--admin-text);
 }
 
 .entries-table th, .entries-table td {
   padding: 0.75rem 1rem;
   text-align: left;
-  border-bottom: 1px solid #344256;
+  border-bottom: 1px solid var(--admin-line);
 }
 
 .entries-table th {
   font-size: 0.8125rem;
   font-weight: 600;
-  color: #94a3b8;
-  background: #101721;
+  color: var(--admin-muted);
+  background: var(--admin-page);
 }
 
 .entries-table tr:hover td {
-  background: #18212d;
+  background: var(--admin-surface);
 }
 
 .entries-table tr:hover {
-  background: #18212d;
+  background: var(--admin-surface);
 }
 
 .empty-state {
   text-align: center;
   padding: 2.5rem 1rem;
-  color: #94a3b8;
+  color: var(--admin-muted);
 }
 
 /* Forms */
@@ -263,8 +243,8 @@ form[data-form] {
   align-items: flex-end;
   padding: 1rem;
   margin-bottom: 1rem;
-  background: #101721;
-  border: 1px solid #344256;
+  background: var(--admin-page);
+  border: 1px solid var(--admin-line);
   border-radius: 8px;
 }
 
@@ -274,7 +254,7 @@ form[data-form] label {
   gap: 0.25rem;
   font-size: 0.875rem;
   font-weight: 500;
-  color: #e8edf5;
+  color: var(--admin-text);
 }
 
 form[data-form] input,
@@ -282,25 +262,26 @@ form[data-form] select,
 form[data-form] textarea {
   padding: 0.45rem 0.6rem;
   font-size: 0.875rem;
-  border: 1px solid #344256;
+  border: 1px solid var(--admin-line);
   border-radius: 6px;
-  background: #18212d;
-  color: #e8edf5;
+  background: var(--admin-surface);
+  color: var(--admin-text);
   min-width: 8rem;
 }
 
 form[data-form] input:focus,
 form[data-form] select:focus,
 form[data-form] textarea:focus {
-  outline: none;
-  border-color: #38bdf8;
+  outline: 2px solid var(--admin-accent);
+  outline-offset: 1px;
+  border-color: var(--admin-accent);
 }
 
 .person-editor-section {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem 1rem;
-  border: 1px dashed #344256;
+  border: 1px dashed var(--admin-line);
   border-radius: 6px;
   padding: 0.5rem 0.75rem;
   margin: 0;
@@ -309,7 +290,7 @@ form[data-form] textarea:focus {
 .person-editor-section legend {
   font-size: 0.875rem;
   font-weight: 600;
-  color: #e8edf5;
+  color: var(--admin-text);
   padding: 0 0.25rem;
 }
 
@@ -320,7 +301,7 @@ form[data-form] textarea:focus {
   align-items: center;
   gap: 0.3rem;
   font-size: 0.875rem;
-  color: #e8edf5;
+  color: var(--admin-text);
 }
 
 .skill-rating-line {
@@ -328,20 +309,20 @@ form[data-form] textarea:focus {
   align-items: center;
   gap: 0.25rem;
   font-size: 0.875rem;
-  color: #e8edf5;
+  color: var(--admin-text);
 }
 
 .person-editor-scope-note {
   flex-basis: 100%;
   margin: 0;
   font-size: 0.8125rem;
-  color: #94a3b8;
+  color: var(--admin-muted);
 }
 
 p[role="alert"] {
   flex-basis: 100%;
   margin: 0 0 0.5rem 0;
-  color: #f87171;
+  color: var(--admin-danger);
   font-size: 0.9375rem;
   font-weight: 500;
 }
@@ -352,7 +333,7 @@ p[role="alert"] {
 }
 
 .tournament-error {
-  color: #f87171;
+  color: var(--admin-danger);
 }
 
 /* Stages Layout */
@@ -372,20 +353,20 @@ p[role="alert"] {
 .stage-item {
   padding: 0.75rem 1rem;
   border-radius: 6px;
-  border: 1px solid #344256;
-  background: #18212d;
+  border: 1px solid var(--admin-line);
+  background: var(--admin-surface);
   cursor: pointer;
   transition: all 0.15s ease;
-  color: #e8edf5;
+  color: var(--admin-text);
 }
 
 .stage-item:hover {
-  border-color: #38bdf8;
+  border-color: var(--admin-accent);
 }
 
 .stage-item.active {
-  border-color: #38bdf8;
-  background: #101721;
+  border-color: var(--admin-accent);
+  background: var(--admin-page);
 }
 
 .stage-item-header {
@@ -417,8 +398,8 @@ p[role="alert"] {
   align-items: flex-end;
   padding: 1rem;
   margin-bottom: 1rem;
-  background: #101721;
-  border: 1px solid #344256;
+  background: var(--admin-page);
+  border: 1px solid var(--admin-line);
   border-radius: 8px;
 }
 
@@ -428,24 +409,25 @@ p[role="alert"] {
   gap: 0.25rem;
   font-size: 0.875rem;
   font-weight: 500;
-  color: #e8edf5;
+  color: var(--admin-text);
 }
 
 .stage-form input,
 .stage-form select {
   padding: 0.45rem 0.6rem;
   font-size: 0.875rem;
-  border: 1px solid #344256;
+  border: 1px solid var(--admin-line);
   border-radius: 6px;
-  background: #18212d;
-  color: #e8edf5;
+  background: var(--admin-surface);
+  color: var(--admin-text);
   min-width: 8rem;
 }
 
 .stage-form input:focus,
 .stage-form select:focus {
-  outline: none;
-  border-color: #38bdf8;
+  outline: 2px solid var(--admin-accent);
+  outline-offset: 1px;
+  border-color: var(--admin-accent);
 }
 
 .stage-detail {
@@ -457,7 +439,7 @@ p[role="alert"] {
 .sub-tabs {
   display: flex;
   gap: 0.5rem;
-  border-bottom: 1px solid #344256;
+  border-bottom: 1px solid var(--admin-line);
   padding-bottom: 0.5rem;
 }
 
@@ -469,17 +451,17 @@ p[role="alert"] {
   border: 1px solid transparent;
   border-radius: 6px;
   cursor: pointer;
-  color: #94a3b8;
+  color: var(--admin-muted);
 }
 
 .sub-tab:hover {
-  background: #18212d;
-  color: #e8edf5;
+  background: var(--admin-surface);
+  color: var(--admin-text);
 }
 
 .sub-tab.active {
-  background: #2867bd;
-  color: #ffffff;
+  background: var(--admin-primary-bg);
+  color: var(--admin-primary-text);
 }
 
 /* Modal */
@@ -495,7 +477,7 @@ p[role="alert"] {
 }
 
 .modal-card {
-  background: #18212d;
+  background: var(--admin-surface);
   border-radius: 8px;
   max-width: 600px;
   width: 100%;
@@ -503,5 +485,443 @@ p[role="alert"] {
   overflow-y: auto;
   padding: 1.5rem;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
-  border: 1px solid #344256;
+  border: 1px solid var(--admin-line);
+}
+
+form[data-form].tournament-form {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 32rem;
+  margin: 0 0 1.5rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--admin-line);
+  border-radius: 8px;
+  background: var(--admin-surface);
+}
+
+form[data-form].tournament-form h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+form[data-form].tournament-form label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+form[data-form].tournament-form .form-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+form[data-form].tournament-form .form-error {
+  margin: 0;
+  color: var(--admin-danger);
+}
+
+form[data-form].stage-form {
+  display: grid;
+  gap: 1rem;
+  align-items: stretch;
+  max-width: 48rem;
+}
+
+form[data-form].stage-form h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.stage-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0.75rem 1rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.stage-form-grid legend {
+  margin-bottom: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--admin-muted);
+}
+
+form[data-form].stage-form .form-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+form[data-form].stage-form .form-error {
+  margin: 0;
+  color: var(--admin-danger);
+}
+
+.last-stage-badge {
+  border-color: var(--admin-line);
+  color: var(--admin-muted);
+}
+
+.stage-arena-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.stage-arena-list li {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--admin-line);
+  border-radius: 999px;
+}
+
+.planning-note {
+  margin: 0 0 0.75rem;
+  color: var(--admin-muted);
+  font-size: 0.875rem;
+}
+
+.matches-table .score-cell {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.matches-table .match-open td {
+  color: var(--admin-muted);
+}
+
+.round-status-done {
+  border-color: var(--admin-positive);
+  color: var(--admin-positive);
+}
+
+.round-status-in-progress {
+  border-color: var(--admin-accent);
+  color: var(--admin-accent);
+}
+
+.btn-small {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8125rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+form[data-form].plan-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+  margin: 0;
+}
+
+form[data-form].plan-form .plan-hint,
+form[data-form].plan-form .plan-phase {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--admin-muted);
+}
+
+form[data-form].plan-form .form-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+form[data-form].plan-form .form-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--admin-danger);
+}
+
+.pool-results-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow: auto;
+  padding: 1.5rem clamp(1rem, 3vw, 2.5rem);
+  background: var(--admin-page);
+}
+
+.pool-results-fullscreen-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.pool-results-fullscreen-header h2 {
+  margin: 0;
+}
+
+/* Page title: the display face, as in the competition apps. */
+.tournament-title {
+  font-family: var(--admin-font-display);
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+/* ---------- Overview: next step and facts ---------- */
+.next-step {
+  margin-bottom: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--admin-line);
+  border-left: 3px solid var(--admin-accent);
+  border-radius: var(--admin-radius);
+  background: var(--admin-surface);
+}
+
+.next-step h3 {
+  margin: 0 0 0.35rem;
+  color: var(--admin-accent);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.next-step p {
+  margin: 0 0 0.9rem;
+  font-size: 1.05rem;
+}
+
+.next-step p:last-child {
+  margin-bottom: 0;
+}
+
+.overview-facts,
+.stage-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+  gap: 1rem 2rem;
+  margin: 0;
+}
+
+.overview-facts dt,
+.stage-summary dt {
+  margin-bottom: 0.25rem;
+  color: var(--admin-muted);
+  font-size: 0.8125rem;
+}
+
+.overview-facts dd,
+.stage-summary dd {
+  margin: 0;
+}
+
+.btn-link {
+  margin-left: 0.5rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--admin-accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ---------- Stage path: the stages in fighting order ---------- */
+.stage-path {
+  display: flex;
+  gap: 0;
+  margin: 0.5rem 0 1.5rem;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+}
+
+.stage-path-item {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 10rem;
+}
+
+/* The connector between two steps. */
+.stage-path-item + .stage-path-item::before {
+  content: "";
+  position: absolute;
+  top: 1.35rem;
+  left: -0.5rem;
+  width: 1rem;
+  border-top: 2px solid var(--admin-line);
+}
+
+.stage-path-item.is-done + .stage-path-item::before {
+  border-top-color: var(--admin-positive);
+}
+
+.stage-path-step {
+  display: grid;
+  gap: 0.15rem;
+  width: calc(100% - 1rem);
+  margin-right: 1rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius);
+  background: var(--admin-surface);
+  color: var(--admin-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.stage-path-item:last-child .stage-path-step {
+  width: 100%;
+  margin-right: 0;
+}
+
+.stage-path-step:hover {
+  border-color: var(--admin-line-strong);
+}
+
+.stage-path-step:focus-visible {
+  outline: 2px solid var(--admin-accent);
+  outline-offset: 2px;
+}
+
+.stage-path-type {
+  color: var(--admin-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.stage-path-name {
+  font-family: var(--admin-font-display);
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.stage-path-meta {
+  color: var(--admin-muted);
+  font-size: 0.8125rem;
+}
+
+.stage-path-item.is-done .stage-path-meta {
+  color: var(--admin-positive);
+}
+
+.stage-path-item.is-current .stage-path-step {
+  border-color: var(--admin-accent);
+}
+
+.stage-path-item.is-current .stage-path-meta {
+  color: var(--admin-accent);
+}
+
+.stage-path-item.selected .stage-path-step {
+  background: var(--admin-raised);
+  box-shadow: inset 0 -3px 0 var(--admin-accent);
+}
+
+/* ---------- Stage page ---------- */
+.stage-page {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.stage-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--admin-line);
+}
+
+.stage-page-header > div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.stage-page-header h3 {
+  margin: 0 0.5rem 0 0;
+  font-family: var(--admin-font-display);
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+.stage-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.stage-section {
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--admin-line);
+}
+
+.stage-section h4 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.ring-group + .ring-group {
+  margin-top: 1.25rem;
+}
+
+.ring-group h5 {
+  margin: 0.75rem 0 0.5rem;
+  color: var(--admin-muted);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 640px) {
+  .stage-path {
+    flex-direction: column;
+  }
+
+  .stage-path-item + .stage-path-item::before {
+    display: none;
+  }
+
+  .stage-path-step {
+    width: 100%;
+    margin: 0 0 0.5rem;
+  }
+}
+
+/* Phones: the tab bar scrolls on its own and wide tables scroll inside their ring, never the whole page. */
+.nav-tabs {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.nav-tab {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.ring-group {
+  overflow-x: auto;
+}
+
+/* Grid items grow to their widest content unless allowed to shrink; tables then scroll inside their section. */
+.stage-page {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.stage-page > * {
+  min-width: 0;
+}
+
+.stage-pool-results-pane {
+  overflow-x: auto;
 }

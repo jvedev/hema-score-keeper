@@ -41,7 +41,16 @@ plain-text password (user to rotate/delete); demo Competitions are auto-added on
 Event-admin client calls a missing `GET /api/v1/events/:id`; stale tracked
 `pages-stage/competition/**`.
 
-**Resume point (2026-11-20):** local `master` was fast-forwarded to `jetbrains-ai` (`76430b9`, not
+**Resume point (2026-11-20, later):** Phase 5 committed (`36dc17b`, `dba1c78`; master fast-forwarded,
+nothing pushed). Since then, uncommitted on `jetbrains-ai`: Phase 4 completion per
+[`plans/2026-11-20-phase-4-stages-and-matches.md`](plans/2026-11-20-phase-4-stages-and-matches.md) —
+Part A (stage and match screens) and Part B (shared admin look, stage path and stage page) done; Part C
+(brackets) task 10 done and task 11 code done but **not finished**: the dev database must be reset to
+schema 3 (`npm run backend:db:reset`, approved by the user) and the bracket checked in the browser. Follow
+"Resume here" at the end of that plan. Bracket decisions are in the spec, section 11. The user allows
+changing dev-database data (2026-11-20).
+
+**Previous resume point (2026-11-20):** local `master` was fast-forwarded to `jetbrains-ai` (`76430b9`, not
 pushed). The user chose to continue with **Phase 5** (rating Competition inside Event-admin) while
 Phase 4's open items stay open. Phase 5 is implemented and auto-verified, uncommitted on
 `jetbrains-ai`; see [`plans/2026-11-20-phase-5-competition-workspace.md`](plans/2026-11-20-phase-5-competition-workspace.md)

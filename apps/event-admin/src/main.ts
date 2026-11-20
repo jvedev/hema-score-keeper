@@ -157,7 +157,7 @@ function renderShell(session: EventAdminSession, route: EventAdminRoute): void {
       switcherSelect.innerHTML = currentEventsList
         .map(
           (evt) =>
-            `<option value="${evt.id}" ${evt.id === targetEventId ? "selected" : ""}>${evt.eventName}</option>`,
+            `<option value="${escapeHtml(evt.id)}" ${evt.id === targetEventId ? "selected" : ""}>${escapeHtml(evt.eventName)}</option>`,
         )
         .join("");
     }
@@ -173,7 +173,7 @@ function renderBreadcrumbs(bar: HTMLElement, route: EventAdminRoute, isDutch: bo
     bar.innerHTML = `
       <a href="${eventsUrl}" data-route>${eventsLabel}</a>
       <span>/</span>
-      <span>${eventName}</span>
+      <span>${escapeHtml(eventName)}</span>
     `;
   } else if (route.kind === "tournament-workspace") {
     const eventName = activeEvent?.id === route.eventId ? activeEvent.eventName : (isDutch ? "Evenement" : "Event");
@@ -183,7 +183,7 @@ function renderBreadcrumbs(bar: HTMLElement, route: EventAdminRoute, isDutch: bo
     bar.innerHTML = `
       <a href="${eventsUrl}" data-route>${eventsLabel}</a>
       <span>/</span>
-      <a href="${eventUrl}" data-route>${eventName}</a>
+      <a href="${eventUrl}" data-route>${escapeHtml(eventName)}</a>
       <span>/</span>
       <span>${escapeHtml(tournamentName)}</span>
     `;
@@ -205,7 +205,7 @@ function renderBreadcrumbs(bar: HTMLElement, route: EventAdminRoute, isDutch: bo
     bar.innerHTML = `
       <a href="${eventsUrl}" data-route>${eventsLabel}</a>
       <span>/</span>
-      <a href="${eventUrl}" data-route>${eventName}</a>
+      <a href="${eventUrl}" data-route>${escapeHtml(eventName)}</a>
       <span>/</span>
       <span>${isDutch ? "Planning" : "Planning"}</span>
     `;
@@ -397,29 +397,13 @@ function renderTournamentWorkspace(
   if (!view) {
     view = document.createElement("tournament-workspace-view") as TournamentWorkspaceView;
 
-    view.addEventListener("stage-advance-requested", async (e: any) => {
-      const stageId = e.detail.stageId;
-      try {
-        await api.updateTournament(tournamentId, { currentStageId: stageId });
-        const refreshedEvent = await api.getEvent(eventId);
-        activeEvent = refreshedEvent;
-        const targetView = container.querySelector<TournamentWorkspaceView>("tournament-workspace-view");
-        if (targetView) targetView.event = refreshedEvent;
-      } catch (err) {
-        console.error("Failed to advance stage:", err);
-      }
-    });
+    view.addEventListener("planning-requested", () => navigateTo({ kind: "event-planning", eventId }));
 
-    view.addEventListener("live-activate-requested", async () => {
-      try {
-        await api.activateDatabaseLive(tournamentId);
-        const refreshedEvent = await api.getEvent(eventId);
-        activeEvent = refreshedEvent;
-        const targetView = container.querySelector<TournamentWorkspaceView>("tournament-workspace-view");
-        if (targetView) targetView.event = refreshedEvent;
-      } catch (err) {
-        console.error("Failed to activate live tournament:", err);
-      }
+    // The workspace saves through the API itself; it reports a refreshed event so the breadcrumb follows renames.
+    view.addEventListener("event-refreshed", (e: any) => {
+      activeEvent = e.detail.event;
+      const session = api.currentSession();
+      if (session) renderShell(session, { kind: "tournament-workspace", eventId, tournamentId });
     });
 
     container.replaceChildren(view);
@@ -456,6 +440,17 @@ function renderEventPlanning(container: HTMLElement, eventId: string): void {
   } else if (eventId) {
     view.setAttribute("event-id", eventId);
   }
+  // The breadcrumb shows the Event's name, which a direct link to the planner has not loaded yet.
+  if (eventId && activeEvent?.id !== eventId) {
+    void api
+      .getEvent(eventId)
+      .then((event) => {
+        activeEvent = event;
+        const session = api.currentSession();
+        if (session) renderShell(session, { kind: "event-planning", eventId });
+      })
+      .catch(() => undefined);
+  }
 }
 
 function renderNotFound(container: HTMLElement, path: string): void {
@@ -465,7 +460,7 @@ function renderNotFound(container: HTMLElement, path: string): void {
       <h2>${isDutch ? "Pagina niet gevonden" : "Page not found"}</h2>
       <p>${path}</p>
       <p>
-        <a href="${withAppBase("/events", baseUrl)}" data-route class="btn-primary" style="display: inline-block; padding: 0.5rem 1rem; color: #fff; text-decoration: none; border-radius: 4px; background: #2563eb;">
+        <a href="${withAppBase("/events", baseUrl)}" data-route class="event-admin-not-found-link">
           ${isDutch ? "Naar evenementen" : "Go to events"}
         </a>
       </p>

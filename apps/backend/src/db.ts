@@ -199,6 +199,9 @@ interface MatchTable {
   scoreA: number | null;
   scoreB: number | null;
   rulesetId: string | null;
+  bracketRound: Generated<number | null>;
+  bracketPosition: Generated<number | null>;
+  bracketKind: Generated<"MAIN" | "BRONZE" | null>;
 }
 
 interface ScheduledMatchTable {

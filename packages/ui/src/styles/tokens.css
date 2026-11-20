@@ -27,4 +27,24 @@
   --hema-font-score: "Big Shoulders Display", "Barlow Condensed", system-ui, sans-serif;
   --hema-font-body: "Atkinson Hyperlegible", system-ui, sans-serif;
   --hema-font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* Admin screens (Event-admin and the screens it hosts): one palette on top of the competition tokens. */
+  --admin-page: var(--hema-page);
+  --admin-sunken: var(--hema-night);
+  --admin-surface: var(--hema-plate);
+  --admin-raised: var(--hema-raised);
+  --admin-line: var(--hema-rule);
+  --admin-line-strong: #3a4a57;
+  --admin-text: var(--hema-ink);
+  --admin-muted: var(--hema-muted);
+  --admin-accent: var(--hema-brass);
+  --admin-positive: var(--hema-verdigris);
+  --admin-danger: var(--hema-rust);
+  --admin-primary-bg: var(--hema-ink);
+  --admin-primary-text: var(--hema-night);
+  --admin-radius: 8px;
+  --admin-radius-small: 6px;
+  --admin-font-display: var(--hema-font-score);
+  --admin-font-body: var(--hema-font-body);
+  --admin-font-mono: var(--hema-font-mono);
 }

@@ -195,7 +195,7 @@ describe("event-view", () => {
       scoreA: null,
       scoreB: null,
       ruleset: null,
-      scheduledMatch: null,
+      scheduledMatch: null, bracketRound: null, bracketPosition: null, bracketKind: null,
     };
     stage.rounds = [{ id: "round-1", stageId: stage.id, roundNumber: 0, matches: [match] }];
     const arena = {
@@ -281,7 +281,7 @@ describe("event-view", () => {
         scoreA: null,
         scoreB: null,
         ruleset: null,
-        scheduledMatch: { scheduledPhaseId: "pool-phase", order: 1 },
+        scheduledMatch: { scheduledPhaseId: "pool-phase", order: 1 }, bracketRound: null, bracketPosition: null, bracketKind: null,
       }],
     }];
 
@@ -963,7 +963,7 @@ function installEventViewMock() {
         scoreA: null,
         scoreB: null,
         ruleset: null,
-        scheduledMatch: { scheduledPhaseId: body.scheduledPhaseId, order: body.order },
+        scheduledMatch: { scheduledPhaseId: body.scheduledPhaseId, order: body.order }, bracketRound: null, bracketPosition: null, bracketKind: null,
       });
     }
 
