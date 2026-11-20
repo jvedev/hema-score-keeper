@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiSession } from "@hema/api-session";
+import type { AdminUser } from "./api-types";
 import { AdminClient, ApiError, SessionExpiredError } from "./admin-client";
 
 class MemoryStorage {
@@ -123,6 +125,16 @@ describe("AdminClient", () => {
       "PATCH /api/v1/auth/me",
     ]);
   });
+  it("attaches to and detaches from an Event", async () => {
+    await signedIn();
+    await client.setEvent("c 1", "e1");
+    await client.setEvent("c 1", null);
+    expect(calls).toMatchObject([
+      { method: "PATCH", url: "/api/v1/competitions/c%201/event", body: { eventId: "e1" } },
+      { method: "PATCH", url: "/api/v1/competitions/c%201/event", body: { eventId: null } },
+    ]);
+  });
+
   it("accepts or declines a sign-up", async () => {
     await signedIn();
     responses.push({ status: 200, body: { participantId: "p 1", status: "ACTIVE" } }, { status: 200, body: { participantId: "p2", status: null } });
@@ -151,5 +163,26 @@ describe("AdminClient", () => {
       { method: "PATCH", url: "/api/v1/competitions/c1", body: { signupsNeedApproval: false, placeLimit: null } },
     ]);
     expect(calls[1]!.body).toHaveProperty("placeLimit", null);
+  });
+
+  it("runs on a host shell's session, sharing its sign-in and refresh", async () => {
+    const storage = new MemoryStorage() as unknown as Storage;
+    const host = new ApiSession<AdminUser>({
+      baseUrl: "/api/v1",
+      storage,
+      storageKey: "hema-event-admin.session",
+      toUser: (user) => ({ id: user.id, name: user.name, language: "en", role: "SYSTEM_ADMIN" }),
+    });
+    host.store(loginBody);
+    const hosted = new AdminClient(host);
+    expect(hosted.currentSession()?.accessToken).toBe("a1");
+
+    responses.push({ status: 401, body: {} }, { status: 200, body: { ...loginBody, accessToken: "a2", refreshToken: "r2" } }, { status: 200, body: [] });
+    await hosted.competitions();
+    expect(calls.map((call) => call.authorization)).toEqual(["Bearer a1", null, "Bearer a2"]);
+    // The host sees the rotated tokens, so it never reuses the spent refresh token.
+    expect(host.current()?.refreshToken).toBe("r2");
+    expect(JSON.parse(storage.getItem("hema-event-admin.session")!).refreshToken).toBe("r2");
+    expect(storage.getItem("hema-competition-admin.session")).toBeNull();
   });
 });

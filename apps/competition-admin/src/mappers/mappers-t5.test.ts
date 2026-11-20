@@ -68,7 +68,7 @@ describe("competitions", () => {
     visibility: "PUBLIC",
     clubId: null,
     scope: { kind: "COUNTRY", values: ["NL"] },
-    acceptsOtherBouts: true, signupsNeedApproval: false, placeLimit: null,
+    acceptsOtherBouts: true, signupsNeedApproval: false, placeLimit: null, eventId: null,
   };
 
   it("maps summaries with scope, date and open bouts", () => {

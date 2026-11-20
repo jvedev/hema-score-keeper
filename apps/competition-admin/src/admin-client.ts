@@ -29,13 +29,20 @@ export class AdminClient {
   /** Tokens and the shared refresh (refresh tokens are single use), shared with the participant app. */
   readonly #api: ApiSession<AdminUser>;
 
-  constructor(baseUrl: string, storage: Storage = localStorage) {
-    this.#api = new ApiSession<AdminUser>({
-      baseUrl,
-      storage,
-      storageKey: SESSION_KEY,
-      toUser: (user) => ({ id: user.id, name: user.name, language: user.language === "nl" ? "nl" : "en", role: user.role as AdminUser["role"] }),
-    });
+  /**
+   * Standalone: pass the API base URL and the client keeps its own Competition-admin session.
+   * Hosted in another admin shell: pass that shell's `ApiSession`, so both share one sign-in and one refresh.
+   */
+  constructor(baseUrlOrSession: string | ApiSession<AdminUser>, storage?: Storage) {
+    this.#api =
+      typeof baseUrlOrSession === "string"
+        ? new ApiSession<AdminUser>({
+            baseUrl: baseUrlOrSession,
+            storage: storage ?? localStorage,
+            storageKey: SESSION_KEY,
+            toUser: (user) => ({ id: user.id, name: user.name, language: user.language === "nl" ? "nl" : "en", role: user.role as AdminUser["role"] }),
+          })
+        : baseUrlOrSession;
   }
 
   currentSession(): Session | null {
@@ -74,6 +81,8 @@ export class AdminClient {
   addAdmin = (id: string, userId: string) => this.#send<CompetitionAdminEntry[]>("POST", `/competitions/${e(id)}/admins`, { userId });
   removeAdmin = (id: string, userId: string) => this.#send<CompetitionAdminEntry[]>("DELETE", `/competitions/${e(id)}/admins/${e(userId)}`);
   transferOwnership = (id: string, userId: string) => this.#send<CompetitionAdminEntry[]>("POST", `/competitions/${e(id)}/owner`, { userId });
+  /** Attaches the competition to an Event, or detaches it with `null`. */
+  setEvent = (id: string, eventId: string | null) => this.#send<CompetitionDetail>("PATCH", `/competitions/${e(id)}/event`, { eventId });
   searchPeople = (query: string) => this.#send<PersonSearchResult[]>("GET", `/people?q=${e(query)}`);
   clubs = () => this.#send<Club[]>("GET", "/clubs");
 

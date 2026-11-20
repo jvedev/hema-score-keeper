@@ -19,14 +19,15 @@ export async function renderSettingsScreen(container: HTMLElement, context: AppC
   const capabilities = adminCapabilities(myRole);
   const reload = () => context.navigate({ name: "settings", competitionId }, true);
 
-  container.innerHTML = `${competitionHeader(competition, "settings")}
+  container.innerHTML = `${competitionHeader(competition, "settings", context)}
     ${lifecycleSection(competition)}
     ${detailsSection(competition)}
     ${signupsSection(competition)}
     ${inviteSection(competition)}
     ${rulesetSection(competition)}
     ${participantsSection(participants.map((participant) => participant.name))}
-    ${adminsSection(admins, capabilities, session.user.id)}`;
+    ${adminsSection(admins, capabilities, session.user.id)}
+    ${context.detachFromEvent && competition.eventId ? eventSection() : ""}`;
   wireLinks(container, context);
 
   /** Runs a change, shows the server's refusal next to the section, and reloads on success. Resolves whether it worked. */
@@ -135,6 +136,41 @@ export async function renderSettingsScreen(container: HTMLElement, context: AppC
   adminSection.querySelectorAll<HTMLButtonElement>("button[data-owner]").forEach((button) => {
     button.addEventListener("click", () => void act(adminSection, () => context.client.transferOwnership(competitionId, button.dataset.owner!)));
   });
+
+  // Hosted in an Event: detach it (data and own admins stay), then go back to the Event, where it no longer belongs.
+  const eventPanel = container.querySelector<HTMLElement>("section.event-link");
+  const detach = context.detachFromEvent;
+  if (eventPanel && detach) {
+    const button = eventPanel.querySelector<HTMLButtonElement>("button.detach")!;
+    const error = eventPanel.querySelector<HTMLElement>(".error")!;
+    button.addEventListener("click", () => {
+      if (!window.confirm(t("settings.detachConfirm"))) {
+        return;
+      }
+      error.hidden = true;
+      button.disabled = true;
+      void detach().then(
+        () => {
+          context.toast(t("settings.detached"));
+          context.navigate({ name: "competitions" });
+        },
+        (caught: unknown) => {
+          button.disabled = false;
+          error.hidden = false;
+          error.textContent = caught instanceof Error ? caught.message : String(caught);
+        },
+      );
+    });
+  }
+}
+
+function eventSection(): string {
+  return `<section class="panel event-link">
+    <h2>${t("settings.eventTitle")}</h2>
+    <p class="muted">${t("settings.eventAttachedNote")}</p>
+    <div class="row"><button type="button" class="detach">${t("settings.detach")}</button></div>
+    <p class="error" hidden></p>
+  </section>`;
 }
 
 function lifecycleSection(competition: CompetitionDetail): string {

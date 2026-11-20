@@ -3,6 +3,20 @@ export function apiBaseUrl(configured: string | undefined = import.meta.env.VITE
   return configured?.trim() || "/api/v1";
 }
 
+/**
+ * Where Event-admin lives: VITE_EVENT_ADMIN_URL, else its dev server (port 5182) in development, else `/event-admin`
+ * on this site, where the apps are published side by side.
+ */
+export function eventAdminBase(configured: string | undefined = import.meta.env.VITE_EVENT_ADMIN_URL, dev: boolean = import.meta.env.DEV): string {
+  const base = configured?.trim() || (dev ? "http://localhost:5182/event-admin" : "/event-admin");
+  return base.replace(/\/+$/, "");
+}
+
+/** The Event-admin page of a Competition attached to an Event. */
+export function eventAdminCompetitionUrl(eventId: string, competitionId: string, base: string = eventAdminBase()): string {
+  return `${base}/events/${encodeURIComponent(eventId)}/competitions/${encodeURIComponent(competitionId)}`;
+}
+
 /** Where the participant app lives: invite links point at its /join/:code page. Set VITE_PARTICIPANT_APP_URL to override. */
 export function participantAppUrl(): string {
   const configured = import.meta.env.VITE_PARTICIPANT_APP_URL;

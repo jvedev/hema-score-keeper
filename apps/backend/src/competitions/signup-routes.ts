@@ -46,10 +46,10 @@ export interface SignupDecisionResult {
   status: "ACTIVE" | "LEFT" | null;
 }
 
-/** A competition as its admins read it: with the current invite code (null until one is made). */
-export type AdminCompetitionDetail = CompetitionDetail & { inviteCode: string | null };
+/** What a competition's admins get on top of the public detail: the invite code and the name of its Event (if attached). */
+export type AdminCompetitionDetail = CompetitionDetail & { inviteCode: string | null; eventName: string | null };
 
-/** Adds the invite code when `user` manages the competition; everyone else gets the competition unchanged. */
+/** Adds the invite code and Event name when `user` manages the competition; everyone else gets the competition unchanged. */
 export async function withInviteCodeForAdmins(
   executor: DbExecutor,
   user: AccessUser | null,
@@ -58,8 +58,13 @@ export async function withInviteCodeForAdmins(
   if (user === null || (await competitionAdminRole(executor, user, competition.id)) === null) {
     return competition;
   }
-  const row = await executor.selectFrom("Competition").select("inviteCode").where("id", "=", competition.id).executeTakeFirstOrThrow();
-  return { ...competition, inviteCode: row.inviteCode };
+  const row = await executor
+    .selectFrom("Competition")
+    .leftJoin("Event", "Event.id", "Competition.eventId")
+    .select(["Competition.inviteCode", "Event.eventName"])
+    .where("Competition.id", "=", competition.id)
+    .executeTakeFirstOrThrow();
+  return { ...competition, inviteCode: row.inviteCode, eventName: row.eventName ?? null };
 }
 
 /** Whether the participant has bouts in the competition (legacy or new); such a row must never be deleted. */

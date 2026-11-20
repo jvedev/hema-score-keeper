@@ -24,6 +24,8 @@ export interface CompetitionSummary {
   signupsNeedApproval: boolean;
   /** Null means no limit. Counts active and pending fighters. */
   placeLimit: number | null;
+  /** The Event this competition is attached to, or null when it stands alone. */
+  eventId: string | null;
 }
 
 export interface CompetitionDetail extends CompetitionSummary {
@@ -33,6 +35,8 @@ export interface CompetitionDetail extends CompetitionSummary {
 /** What an admin of the competition gets: the current invite code too (null until one is made). */
 export interface AdminCompetitionDetail extends CompetitionDetail {
   inviteCode: string | null;
+  /** The name of the Event it is attached to, or null when it stands alone. */
+  eventName: string | null;
 }
 
 export interface SignupItem {

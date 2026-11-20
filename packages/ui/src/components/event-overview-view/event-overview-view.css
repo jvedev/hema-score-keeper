@@ -1,4 +1,11 @@
 :host {
+  /* Follow the Event-admin dark theme (--hema-* tokens); the light values only apply without them. */
+  --color-text: var(--hema-ink, #1e293b);
+  --color-text-muted: var(--hema-muted, #64748b);
+  --color-surface: var(--hema-plate, #ffffff);
+  --color-surface-subtle: var(--hema-raised, #f8fafc);
+  --color-border: var(--hema-rule, #e2e8f0);
+  --color-badge-bg: var(--hema-raised, #f1f5f9);
   display: block;
   font-family: inherit;
   color: var(--color-text, #1e293b);
@@ -92,6 +99,7 @@
 
 .btn-secondary-action {
   background: var(--color-surface, #ffffff);
+  color: var(--color-text, #1e293b);
   border: 1px solid var(--color-border, #cbd5e1);
   padding: 0.375rem 0.75rem;
   border-radius: 6px;
@@ -167,6 +175,7 @@ dialog {
   width: 90%;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
   background: var(--color-surface, #ffffff);
+  color: var(--color-text, #1e293b);
 }
 
 dialog::backdrop {
@@ -192,6 +201,8 @@ dialog::backdrop {
   border-radius: 6px;
   font-size: 1rem;
   box-sizing: border-box;
+  background: var(--color-surface-subtle, #ffffff);
+  color: var(--color-text, #1e293b);
 }
 
 .form-actions {
@@ -203,6 +214,7 @@ dialog::backdrop {
 
 .btn-cancel {
   background: transparent;
+  color: var(--color-text, #1e293b);
   border: 1px solid var(--color-border, #cbd5e1);
   padding: 0.5rem 1rem;
   border-radius: 6px;
@@ -217,4 +229,24 @@ dialog::backdrop {
   border-radius: 6px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.competition-mode {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  border: none;
+}
+
+.competition-mode label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.btn-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

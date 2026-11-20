@@ -5,36 +5,40 @@ import { toBoutDetailView } from "../mappers/bout";
 import { fighterForBout, legacyBoutDetail, toFighterBouts, toFighterSummary } from "../mappers/fighter";
 import { parametersToForm } from "../mappers/settings";
 import { toStandingRows } from "../mappers/standings";
-import { href, type Route } from "../router";
+import type { Route } from "../router";
+import { routeLinkAttributes, wireRouteLinks } from "./links";
 
 type CompetitionRoute = Extract<Route, { name: "competition" | "fighter" | "bout" }>;
 
 /** The fighter last opened per competition, so a bout keeps its fighter panel beside it. */
 const lastFighter = new Map<string, string>();
 
-export function competitionHeader(competition: CompetitionDetail, active: "participants" | "settings"): string {
-  const participantsHref = href({ name: "competition", competitionId: competition.id });
-  const settingsHref = href({ name: "settings", competitionId: competition.id });
+export function competitionHeader(
+  competition: CompetitionDetail & { eventName?: string | null },
+  active: "participants" | "settings",
+  context: AppContext,
+): string {
+  const participantsLink = routeLinkAttributes({ name: "competition", competitionId: competition.id }, context.href);
+  const settingsLink = routeLinkAttributes({ name: "settings", competitionId: competition.id }, context.href);
+  const eventLink =
+    competition.eventId && context.eventHref
+      ? ` <a class="chip event-chip" href="${escapeHtml(context.eventHref(competition.eventId, competition.id))}">${escapeHtml(
+          t("admin.partOfEvent", { event: competition.eventName ?? competition.eventId }),
+        )} ›</a>`
+      : "";
   return `<div>
-      <p class="chip">${t(`lifecycle.${competition.status}` as MessageKey)}</p>
+      <p class="chip">${t(`lifecycle.${competition.status}` as MessageKey)}</p>${eventLink}
       <h1>${escapeHtml(competition.name)}</h1>
     </div>
     <nav class="subnav">
-      <a href="${participantsHref}" data-link ${active === "participants" ? 'aria-current="page"' : ""}>${t("admin.participants")}</a>
-      <a href="${settingsHref}" data-link ${active === "settings" ? 'aria-current="page"' : ""}>${t("admin.settings")}</a>
+      <a ${participantsLink} ${active === "participants" ? 'aria-current="page"' : ""}>${t("admin.participants")}</a>
+      <a ${settingsLink} ${active === "settings" ? 'aria-current="page"' : ""}>${t("admin.settings")}</a>
     </nav>`;
 }
 
-/** Makes in-app links use the router instead of reloading the page. */
+/** Makes in-app links use the host's navigation instead of reloading the page. */
 export function wireLinks(container: HTMLElement, context: AppContext): void {
-  container.querySelectorAll<HTMLAnchorElement>("a[data-link]").forEach((link) => {
-    link.addEventListener("click", (event) => {
-      event.preventDefault();
-      window.history.pushState({}, "", link.getAttribute("href")!);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    });
-  });
-  void context;
+  wireRouteLinks(container, (route) => context.navigate(route));
 }
 
 export async function renderCompetitionScreen(container: HTMLElement, context: AppContext, route: CompetitionRoute): Promise<void> {
@@ -50,7 +54,7 @@ export async function renderCompetitionScreen(container: HTMLElement, context: A
     lastFighter.set(competitionId, route.participantId);
   }
 
-  container.innerHTML = competitionHeader(competition, "participants");
+  container.innerHTML = competitionHeader(competition, "participants", context);
 
   if (competition.status === "DRAFT" || competition.status === "REGISTRATION_OPEN") {
     const parameters = competition.rulesetJson ? parametersToForm(competition.rulesetJson) : null;
@@ -61,7 +65,7 @@ export async function renderCompetitionScreen(container: HTMLElement, context: A
         <p class="muted">${formatDateTime(competition.date, "date")} · ${t(`scope.${competition.scope.kind}` as MessageKey)}${competition.scope.values.length ? `: ${escapeHtml(competition.scope.values.join(", "))}` : ""}</p>
         ${parameters ? `<p class="muted">${parameters.minutes} min · max ${parameters.maxPointsCap}</p>` : ""}
         <p class="muted">${t("admin.fighters", { count: standings.length })}</p>
-        <a href="${href({ name: "settings", competitionId })}" data-link>${t("admin.settings")} ›</a>
+        <a ${routeLinkAttributes({ name: "settings", competitionId }, context.href)}>${t("admin.settings")} ›</a>
       </section>`,
     );
     wireLinks(container, context);
@@ -119,7 +123,7 @@ export async function renderCompetitionScreen(container: HTMLElement, context: A
       const bout = await context.client.bout(route.boutId);
       details.bout = toBoutDetailView(bout);
       if (bout.status === "OBJECTED") {
-        boutStep.insertAdjacentHTML("beforeend", `<a href="${href({ name: "objection", boutId: bout.id })}" data-link class="primary-link">${t("review.title")} ›</a>`);
+        boutStep.insertAdjacentHTML("beforeend", `<a ${routeLinkAttributes({ name: "objection", boutId: bout.id }, context.href)} class="primary-link">${t("review.title")} ›</a>`);
       } else if (bout.status === "SCORED") {
         boutStep.insertAdjacentHTML("beforeend", `<p class="muted">${t("admin.awaitingRefereeNote")}</p>`);
       }

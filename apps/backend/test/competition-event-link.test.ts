@@ -325,15 +325,61 @@ describe("Competition–Event link", () => {
   });
 
   describe("PATCH /api/v1/competitions/:id/event", () => {
-    it("Event admin can attach Competition to Event", async () => {
+    it("Event admin who also manages the Competition can attach it", async () => {
       await createEvent("event1");
       await insertEventAdmin(ctx.database, { eventId: "event1", userId: eventAdmin.id });
       await createCompetition("standalone");
+      await addCompetitionAdmin("standalone", eventAdmin.id, "CO_ADMIN");
 
       const res = await ctx.app.inject({
         method: "PATCH",
         url: "/api/v1/competitions/standalone/event",
         headers: bearer(eventAdmin),
+        payload: { eventId: "event1" },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().eventId).toBe("event1");
+    });
+
+    it("Event admin cannot attach a Competition they don't manage", async () => {
+      await createEvent("event1");
+      await insertEventAdmin(ctx.database, { eventId: "event1", userId: eventAdmin.id });
+      await createCompetition("standalone");
+      await addCompetitionAdmin("standalone", compAdmin.id, "OWNER");
+
+      const res = await ctx.app.inject({
+        method: "PATCH",
+        url: "/api/v1/competitions/standalone/event",
+        headers: bearer(eventAdmin),
+        payload: { eventId: "event1" },
+      });
+      expect(res.statusCode).toBe(403);
+      const row = await ctx.database.selectFrom("Competition").select("eventId").where("id", "=", "standalone").executeTakeFirstOrThrow();
+      expect(row.eventId).toBeNull();
+    });
+
+    it("Competition admin cannot attach to an Event they don't administer", async () => {
+      await createEvent("event1");
+      await createCompetition("standalone");
+      await addCompetitionAdmin("standalone", compAdmin.id, "OWNER");
+
+      const res = await ctx.app.inject({
+        method: "PATCH",
+        url: "/api/v1/competitions/standalone/event",
+        headers: bearer(compAdmin),
+        payload: { eventId: "event1" },
+      });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it("SYSTEM_ADMIN can attach any standalone Competition", async () => {
+      await createEvent("event1");
+      await createCompetition("standalone");
+
+      const res = await ctx.app.inject({
+        method: "PATCH",
+        url: "/api/v1/competitions/standalone/event",
+        headers: bearer(systemAdmin),
         payload: { eventId: "event1" },
       });
       expect(res.statusCode).toBe(200);
@@ -432,6 +478,35 @@ describe("Competition–Event link", () => {
         .where("competitionId", "=", "comp1")
         .executeTakeFirst();
       expect(participant).toBeDefined();
+    });
+  });
+
+  describe("GET /api/v1/competitions/:id shows the Event to admins", () => {
+    it("gives the Competition's admins the Event name", async () => {
+      await createEvent("event1");
+      await createCompetition("comp1", "event1");
+      await addCompetitionAdmin("comp1", compAdmin.id, "OWNER");
+
+      const res = await ctx.app.inject({ method: "GET", url: "/api/v1/competitions/comp1", headers: bearer(compAdmin) });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ eventId: "event1", eventName: "event1" });
+    });
+
+    it("gives null for a standalone Competition", async () => {
+      await createCompetition("comp1");
+      await addCompetitionAdmin("comp1", compAdmin.id, "OWNER");
+
+      const res = await ctx.app.inject({ method: "GET", url: "/api/v1/competitions/comp1", headers: bearer(compAdmin) });
+      expect(res.json()).toMatchObject({ eventId: null, eventName: null });
+    });
+
+    it("does not add the Event name for non-admins", async () => {
+      await createEvent("event1");
+      await createCompetition("comp1", "event1");
+
+      const res = await ctx.app.inject({ method: "GET", url: "/api/v1/competitions/comp1", headers: bearer(regularUser) });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).not.toHaveProperty("eventName");
     });
   });
 });

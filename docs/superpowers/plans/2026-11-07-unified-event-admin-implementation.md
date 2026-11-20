@@ -305,6 +305,15 @@ spreadsheet-tournament entry alongside the Event-admin component entry.
 
 ## Status / next
 
+2026-11-20: **Phase 5 implemented and auto-verified** per
+`2026-11-20-phase-5-competition-workspace.md` (user chose to continue with Phase 5 while Phase 4's
+open items remain). The Competition-admin screens run inside the Event-admin shell on the shared
+Event-admin session (`@hema/competition-admin/hosted`), with Event routes, breadcrumb, attach
+existing / detach, and a "Part of <Event>" link in the standalone app. User decision: attaching
+requires admin rights on both the Event and the Competition. Full suites, typecheck and builds pass;
+browser acceptance by the user and the open points listed in that plan remain. Phase 6 stays
+cancelled; next is Phase 7 (end-to-end verification and handoff) once the user accepts Phase 5.
+
 2026-11-18: Phase 4's new tournament workspace contains placeholder officials, access, live and match panes and does not preserve all existing workflows. UI tests (308), backend tests (336), database-mode smoke (12), all-workspace typecheck and build passed, but these do not establish feature parity. A nullable stage-name crash was reproduced and fixed with a targeted regression test. Resume by comparing the new workspace against `event-view`, implementing missing Phase 4 functionality and meaningful journey tests, and performing browser acceptance; do not proceed to Phase 5 yet.
 
 2026-11-19: the participant-management slice of Phase 4 is implemented and auto-verified per `2026-11-18-complete-participant-management.md` (Task 1 move guards on `PATCH /api/v1/entries/:id`, Task 2 scoped transactional `PATCH /api/v1/entries/:id/participant` + full person editor in `<tournament-workspace-view>`; acceptance journey `node .superpowers/verify/scripts/2026-11-19-participant-journey.mjs` 18/18, backend 355, UI 334, smoke 12, typecheck clean). Not started: porting the remaining placeholder panes (officials, access, matches, live) from `event-view`; the user still owes browser acceptance for the participant work. Open follow-up: the standalone `/api/v1/skills` endpoints are unauthenticated (flagged to the user in the participant plan).

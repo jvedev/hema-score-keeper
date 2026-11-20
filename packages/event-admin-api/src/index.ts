@@ -420,6 +420,8 @@ export interface ApiClient {
   updateEvent(id: string, body: { eventName?: string; rulesetId?: string | null; allFightersAreVolunteers?: boolean }): Promise<ApiEventMutationResult>;
   deleteEvent(id: string): Promise<void>;
   listEventCompetitions(eventId: string): Promise<ApiEventCompetition[]>;
+  /** The rating Competitions the signed-in user manages (needs a Competition- or system-admin account). */
+  listManagedCompetitions(): Promise<ApiEventCompetition[]>;
   createEventCompetition(
     eventId: string,
     body: {
@@ -609,7 +611,12 @@ export interface ApiClient {
 
 const defaultBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
-export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
+/**
+ * The one Event-admin session per API base URL. Other admin screens hosted inside the Event-admin shell
+ * (such as the rating Competition workspace) send their requests through it, so they share the sign-in and
+ * its single-use refresh token instead of keeping a second, competing session.
+ */
+export function getEventAdminApiSession(baseUrl = defaultBaseUrl): ApiSession<EventAdminSessionUser> {
   const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
   let session = sessionsByBaseUrl.get(normalizedBaseUrl);
   if (!session) {
@@ -626,7 +633,11 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
     });
     sessionsByBaseUrl.set(normalizedBaseUrl, session);
   }
-  const apiSession = session;
+  return session;
+}
+
+export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
+  const apiSession = getEventAdminApiSession(baseUrl);
   return {
     currentSession: () => apiSession.current(),
     login: async (username, password) =>
@@ -651,6 +662,7 @@ export function createApiClient(baseUrl = defaultBaseUrl): ApiClient {
     deleteEvent: (id) => requestJson<void>(baseUrl, `/events/${id}`, { method: "DELETE" }),
     listEventCompetitions: (eventId) =>
       requestJson<ApiEventCompetition[]>(baseUrl, `/events/${eventId}/competitions`),
+    listManagedCompetitions: () => requestJson<ApiEventCompetition[]>(baseUrl, "/competitions/admin"),
     createEventCompetition: (eventId, body) =>
       requestJson<ApiEventCompetition>(baseUrl, `/events/${eventId}/competitions`, {
         method: "POST",

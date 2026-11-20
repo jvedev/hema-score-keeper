@@ -7,6 +7,7 @@ import type { ApiEvent, ApiEventCompetition } from "@hema/event-admin-api";
 export class EventOverviewView extends BaseComponent {
   #event: ApiEvent | null = null;
   #competitions: ApiEventCompetition[] = [];
+  #attachableCompetitions: ApiEventCompetition[] = [];
   #loading = false;
   #error: string | null = null;
 
@@ -25,6 +26,16 @@ export class EventOverviewView extends BaseComponent {
 
   set competitions(value: ApiEventCompetition[]) {
     this.#competitions = value;
+    this.renderView();
+  }
+
+  /** Standalone Competitions the signed-in user manages, offered by "attach an existing competition". */
+  get attachableCompetitions(): ApiEventCompetition[] {
+    return this.#attachableCompetitions;
+  }
+
+  set attachableCompetitions(value: ApiEventCompetition[]) {
+    this.#attachableCompetitions = value;
     this.renderView();
   }
 
@@ -70,6 +81,7 @@ export class EventOverviewView extends BaseComponent {
     const evt = this.#event;
     const tournamentList = evt.tournaments ?? [];
     const compList = this.#competitions;
+    const attachable = this.#attachableCompetitions.filter((cmp) => cmp.eventId === null);
     const totalComponents = tournamentList.length + compList.length;
 
     const arenaCount = evt.arenas?.length ?? 0;
@@ -213,21 +225,41 @@ export class EventOverviewView extends BaseComponent {
         <dialog class="attach-competition-dialog">
           <form method="dialog" class="attach-competition-form">
             <h2>${t("events.addCompetition")}</h2>
-            <div class="form-group">
-              <label for="compNameInput">${t("events.nameLabel")}</label>
-              <input id="compNameInput" name="compName" required autocomplete="off" />
+            <fieldset class="competition-mode">
+              <label><input type="radio" name="compMode" value="create" checked /> ${t("events.competitionModeCreate")}</label>
+              <label><input type="radio" name="compMode" value="attach" /> ${t("events.competitionModeAttach")}</label>
+            </fieldset>
+            <div class="competition-create-fields">
+              <div class="form-group">
+                <label for="compNameInput">${t("events.competitionNameLabel")}</label>
+                <input id="compNameInput" name="compName" autocomplete="off" />
+              </div>
+              <div class="form-group">
+                <label for="compSlugInput">${t("events.slugLabel")}</label>
+                <input id="compSlugInput" name="compSlug" autocomplete="off" />
+              </div>
+              <div class="form-group">
+                <label for="compDateInput">${t("events.dateLabel")}</label>
+                <input id="compDateInput" name="compDate" type="date" />
+              </div>
             </div>
-            <div class="form-group">
-              <label for="compSlugInput">Slug</label>
-              <input id="compSlugInput" name="compSlug" required autocomplete="off" />
-            </div>
-            <div class="form-group">
-              <label for="compDateInput">Date</label>
-              <input id="compDateInput" name="compDate" type="date" required />
+            <div class="competition-attach-fields" hidden>
+              ${
+                attachable.length === 0
+                  ? `<p class="empty-subtext no-attachable-competitions">${t("events.noAttachableCompetitions")}</p>`
+                  : `<div class="form-group">
+                      <label for="compAttachSelect">${t("events.competitionSelectLabel")}</label>
+                      <select id="compAttachSelect" name="compAttach">
+                        ${attachable
+                          .map((cmp) => `<option value="${escapeHtml(cmp.id)}">${escapeHtml(cmp.name)} (${escapeHtml(cmp.date)})</option>`)
+                          .join("")}
+                      </select>
+                    </div>`
+              }
             </div>
             <div class="form-actions">
               <button type="button" class="btn-cancel cancel-competition-btn">${t("events.cancel")}</button>
-              <button type="submit" class="btn-submit">${t("events.createSubmit")}</button>
+              <button type="submit" class="btn-submit competition-submit-btn">${t("events.createCompetitionSubmit")}</button>
             </div>
           </form>
         </dialog>
@@ -334,8 +366,26 @@ export class EventOverviewView extends BaseComponent {
     const cancelCompBtn = this.root.querySelector<HTMLButtonElement>(".cancel-competition-btn");
     const compForm = this.root.querySelector<HTMLFormElement>("form.attach-competition-form");
 
+    const createFields = compDialog?.querySelector<HTMLElement>(".competition-create-fields");
+    const attachFields = compDialog?.querySelector<HTMLElement>(".competition-attach-fields");
+    const compSubmit = compDialog?.querySelector<HTMLButtonElement>(".competition-submit-btn");
+    const selectedMode = () =>
+      compForm?.querySelector<HTMLInputElement>("input[name='compMode']:checked")?.value === "attach" ? "attach" : "create";
+    const showMode = () => {
+      const attach = selectedMode() === "attach";
+      if (createFields) createFields.hidden = attach;
+      if (attachFields) attachFields.hidden = !attach;
+      createFields?.querySelectorAll<HTMLInputElement>("input").forEach((input) => (input.required = !attach));
+      if (compSubmit) {
+        compSubmit.textContent = attach ? t("events.attachCompetitionSubmit") : t("events.createCompetitionSubmit");
+        compSubmit.disabled = attach && !compForm?.querySelector("select[name='compAttach']");
+      }
+    };
+    compForm?.querySelectorAll<HTMLInputElement>("input[name='compMode']").forEach((radio) => radio.addEventListener("change", showMode));
+
     attachCompetitionBtn?.addEventListener("click", () => {
       compForm?.reset();
+      showMode();
       compDialog?.showModal();
       compDialog?.querySelector<HTMLInputElement>("input[name='compName']")?.focus();
     });
@@ -346,10 +396,24 @@ export class EventOverviewView extends BaseComponent {
 
     compForm?.addEventListener("submit", (e) => {
       e.preventDefault();
+      if (!this.#event) return;
+      if (selectedMode() === "attach") {
+        const competitionId = compForm.querySelector<HTMLSelectElement>("select[name='compAttach']")?.value;
+        if (!competitionId) return;
+        compDialog?.close();
+        this.dispatchEvent(
+          new CustomEvent("competition-attach-requested", {
+            detail: { eventId: this.#event.id, competitionId },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+        return;
+      }
       const name = compForm.querySelector<HTMLInputElement>("input[name='compName']")?.value.trim();
       const slug = compForm.querySelector<HTMLInputElement>("input[name='compSlug']")?.value.trim();
       const date = compForm.querySelector<HTMLInputElement>("input[name='compDate']")?.value.trim();
-      if (!name || !slug || !date || !this.#event) return;
+      if (!name || !slug || !date) return;
       compDialog?.close();
       this.dispatchEvent(
         new CustomEvent("competition-create-requested", {

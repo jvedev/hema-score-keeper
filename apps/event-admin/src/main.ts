@@ -15,8 +15,10 @@ import {
   type EventOverviewView,
   type TournamentWorkspaceView,
 } from "@hema/ui";
+import { renderHostedCompetition, type AdminCompetitionDetail } from "@hema/competition-admin/hosted";
 import {
   createApiClient,
+  getEventAdminApiSession,
   type EventAdminSession,
   type ApiEvent,
   type ApiEventCompetition,
@@ -33,10 +35,17 @@ const baseUrl = import.meta.env.BASE_URL;
 
 let currentEventsList: ApiEvent[] = [];
 let activeEvent: ApiEvent | null = null;
+let activeCompetition: AdminCompetitionDetail | null = null;
+let competitionRenderToken = 0;
 
-function navigateTo(route: EventAdminRoute): void {
+function navigateTo(route: EventAdminRoute, replace = false): void {
   const url = formatEventAdminRoute(route, baseUrl);
-  window.history.pushState({}, "", url);
+  if (replace) {
+    window.history.replaceState({}, "", url);
+  } else {
+    window.history.pushState({}, "", url);
+    window.scrollTo(0, 0);
+  }
   renderRoute();
 }
 
@@ -68,7 +77,7 @@ function renderRoute(): void {
       renderTournamentWorkspace(contentArea, route.eventId, route.tournamentId);
       break;
     case "competition-workspace":
-      renderEventOverview(contentArea, route.eventId);
+      renderCompetitionWorkspace(contentArea, route);
       break;
     case "event-planning":
       renderEventPlanning(contentArea, route.eventId);
@@ -177,6 +186,18 @@ function renderBreadcrumbs(bar: HTMLElement, route: EventAdminRoute, isDutch: bo
       <a href="${eventUrl}" data-route>${eventName}</a>
       <span>/</span>
       <span>${escapeHtml(tournamentName)}</span>
+    `;
+  } else if (route.kind === "competition-workspace") {
+    const eventName = activeEvent?.id === route.eventId ? activeEvent.eventName : (isDutch ? "Evenement" : "Event");
+    const eventUrl = withAppBase(`/events/${encodeURIComponent(route.eventId)}`, baseUrl);
+    const competitionName =
+      activeCompetition?.id === route.competitionId ? activeCompetition.name : isDutch ? "Competitie" : "Competition";
+    bar.innerHTML = `
+      <a href="${eventsUrl}" data-route>${eventsLabel}</a>
+      <span>/</span>
+      <a href="${eventUrl}" data-route>${escapeHtml(eventName)}</a>
+      <span>/</span>
+      <span>${escapeHtml(competitionName)}</span>
     `;
   } else if (route.kind === "event-planning") {
     const eventName = activeEvent?.id === route.eventId ? activeEvent.eventName : (isDutch ? "Evenement" : "Event");
@@ -290,15 +311,35 @@ function renderEventOverview(container: HTMLElement, eventId: string): void {
         }
       }
     });
+
+    view.addEventListener("competition-attach-requested", async (e: any) => {
+      const targetView = container.querySelector<EventOverviewView>("event-overview-view");
+      if (targetView) targetView.loading = true;
+      try {
+        await api.setCompetitionEvent(e.detail.competitionId, eventId);
+        renderEventOverview(container, eventId);
+      } catch (err: any) {
+        if (targetView) {
+          targetView.loading = false;
+          targetView.error = err instanceof Error ? err.message : "Failed to attach competition";
+        }
+      }
+    });
   }
 
   const activeView = view;
   activeView.loading = true;
-  Promise.all([api.getEvent(eventId), api.listEventCompetitions(eventId).catch(() => [])])
-    .then(([event, competitions]) => {
+  Promise.all([
+    api.getEvent(eventId),
+    api.listEventCompetitions(eventId).catch(() => []),
+    // Only Competition- and system-admin accounts may list managed Competitions; others have none to attach.
+    api.listManagedCompetitions().catch(() => []),
+  ])
+    .then(([event, competitions, managed]) => {
       activeEvent = event;
       activeView.event = event;
       activeView.competitions = competitions;
+      activeView.attachableCompetitions = managed.filter((competition) => competition.eventId === null);
       activeView.loading = false;
       const session = api.currentSession();
       if (session) {
@@ -309,6 +350,42 @@ function renderEventOverview(container: HTMLElement, eventId: string): void {
       activeView.error = err instanceof Error ? err.message : "Failed to load event";
       activeView.loading = false;
     });
+}
+
+function renderCompetitionWorkspace(
+  container: HTMLElement,
+  route: Extract<EventAdminRoute, { kind: "competition-workspace" }>,
+): void {
+  const token = ++competitionRenderToken;
+  const refreshShell = () => {
+    const session = api.currentSession();
+    if (session && token === competitionRenderToken) {
+      renderShell(session, route);
+    }
+  };
+  if (activeEvent?.id !== route.eventId) {
+    void api
+      .getEvent(route.eventId)
+      .then((event) => {
+        activeEvent = event;
+        refreshShell();
+      })
+      .catch(() => undefined);
+  }
+  void renderHostedCompetition(
+    container,
+    {
+      session: getEventAdminApiSession(),
+      navigate: (target, replace) => navigateTo(target, replace),
+      href: (target) => formatEventAdminRoute(target, baseUrl),
+      sessionExpired: () => renderLogin(),
+    },
+    route,
+  ).then(({ competition }) => {
+    if (token !== competitionRenderToken) return;
+    activeCompetition = competition;
+    refreshShell();
+  });
 }
 
 function renderTournamentWorkspace(

@@ -3,9 +3,9 @@ import { setLocale, t } from "@hema/ui";
 import "./styles.css";
 import { AdminClient, SessionExpiredError, type Session } from "./admin-client";
 import type { AppContext } from "./app-context";
-import { apiBaseUrl } from "./config";
+import { apiBaseUrl, eventAdminCompetitionUrl } from "./config";
 import { needsYouCount, startRoute } from "./mappers/needs-you";
-import { navigate as navigateTo, parseRoute, type Route } from "./router";
+import { href, navigate as navigateTo, parseRoute, type Route } from "./router";
 import { renderCompetitionScreen } from "./screens/competition";
 import { renderCompetitionsScreen } from "./screens/competitions";
 import { renderLogin } from "./screens/login";
@@ -27,6 +27,8 @@ let renderToken = 0;
 const context: AppContext = {
   client,
   navigate: (route, replace) => navigateTo(route, replace),
+  href,
+  eventHref: (eventId, competitionId) => eventAdminCompetitionUrl(eventId, competitionId),
   toast: (message) => shell?.toast(message),
   async refreshNeedsYou() {
     const count = needsYouCount(await client.needsYou());

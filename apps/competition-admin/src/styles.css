@@ -290,6 +290,16 @@ h2 {
   text-transform: uppercase;
 }
 
+.event-chip {
+  margin: 0 0 6px;
+  color: var(--verdigris);
+  text-decoration: none;
+}
+
+.event-chip:hover {
+  text-decoration: underline;
+}
+
 .panel {
   display: grid;
   gap: 10px;

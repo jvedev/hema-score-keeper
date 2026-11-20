@@ -82,8 +82,11 @@ export function registerEventLinkRoutes(app: FastifyInstance, database: Kysely<B
       return await requireCompetition(database, competitionId);
     }
 
-    // Attach case — requires Event admin of the target Event
+    // Attach case — requires admin rights on both sides: the target Event, and the Competition itself
+    // (owner/co-admin or system admin). Otherwise attaching would hand an Event admin rights over a
+    // Competition they don't manage.
     await requireEventAdmin(database, newEventId, user);
+    await requireCompetitionAdmin(database, user, competitionId);
 
     // Validate cardinality: Competition must not already be attached to another Event
     if (competition.eventId !== null && competition.eventId !== newEventId) {

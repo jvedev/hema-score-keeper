@@ -166,6 +166,48 @@ describe("event-overview-view", () => {
     expect(dialog.open).toBe(true);
   });
 
+  it("creates a new competition from the add-competition dialog", () => {
+    let detail: any = null;
+    view.addEventListener("competition-create-requested", (e: any) => (detail = e.detail));
+    $(".attach-competition-btn")!.click();
+    expect(($("dialog.attach-competition-dialog") as HTMLDialogElement).open).toBe(true);
+    expect($(".competition-attach-fields")!.hidden).toBe(true);
+    ($("input[name='compName']") as HTMLInputElement).value = "Winter Cup";
+    ($("input[name='compSlug']") as HTMLInputElement).value = "winter-cup";
+    ($("input[name='compDate']") as HTMLInputElement).value = "2026-12-01";
+    ($("form.attach-competition-form") as HTMLFormElement).requestSubmit();
+    expect(detail).toEqual({ eventId: "evt-1", name: "Winter Cup", slug: "winter-cup", date: "2026-12-01" });
+  });
+
+  it("attaches an existing standalone competition, offering only unattached ones", () => {
+    view.attachableCompetitions = [
+      { ...mockCompetitions[0]!, id: "cmp-free", name: "Free Cup", eventId: null },
+      { ...mockCompetitions[0]!, id: "cmp-taken", name: "Taken Cup", eventId: "evt-other" },
+    ];
+    let detail: any = null;
+    view.addEventListener("competition-attach-requested", (e: any) => (detail = e.detail));
+    $(".attach-competition-btn")!.click();
+    const attachRadio = $("input[name='compMode'][value='attach']") as HTMLInputElement;
+    attachRadio.checked = true;
+    attachRadio.dispatchEvent(new Event("change"));
+    expect($(".competition-create-fields")!.hidden).toBe(true);
+    expect($(".competition-submit-btn")!.textContent).toBe("Attach");
+    const options = $$("select[name='compAttach'] option").map((option) => (option as HTMLOptionElement).value);
+    expect(options).toEqual(["cmp-free"]);
+    ($("form.attach-competition-form") as HTMLFormElement).requestSubmit();
+    expect(detail).toEqual({ eventId: "evt-1", competitionId: "cmp-free" });
+  });
+
+  it("explains when there is nothing to attach and disables attaching", () => {
+    view.attachableCompetitions = [];
+    $(".attach-competition-btn")!.click();
+    const attachRadio = $("input[name='compMode'][value='attach']") as HTMLInputElement;
+    attachRadio.checked = true;
+    attachRadio.dispatchEvent(new Event("change"));
+    expect($(".no-attachable-competitions")!.textContent).toContain("no standalone competitions");
+    expect(($(".competition-submit-btn") as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("renders in Dutch", () => {
     setLocale("nl");
     expect($(".planning-link-btn")!.textContent).toContain("Evenementenplanning");

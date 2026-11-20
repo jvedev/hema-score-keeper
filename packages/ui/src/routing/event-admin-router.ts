@@ -1,8 +1,15 @@
+/** A page inside a rating Competition's workspace; absent means its participants page. */
+export type CompetitionWorkspaceView =
+  | { name: "settings" }
+  | { name: "fighter"; participantId: string }
+  | { name: "bout"; boutId: string }
+  | { name: "objection"; boutId: string };
+
 export type EventAdminRoute =
   | { kind: "events-index" }
   | { kind: "event-overview"; eventId: string }
   | { kind: "tournament-workspace"; eventId: string; tournamentId: string }
-  | { kind: "competition-workspace"; eventId: string; competitionId: string }
+  | { kind: "competition-workspace"; eventId: string; competitionId: string; view?: CompetitionWorkspaceView }
   | { kind: "event-planning"; eventId: string }
   | { kind: "not-found"; path: string };
 
@@ -18,7 +25,7 @@ export function parseEventAdminRoute(pathname: string, baseUrl?: string): EventA
     return { kind: "event-planning", eventId: "" };
   }
 
-  const parts = normalized.split("/").filter(Boolean);
+  const parts = normalized.split("/").filter(Boolean).map(decodePathPart);
 
   if (parts.length === 2 && parts[0] === "events" && parts[1]) {
     return { kind: "event-overview", eventId: parts[1] };
@@ -36,12 +43,20 @@ export function parseEventAdminRoute(pathname: string, baseUrl?: string): EventA
     };
   }
 
-  if (parts.length === 4 && parts[0] === "events" && parts[1] && parts[2] === "competitions" && parts[3]) {
-    return {
-      kind: "competition-workspace",
-      eventId: parts[1],
-      competitionId: parts[3],
-    };
+  if (parts.length >= 4 && parts[0] === "events" && parts[1] && parts[2] === "competitions" && parts[3]) {
+    const base = { kind: "competition-workspace" as const, eventId: parts[1], competitionId: parts[3] };
+    const [section, id] = parts.slice(4);
+    if (parts.length === 4) {
+      return base;
+    }
+    if (parts.length === 5 && section === "settings") {
+      return { ...base, view: { name: "settings" } };
+    }
+    if (parts.length === 6 && id) {
+      if (section === "fighters") return { ...base, view: { name: "fighter", participantId: id } };
+      if (section === "bouts") return { ...base, view: { name: "bout", boutId: id } };
+      if (section === "objections") return { ...base, view: { name: "objection", boutId: id } };
+    }
   }
 
   return { kind: "not-found", path: pathname };
@@ -60,7 +75,7 @@ export function formatEventAdminRoute(route: EventAdminRoute, baseUrl?: string):
       relativePath = `/events/${encodeURIComponent(route.eventId)}/tournaments/${encodeURIComponent(route.tournamentId)}`;
       break;
     case "competition-workspace":
-      relativePath = `/events/${encodeURIComponent(route.eventId)}/competitions/${encodeURIComponent(route.competitionId)}`;
+      relativePath = `/events/${encodeURIComponent(route.eventId)}/competitions/${encodeURIComponent(route.competitionId)}${competitionViewPath(route.view)}`;
       break;
     case "event-planning":
       relativePath = route.eventId ? `/events/${encodeURIComponent(route.eventId)}/planning` : "/planning";
@@ -70,6 +85,29 @@ export function formatEventAdminRoute(route: EventAdminRoute, baseUrl?: string):
       break;
   }
   return withAppBase(relativePath, baseUrl);
+}
+
+function competitionViewPath(view: CompetitionWorkspaceView | undefined): string {
+  switch (view?.name) {
+    case undefined:
+      return "";
+    case "settings":
+      return "/settings";
+    case "fighter":
+      return `/fighters/${encodeURIComponent(view.participantId)}`;
+    case "bout":
+      return `/bouts/${encodeURIComponent(view.boutId)}`;
+    case "objection":
+      return `/objections/${encodeURIComponent(view.boutId)}`;
+  }
+}
+
+function decodePathPart(part: string): string {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
 }
 
 export function stripAppBase(pathname: string, baseUrl?: string): string {

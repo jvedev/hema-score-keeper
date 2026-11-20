@@ -117,6 +117,24 @@ describe("event-admin-router", () => {
       ).toBe("/events/evt-1/competitions/cmp-3");
     });
 
+    it.each<[string, EventAdminRoute]>([
+      ["/events/e1/competitions/c1", { kind: "competition-workspace", eventId: "e1", competitionId: "c1" }],
+      ["/events/e1/competitions/c1/settings", { kind: "competition-workspace", eventId: "e1", competitionId: "c1", view: { name: "settings" } }],
+      ["/events/e1/competitions/c1/fighters/p1", { kind: "competition-workspace", eventId: "e1", competitionId: "c1", view: { name: "fighter", participantId: "p1" } }],
+      ["/events/e1/competitions/c1/bouts/b1", { kind: "competition-workspace", eventId: "e1", competitionId: "c1", view: { name: "bout", boutId: "b1" } }],
+      ["/events/e1/competitions/c1/objections/b1", { kind: "competition-workspace", eventId: "e1", competitionId: "c1", view: { name: "objection", boutId: "b1" } }],
+      ["/events/e%201/competitions/c%2F1/bouts/b%201", { kind: "competition-workspace", eventId: "e 1", competitionId: "c/1", view: { name: "bout", boutId: "b 1" } }],
+    ])("round-trips competition workspace path %s", (path, route) => {
+      expect(parseEventAdminRoute(`/event-admin${path}`, "/event-admin/")).toEqual(route);
+      expect(formatEventAdminRoute(route, "/event-admin/")).toBe(`/event-admin${path}`);
+    });
+
+    it("rejects unknown competition workspace pages", () => {
+      for (const path of ["/events/e1/competitions/c1/unknown", "/events/e1/competitions/c1/fighters", "/events/e1/competitions/c1/settings/x"]) {
+        expect(parseEventAdminRoute(path)).toEqual({ kind: "not-found", path });
+      }
+    });
+
     it("formats event-planning", () => {
       expect(
         formatEventAdminRoute({ kind: "event-planning", eventId: "evt-1" }),
