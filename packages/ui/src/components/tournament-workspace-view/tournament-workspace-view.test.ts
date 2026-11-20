@@ -794,4 +794,46 @@ describe("tournament-workspace-view", () => {
       expect($(".empty-state")?.textContent).toContain("Not live yet");
     });
   });
+
+  describe("Stages tab", () => {
+    beforeEach(() => {
+      view.activeTab = "stages";
+    });
+
+    it("shows stages with add stage button", () => {
+      expect($("[data-action='add-stage']")).not.toBeNull();
+      expect($$(".stage-item").length).toBe(1);
+    });
+
+    it("shows stage name and type", () => {
+      expect($(".stage-item h4")?.textContent).toContain("Pool Phase");
+      expect($(".stage-item .badge")?.textContent).toContain("POOL");
+    });
+
+    it("selects first stage by default", () => {
+      expect($(".stage-item.active")).not.toBeNull();
+      expect($(".stage-detail")).not.toBeNull();
+    });
+
+    it("shows stage sub-tabs", () => {
+      expect($$(".sub-tab").length).toBe(6);
+      expect($$(".sub-tab")[0]?.textContent).toContain("Overview");
+      expect($$(".sub-tab")[1]?.textContent).toContain("Arenas");
+      expect($$(".sub-tab")[2]?.textContent).toContain("Officials");
+    });
+
+    it("shows make active stage button for non-active stages", () => {
+      expect($("[data-action='make-active-stage']")).not.toBeNull();
+    });
+
+    it("shows rounds in rounds sub-tab", () => {
+      $("[data-subtab='rounds']")?.click();
+      expect($(".stage-rounds-pane")).not.toBeNull();
+    });
+
+    it("shows matches in matches sub-tab", () => {
+      $("[data-subtab='matches']")?.click();
+      expect($(".stage-matches-pane")).not.toBeNull();
+    });
+  });
 });

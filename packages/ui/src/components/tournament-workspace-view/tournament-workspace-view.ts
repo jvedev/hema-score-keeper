@@ -2,7 +2,7 @@ import css from "./tournament-workspace-view.css?raw";
 import { BaseComponent } from "../base-component/base-component.js";
 import { LOCALE_CHANGE_EVENT, t } from "../../i18n/i18n.js";
 import { escapeHtml } from "../../utils/escape-html.js";
-import { createApiClient, type ApiEvent, type ApiTournament, type ApiStage, type ApiEntry, type ApiStageOfficial, type StageOfficialRole, type ApiTournamentAdmin, type ApiTournamentAdminCandidate, type ApiDatabaseLiveStatus, type ApiLiveRing, type ApiDatabaseLiveResult, type ApiLiveRingColors, type ApiScoreboardSettings, type ApiRingRules, type ApiScoreboardTextSize, type ApiScoreboardTheme } from "@hema/event-admin-api";
+import { createApiClient, type ApiEvent, type ApiTournament, type ApiStage, type ApiEntry, type ApiStageOfficial, type StageOfficialRole, type ApiTournamentAdmin, type ApiTournamentAdminCandidate, type ApiDatabaseLiveStatus, type ApiLiveRing, type ApiDatabaseLiveResult, type ApiLiveRingColors, type ApiScoreboardSettings, type ApiRingRules, type ApiScoreboardTextSize, type ApiScoreboardTheme, type ApiMatch, type ApiRound } from "@hema/event-admin-api";
 
 function skillLevel(skills: Array<{ skillName: string; skillLevel: number }> | undefined, skillName: string): number {
   return skills?.find((skill) => skill.skillName === skillName && skill.skillLevel > 0)?.skillLevel ?? 0;
@@ -1212,6 +1212,108 @@ export class TournamentWorkspaceView extends BaseComponent {
     `;
   }
 
+  private renderStageRounds(stage: ApiStage, _tournament: ApiTournament): string {
+    const rounds = stage.rounds ?? [];
+
+    return `
+      <div class="stage-rounds-pane">
+        <div class="table-header-actions">
+          <h4>${t("tournament.rounds")}</h4>
+          <span class="badge">${rounds.length} ${t("tournament.rounds")}</span>
+        </div>
+        ${
+          rounds.length === 0
+            ? `<p class="empty-state">${t("tournament.noRounds")}</p>`
+            : `
+              <table class="entries-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>${t("tournament.matches")}</th>
+                    <th>${t("tournament.status")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rounds
+                    .map(
+                      (round) => `
+                        <tr>
+                          <td>${round.roundNumber}</td>
+                          <td>${round.matches?.length ?? 0}</td>
+                          <td><span class="badge">${round.matches?.length ? t("tournament.completed") : t("tournament.pending")}</span></td>
+                        </tr>
+                      `,
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            `
+        }
+      </div>
+    `;
+  }
+
+  private renderStageMatches(stage: ApiStage, tournament: ApiTournament): string {
+    const matches = stage.rounds?.flatMap((r) => r.matches ?? []) ?? [];
+    const entriesById = new Map(
+      tournament.entries?.map((e) => [e.id, e] as const) ?? [],
+    );
+
+    return `
+      <div class="stage-matches-pane">
+        <div class="table-header-actions">
+          <h4>${t("tournament.matches")}</h4>
+          <span class="badge">${matches.length} ${t("tournament.matches")}</span>
+        </div>
+        ${
+          matches.length === 0
+            ? `<p class="empty-state">${t("tournament.noMatches")}</p>`
+            : `
+              <table class="entries-table">
+                <thead>
+                  <tr>
+                    <th>${t("tournament.round")}</th>
+                    <th>${t("tournament.arena")}</th>
+                    <th>${t("tournament.fighterLeft")}</th>
+                    <th>${t("tournament.fighterRight")}</th>
+                    <th>Score</th>
+                    <th>${t("tournament.status")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${matches
+                    .map(
+                      (match) => {
+                        const entryA = entriesById.get(match.entryAId ?? "");
+                        const entryB = entriesById.get(match.entryBId ?? "");
+                        const round = stage.rounds?.find((r) => r.id === match.roundId);
+                        const score = match.scoreA !== null && match.scoreB !== null
+                          ? `${match.scoreA}-${match.scoreB}`
+                          : "—";
+                        const status = match.winnerEntryId
+                          ? t("tournament.completed")
+                          : t("tournament.pending");
+                        return `
+                          <tr>
+                            <td>${round?.roundNumber ?? "—"}</td>
+                            <td>${match.arenaId ?? "—"}</td>
+                            <td>${entryA?.user?.username ?? entryA?.id ?? "—"}</td>
+                            <td>${entryB?.user?.username ?? entryB?.id ?? "—"}</td>
+                            <td>${score}</td>
+                            <td><span class="badge">${status}</span></td>
+                          </tr>
+                        `;
+                      },
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            `
+        }
+      </div>
+    `;
+  }
+
   private renderStageSubTabContent(stage: ApiStage, tournament: ApiTournament): string {
     switch (this.#stageSubTab) {
       case "overview":
@@ -1224,39 +1326,35 @@ export class TournamentWorkspaceView extends BaseComponent {
       case "arenas":
         return `
           <div class="stage-arenas-pane">
+            <div class="table-header-actions">
+              <h4>${t("tournament.arenas")}</h4>
+              <span class="badge">${stage.arenas?.length ?? 0}</span>
+            </div>
             ${
               stage.arenas?.length
-                ? `<ul>${stage.arenas.map((a) => `<li>Arena ${escapeHtml(a.arenaId)}</li>`).join("")}</ul>`
-                : `<p class="empty-state">Geen arena's gekoppeld aan deze fase.</p>`
+                ? `<ul>${stage.arenas.map((a) => `<li>${t("tournament.arena")} ${escapeHtml(a.arenaId)}</li>`).join("")}</ul>`
+                : `<p class="empty-state">${t("tournament.noArenas")}</p>`
             }
           </div>
         `;
       case "officials":
         return `
           <div class="stage-officials-pane">
+            <div class="table-header-actions">
+              <h4>${t("tournament.tabs.officials")}</h4>
+              <span class="badge">${stage.officials?.length ?? 0}</span>
+            </div>
             ${
               stage.officials?.length
                 ? `<ul>${stage.officials.map((o) => `<li>${escapeHtml(o.role)} (${escapeHtml(o.entryId)})</li>`).join("")}</ul>`
-                : `<p class="empty-state">Geen officials toegewezen aan deze fase.</p>`
+                : `<p class="empty-state">${t("tournament.noOfficialsForStage")}</p>`
             }
           </div>
         `;
       case "rounds":
-        return `
-          <div class="stage-rounds-pane">
-            ${
-              stage.rounds?.length
-                ? `<ul>${stage.rounds.map((r) => `<li>Ronde ${r.roundNumber} (${r.matches?.length ?? 0} matches)</li>`).join("")}</ul>`
-                : `<p class="empty-state">Nog geen rondes aangemaakt.</p>`
-            }
-          </div>
-        `;
+        return this.renderStageRounds(stage, tournament);
       case "matches":
-        return `
-          <div class="stage-matches-pane">
-            <p class="empty-state">Wedstrijdenoverzicht voor ${escapeHtml(stage.name ?? "")}.</p>
-          </div>
-        `;
+        return this.renderStageMatches(stage, tournament);
       case "pool-results":
         return `
           <div class="stage-pool-results-pane">
