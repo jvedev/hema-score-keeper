@@ -2,7 +2,7 @@ import css from "./tournament-workspace-view.css?raw";
 import { BaseComponent } from "../base-component/base-component.js";
 import { LOCALE_CHANGE_EVENT, t } from "../../i18n/i18n.js";
 import { escapeHtml } from "../../utils/escape-html.js";
-import { createApiClient, type ApiEvent, type ApiTournament, type ApiStage, type ApiEntry, type ApiStageOfficial, type StageOfficialRole, type ApiTournamentAdmin, type ApiTournamentAdminCandidate, type ApiDatabaseLiveStatus, type ApiLiveRing, type ApiDatabaseLiveResult, type ApiLiveRingColors, type ApiScoreboardSettings, type ApiRingRules, type ApiScoreboardTextSize, type ApiScoreboardTheme, type ApiMatch, type ApiRound } from "@hema/event-admin-api";
+import { createApiClient, type ApiEvent, type ApiTournament, type ApiStage, type ApiEntry, type ApiStageOfficial, type StageOfficialRole, type ApiTournamentAdmin, type ApiTournamentAdminCandidate, type ApiDatabaseLiveStatus, type ApiLiveRing, type ApiDatabaseLiveResult, type ApiLiveRingColors, type ApiScoreboardSettings, type ApiRingRules, type ApiScoreboardTextSize, type ApiScoreboardTheme, type ApiMatch, type ApiRound, type StageType } from "@hema/event-admin-api";
 
 function skillLevel(skills: Array<{ skillName: string; skillLevel: number }> | undefined, skillName: string): number {
   return skills?.find((skill) => skill.skillName === skillName && skill.skillLevel > 0)?.skillLevel ?? 0;
@@ -56,6 +56,20 @@ export class TournamentWorkspaceView extends BaseComponent {
   #showAddAdmin = false;
   #adminUserId: string = "";
   #accessError: string | null = null;
+  // Stage management state
+  #showAddStage = false;
+  #stageName = "";
+  #stageType: StageType = "POOL";
+  #stageMinPoolSize = "";
+  #stageMaxPoolSize = "";
+  #addingStage = false;
+  #stageError: string | null = null;
+  #deletingStageId: string | null = null;
+  #showEditStage: string | null = null;
+  #editStageName: string = "";
+  #editStageMinPoolSize: string = "";
+  #editStageMaxPoolSize: string = "";
+  #savingStage = false;
   // Live state
   #liveStatus: ApiDatabaseLiveStatus | null = null;
   #liveRings: ApiLiveRing[] = [];
@@ -165,13 +179,15 @@ export class TournamentWorkspaceView extends BaseComponent {
     });
     this.registerEvent(this.root, "submit", (e) => {
       const form = e.target as HTMLFormElement;
-      if (form.dataset.form !== "add-participant" && form.dataset.form !== "add-bulk" && form.dataset.form !== "edit-entry" && form.dataset.form !== "add-official" && form.dataset.form !== "add-admin" && form.dataset.form !== "ring-edit") return;
+      if (form.dataset.form !== "add-participant" && form.dataset.form !== "add-bulk" && form.dataset.form !== "edit-entry" && form.dataset.form !== "add-official" && form.dataset.form !== "add-admin" && form.dataset.form !== "ring-edit" && form.dataset.form !== "add-stage" && form.dataset.form !== "edit-stage") return;
       e.preventDefault();
       if (form.dataset.form === "add-bulk") void this.addBulk(form);
       else if (form.dataset.form === "edit-entry") void this.saveEntry(form);
       else if (form.dataset.form === "add-official") void this.addOfficial(form);
       else if (form.dataset.form === "add-admin") void this.handleAddAdmin(form);
       else if (form.dataset.form === "ring-edit") void this.handleRingEdit(form);
+      else if (form.dataset.form === "add-stage") void this.handleAddStage(form);
+      else if (form.dataset.form === "edit-stage") void this.handleEditStage(form);
       else void this.addParticipant(form);
     });
   }
@@ -202,6 +218,13 @@ export class TournamentWorkspaceView extends BaseComponent {
     const stageItem = target.closest<HTMLElement>(".stage-item");
     if (stageItem && stageItem.dataset.stageId) {
       this.#selectedStageId = stageItem.dataset.stageId;
+      this.renderView();
+      return;
+    }
+    // Handle stage selection from buttons with data-stage-id but no data-action
+    const stageButton = target.closest<HTMLElement>("[data-stage-id]:not([data-action])");
+    if (stageButton && stageButton.dataset.stageId) {
+      this.#selectedStageId = stageButton.dataset.stageId;
       this.renderView();
       return;
     }
@@ -407,6 +430,50 @@ export class TournamentWorkspaceView extends BaseComponent {
           this.#showingCorrectionModal = true;
           this.#correctingResultId = resultId;
           this.renderView();
+        }
+      } else if (action === "add-stage") {
+        this.#showAddStage = true;
+        this.#stageError = null;
+        this.renderView();
+      } else if (action === "cancel-add-stage") {
+        this.#showAddStage = false;
+        this.#stageName = "";
+        this.#stageType = "POOL";
+        this.#stageMinPoolSize = "";
+        this.#stageMaxPoolSize = "";
+        this.#stageError = null;
+        this.renderView();
+      } else if (action === "edit-stage") {
+        const stageId = actionEl.dataset.stageId;
+        const tournament = this.currentTournament();
+        if (stageId && tournament) {
+          const stage = tournament.stages?.find((s) => s.id === stageId);
+          if (stage) {
+            this.#showEditStage = stageId;
+            this.#editStageName = stage.name ?? "";
+            this.#editStageMinPoolSize = stage.minPoolSize?.toString() ?? "";
+            this.#editStageMaxPoolSize = stage.maxPoolSize?.toString() ?? "";
+            this.#stageError = null;
+            this.renderView();
+          }
+        }
+      } else if (action === "cancel-edit-stage") {
+        this.#showEditStage = null;
+        this.#editStageName = "";
+        this.#editStageMinPoolSize = "";
+        this.#editStageMaxPoolSize = "";
+        this.#stageError = null;
+        this.renderView();
+      } else if (action === "delete-stage") {
+        const stageId = actionEl.dataset.stageId;
+        const stageName = actionEl.closest(".stage-item")?.querySelector("h4")?.textContent ?? "";
+        if (stageId && window.confirm(t("tournament.deleteStageConfirm", { name: stageName }))) {
+          void this.deleteStage(stageId);
+        }
+      } else if (action === "make-active-stage") {
+        const stageId = actionEl.dataset.stageId;
+        if (stageId) {
+          void this.makeActiveStage(stageId);
         }
       }
     }
@@ -652,6 +719,25 @@ export class TournamentWorkspaceView extends BaseComponent {
     await this.addTournamentAdmin();
   }
 
+  private async handleAddStage(form: HTMLFormElement): Promise<void> {
+    const formData = new FormData(form);
+    this.#stageName = String(formData.get("name") ?? "");
+    this.#stageType = String(formData.get("type") ?? "POOL") as StageType;
+    this.#stageMinPoolSize = String(formData.get("minPoolSize") ?? "");
+    this.#stageMaxPoolSize = String(formData.get("maxPoolSize") ?? "");
+    await this.createStage();
+  }
+
+  private async handleEditStage(form: HTMLFormElement): Promise<void> {
+    const formData = new FormData(form);
+    const stageId = this.#showEditStage;
+    if (!stageId) return;
+    this.#editStageName = String(formData.get("name") ?? "");
+    this.#editStageMinPoolSize = String(formData.get("minPoolSize") ?? "");
+    this.#editStageMaxPoolSize = String(formData.get("maxPoolSize") ?? "");
+    await this.saveStage(stageId);
+  }
+
   private async handleRingEdit(form: HTMLFormElement): Promise<void> {
     const formData = new FormData(form);
     const ringId = this.#editingRingId;
@@ -868,6 +954,129 @@ export class TournamentWorkspaceView extends BaseComponent {
       }
     } finally {
       this.#savingRing = false;
+      this.renderView();
+    }
+  }
+
+  private async createStage(): Promise<void> {
+    const tournamentId = this.#tournamentId;
+    if (!tournamentId) return;
+
+    this.#addingStage = true;
+    this.#stageError = null;
+    this.renderView();
+
+    const current = () => this.#tournamentId === tournamentId;
+    try {
+      const api = createApiClient();
+      const newStage = await api.createStage({
+        tournamentId,
+        type: this.#stageType,
+        name: this.#stageName || null,
+        minPoolSize: this.#stageMinPoolSize ? Number(this.#stageMinPoolSize) : null,
+        maxPoolSize: this.#stageMaxPoolSize ? Number(this.#stageMaxPoolSize) : null,
+      });
+      if (current()) {
+        const refreshed = await api.getEvent(this.#event!.id);
+        this.#event = refreshed;
+        this.#showAddStage = false;
+        this.#stageName = "";
+        this.#stageType = "POOL";
+        this.#stageMinPoolSize = "";
+        this.#stageMaxPoolSize = "";
+      }
+    } catch (error) {
+      if (current()) {
+        this.#stageError = error instanceof Error ? error.message : t("tournament.createStageError");
+      }
+    } finally {
+      this.#addingStage = false;
+      this.renderView();
+    }
+  }
+
+  private async deleteStage(stageId: string): Promise<void> {
+    const tournamentId = this.#tournamentId;
+    if (!tournamentId) return;
+
+    this.#deletingStageId = stageId;
+    this.#stageError = null;
+    this.renderView();
+
+    const current = () => this.#tournamentId === tournamentId;
+    try {
+      const api = createApiClient();
+      await api.deleteStage(stageId);
+      if (current()) {
+        const refreshed = await api.getEvent(this.#event!.id);
+        this.#event = refreshed;
+        if (this.#selectedStageId === stageId) {
+          this.#selectedStageId = null;
+        }
+      }
+    } catch (error) {
+      if (current()) {
+        this.#stageError = error instanceof Error ? error.message : t("tournament.deleteStageError");
+      }
+    } finally {
+      this.#deletingStageId = null;
+      this.renderView();
+    }
+  }
+
+  private async makeActiveStage(stageId: string): Promise<void> {
+    const tournamentId = this.#tournamentId;
+    if (!tournamentId) return;
+
+    this.#stageError = null;
+    this.renderView();
+
+    const current = () => this.#tournamentId === tournamentId;
+    try {
+      const api = createApiClient();
+      await api.updateTournament(tournamentId, { currentStageId: stageId });
+      if (current()) {
+        const refreshed = await api.getEvent(this.#event!.id);
+        this.#event = refreshed;
+        this.#selectedStageId = stageId;
+      }
+    } catch (error) {
+      if (current()) {
+        this.#stageError = error instanceof Error ? error.message : t("tournament.makeActiveStageError");
+      }
+    } finally {
+      this.renderView();
+    }
+  }
+
+  private async saveStage(stageId: string): Promise<void> {
+    const tournamentId = this.#tournamentId;
+    if (!tournamentId) return;
+
+    this.#savingStage = true;
+    this.#stageError = null;
+    this.renderView();
+
+    const current = () => this.#tournamentId === tournamentId && this.#showEditStage === stageId;
+    try {
+      const api = createApiClient();
+      const body: Partial<ApiStage> = {
+        name: this.#editStageName || null,
+        minPoolSize: this.#editStageMinPoolSize ? Number(this.#editStageMinPoolSize) : null,
+        maxPoolSize: this.#editStageMaxPoolSize ? Number(this.#editStageMaxPoolSize) : null,
+      };
+      await api.updateStage(stageId, body);
+      if (current()) {
+        const refreshed = await api.getEvent(this.#event!.id);
+        this.#event = refreshed;
+        this.#showEditStage = null;
+      }
+    } catch (error) {
+      if (current()) {
+        this.#stageError = error instanceof Error ? error.message : t("tournament.saveStageError");
+      }
+    } finally {
+      this.#savingStage = false;
       this.renderView();
     }
   }
@@ -1135,6 +1344,38 @@ export class TournamentWorkspaceView extends BaseComponent {
             ${t("tournament.addStage")}
           </button>
         </div>
+        ${this.#stageError ? `<p role="alert">${escapeHtml(this.#stageError)}</p>` : ""}
+        ${this.#showAddStage
+          ? `
+            <form data-form="add-stage" class="stage-form">
+              <label>${t("tournament.stageName")} <input name="name" value="${escapeHtml(this.#stageName)}" ${this.#addingStage ? "disabled" : ""} /></label>
+              <label>
+                ${t("tournament.stageType")}
+                <select name="type" ${this.#addingStage ? "disabled" : ""}>
+                  <option value="POOL" ${this.#stageType === "POOL" ? "selected" : ""}>${t("tournament.stageTypePool")}</option>
+                  <option value="ELIMINATION" ${this.#stageType === "ELIMINATION" ? "selected" : ""}>${t("tournament.stageTypeElimination")}</option>
+                  <option value="SEMI_FINAL" ${this.#stageType === "SEMI_FINAL" ? "selected" : ""}>${t("tournament.stageTypeSemiFinal")}</option>
+                  <option value="FINAL" ${this.#stageType === "FINAL" ? "selected" : ""}>${t("tournament.stageTypeFinal")}</option>
+                </select>
+              </label>
+              <label>${t("tournament.minPoolSize")} <input name="minPoolSize" type="number" value="${escapeHtml(this.#stageMinPoolSize)}" ${this.#addingStage ? "disabled" : ""} /></label>
+              <label>${t("tournament.maxPoolSize")} <input name="maxPoolSize" type="number" value="${escapeHtml(this.#stageMaxPoolSize)}" ${this.#addingStage ? "disabled" : ""} /></label>
+              <button type="submit" ${this.#addingStage ? "disabled" : ""}>${t("tournament.addStage")}</button>
+              <button type="button" data-action="cancel-add-stage" ${this.#addingStage ? "disabled" : ""}>${t("tournament.cancelStage")}</button>
+            </form>
+          `
+          : ""}
+        ${this.#showEditStage
+          ? `
+            <form data-form="edit-stage" class="stage-form">
+              <label>${t("tournament.stageName")} <input name="name" value="${escapeHtml(this.#editStageName)}" ${this.#savingStage ? "disabled" : ""} /></label>
+              <label>${t("tournament.minPoolSize")} <input name="minPoolSize" type="number" value="${escapeHtml(this.#editStageMinPoolSize)}" ${this.#savingStage ? "disabled" : ""} /></label>
+              <label>${t("tournament.maxPoolSize")} <input name="maxPoolSize" type="number" value="${escapeHtml(this.#editStageMaxPoolSize)}" ${this.#savingStage ? "disabled" : ""} /></label>
+              <button type="submit" ${this.#savingStage ? "disabled" : ""}>${t("tournament.saveStage")}</button>
+              <button type="button" data-action="cancel-edit-stage" ${this.#savingStage ? "disabled" : ""}>${t("tournament.cancelParticipant")}</button>
+            </form>
+          `
+          : ""}
 
         ${
           stages.length === 0
@@ -1149,7 +1390,17 @@ export class TournamentWorkspaceView extends BaseComponent {
                   class="stage-item ${selectedStage?.id === stage.id ? "active" : ""}"
                   data-stage-id="${stage.id}"
                 >
-                  <h4>${escapeHtml(stage.name ?? "")}</h4>
+                  <div class="stage-item-header">
+                    <h4>${escapeHtml(stage.name ?? t("tournament.unnamedStage"))}</h4>
+                    <div class="stage-item-actions">
+                      <button type="button" class="btn-secondary" data-action="edit-stage" data-stage-id="${stage.id}" ${this.#deletingStageId === stage.id || this.#showEditStage === stage.id ? "disabled" : ""}>
+                        ${t("tournament.editStage")}
+                      </button>
+                      <button type="button" class="btn-secondary" data-action="delete-stage" data-stage-id="${stage.id}" ${this.#deletingStageId === stage.id ? "disabled" : ""}>
+                        ${t("tournament.deleteStage")}
+                      </button>
+                    </div>
+                  </div>
                   <div class="badges-row" style="margin-top: 0.25rem;">
                     <span class="badge">${stage.type}</span>
                     ${stage.id === activeStageId ? `<span class="badge active-stage-badge">${t("tournament.activeStage")}</span>` : ""}

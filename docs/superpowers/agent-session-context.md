@@ -182,4 +182,44 @@ at `/events/:eventId/planning`. Plan: `docs/superpowers/plans/2026-11-18-phase-4
 - **Remaining Phase 4 work (unchanged, not started):** port the remaining placeholder workflows (officials, access, matches, live) from `event-view` — only after the user reports participant-management browser acceptance. Then Phase 5.
 - **Browser acceptance (user's manual step, everything else is done):** `npm run backend:dev` (:3001) + `npm run event-admin:dev -- --port 5182` → `http://localhost:5182/event-admin/events`, login `jeroen` or `admin` / password `zwaard`; walk through add / bulk add / also-volunteer, edit person (username, volunteer flags, judge/jury stars), delete, move entry between tournaments.
 
+## Current session (2026-11-20, continued from compaction):
+
+- **Completed:**
+  - Fixed 12 typecheck errors in `tournament-workspace-view.test.ts` by simplifying test objects (removed complex spreading that violated strict null checks)
+  - All 351 UI tests pass, typecheck clean
+  - Implemented officials workflow: tab with stages list, add/delete official buttons, form with entry+role dropdowns, API calls using createStageOfficial/deleteStageOfficial, i18n (en/nl)
+  - Implemented access workflow: tournament administrators management with add/remove, candidate selection, confirmation dialogs, i18n (en/nl)
+  - Implemented Live workflow: activation, ring management (keeper/scoreboard links with rotation), ring colors/settings forms, live results table, correction modal, i18n (en/nl)
+  - Implemented Stages workflow: stage list sidebar, detail panel with sub-tabs (overview, arenas, officials, rounds, matches, pool-results), active stage management, i18n (en/nl)
+  - Implemented Matches workflow: matches table with fighters, scores, status per stage/round
+  - Fixed CSS theme consistency: dark background on body and content area, improved button/text contrast, scrollbar visibility
+  - Fixed translation of participant table headers: hardcoded "Seed", "Naam", "Rol", "Acties" now use translation keys
+- **Commits made:**
+  1. `3844ac9` - fix(ui): simplify tournament-workspace-view tests and commit officials workflow
+  2. `843465d` - fix(ui): improve contrast and theme consistency for tournament workspace
+  3. `efa53b9` - fix(ui): translate participant table headers to Dutch/English
+  4. `55bccb1` - feat(ui): implement tournament access workflow (admin management)
+  5. `a420cc7` - feat(ui): implement tournament Live workflow
+  6. `1be4b07` - feat(ui): implement tournament Stages and Matches workflow
+- **Current status:**
+  - Typecheck: ✅ PASS (0 errors)
+  - Tests: ✅ PASS (351 tests)
+  - Browser acceptance: ⏳ PENDING user verification
+- **Next step:** Browser acceptance testing of all fixes at `http://localhost:5173/event-admin/events/015314f2-190a-4868-a96c-b5d77111bd0c`
+  - Navigate to a tournament to see the tournament-workspace-view
+  - Verify: All 6 tabs (Overview, Participants, Stages, Officials, Access, Live) work correctly
+- **User feedback addressed:**
+  - ✅ Officials workflow now visible and functional (can add/delete officials, not just participants)
+  - ✅ Access workflow now implemented (can add/remove tournament administrators)
+  - ✅ Live workflow now implemented (can activate, manage rings, view results)
+  - ✅ Stages workflow now implemented (can view stages, rounds, matches)
+  - ✅ Button text contrast improved (changed from light gray to white)
+  - ✅ Body theme consistency (dark background throughout)
+  - ✅ Scrollbar visibility on laptop (scrollbar styling applied)
+  - ✅ Seed field visibility - now properly labeled "Plaatsing" in Dutch, "Seed" in English
+- **Remaining Phase 4 work:**
+  - Stage management: create/delete stages, edit stage properties
+  - Match management: create/delete matches, edit match details
+  - Full stage advancement workflow
+
 This handoff was created on 2026-10-28. If the repository's plans or commit history have moved on, trust the newer repository evidence and update this file rather than following stale status here.
