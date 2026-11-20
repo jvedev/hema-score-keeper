@@ -155,9 +155,6 @@ describe("Competition–Event link", () => {
 
   describe("requireCompetitionAdmin via HTTP", () => {
     it("Event admin with COMPETITION_ADMIN role can PATCH attached Competition", async () => {
-      // Event admins with USER role are blocked by requireAdminUser on admin routes.
-      // Those with COMPETITION_ADMIN role pass the outer guard and then requireCompetitionAdmin
-      // authorizes them via the Event admin check.
       const eventAdminWithRole = await insertUser(ctx.database, { id: "event-admin-role", role: "COMPETITION_ADMIN", name: "Event Admin Role" });
       await createEvent("event1");
       await insertEventAdmin(ctx.database, { eventId: "event1", userId: eventAdminWithRole.id });
@@ -173,19 +170,44 @@ describe("Competition–Event link", () => {
       expect(res.json().name).toBe("Updated");
     });
 
-    it("Event admin with USER role is blocked by requireAdminUser on admin routes", async () => {
+    // User decision 2026-11-20: an Event admin manages every part of their Event, whatever their account role.
+    it("Event admin with a USER account manages an attached Competition", async () => {
       await createEvent("event1");
       await insertEventAdmin(ctx.database, { eventId: "event1", userId: eventAdmin.id });
       await createCompetition("comp1", "event1");
+      await addCompetitionAdmin("comp1", compAdmin.id, "OWNER");
+      const as = (method: "GET" | "POST" | "PATCH", url: string, payload?: object) =>
+        ctx.app.inject({ method, url, headers: bearer(eventAdmin), ...(payload ? { payload } : {}) });
 
-      const res = await ctx.app.inject({
-        method: "PATCH",
-        url: "/api/v1/competitions/comp1",
-        headers: bearer(eventAdmin),
-        payload: { name: "Updated" },
-      });
-      // Blocked by requireAdminUser — event admins with USER role should use Event-scoped routes (Step 3).
-      expect(res.statusCode).toBe(403);
+      const patched = await as("PATCH", "/api/v1/competitions/comp1", { name: "Updated" });
+      expect(patched.statusCode).toBe(200);
+      expect(patched.json().name).toBe("Updated");
+      expect((await as("GET", "/api/v1/competitions/comp1/admins")).statusCode).toBe(200);
+      expect((await as("POST", "/api/v1/competitions/comp1/invite")).statusCode).toBe(200);
+      expect((await as("POST", "/api/v1/competitions/comp1/participants", { name: "Regular", userId: regularUser.id })).statusCode).toBe(200);
+      const managed = await as("GET", "/api/v1/competitions/admin");
+      expect(managed.statusCode).toBe(200);
+      expect((managed.json() as Array<{ id: string }>).map((competition) => competition.id)).toEqual(["comp1"]);
+    });
+
+    it("a USER account without Event or Competition rights is still refused", async () => {
+      await createEvent("event1");
+      await createCompetition("comp1", "event1");
+      await createCompetition("standalone");
+      await insertEventAdmin(ctx.database, { eventId: "event1", userId: eventAdmin.id });
+      for (const [user, url] of [
+        [regularUser, "/api/v1/competitions/comp1"],
+        [eventAdmin, "/api/v1/competitions/standalone"],
+      ] as const) {
+        const res = await ctx.app.inject({ method: "PATCH", url, headers: bearer(user), payload: { name: "Hijacked" } });
+        expect(res.statusCode).toBe(403);
+      }
+      // Standalone-only admin pages stay behind the account role.
+      expect((await ctx.app.inject({ method: "GET", url: "/api/v1/admin/needs-you", headers: bearer(eventAdmin) })).statusCode).toBe(403);
+      expect(
+        (await ctx.app.inject({ method: "POST", url: "/api/v1/competitions", headers: bearer(eventAdmin), payload: { name: "N", slug: "n", date: "2027-01-01" } }))
+          .statusCode,
+      ).toBe(403);
     });
 
     it("Event admin with COMPETITION_ADMIN role can list attached Competition admins", async () => {

@@ -16,6 +16,29 @@ beforeEach(async () => {
 });
 
 describe("resolving an objection", () => {
+  it("lets an admin of the Event that X belongs to resolve it, even with a USER account", async () => {
+    const { database } = world.ctx;
+    await database.insertInto("Event").values({ id: "ev", eventName: "Ev", rulesetId: null, allFightersAreVolunteers: 0 }).execute();
+    await database.updateTable("Competition").set({ eventId: "ev" }).where("id", "=", "X").execute();
+    await database
+      .insertInto("EventAdmin")
+      .values({ eventId: "ev", userId: "outsider", addedByUserId: "outsider", createdAt: "2026-11-20T10:00:00.000Z" })
+      .execute();
+    const response = await resolve("outsider", { kind: "restore" });
+    expect(response.statusCode).toBe(200);
+    expect((response.json() as { status: string }).status).toBe("COUNTED");
+  });
+
+  it("refuses an Event admin when none of the bout's competitions belong to their Event", async () => {
+    const { database } = world.ctx;
+    await database.insertInto("Event").values({ id: "ev", eventName: "Ev", rulesetId: null, allFightersAreVolunteers: 0 }).execute();
+    await database
+      .insertInto("EventAdmin")
+      .values({ eventId: "ev", userId: "outsider", addedByUserId: "outsider", createdAt: "2026-11-20T10:00:00.000Z" })
+      .execute();
+    expect((await resolve("outsider", { kind: "restore" })).statusCode).toBe(403);
+  });
+
   it("restores the bout", async () => {
     const response = await resolve("ownerX", { kind: "restore" });
     expect(response.statusCode).toBe(200);

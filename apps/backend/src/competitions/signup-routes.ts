@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { Kysely } from "kysely";
-import { requireAdminUser, requirePathParam, type AccessUser } from "../access-user.js";
+import { requirePathParam, type AccessUser } from "../access-user.js";
 import { generateToken } from "../auth.js";
 import { requireUser } from "../bouts/bout-routes.js";
 import { requireCompetition, type CompetitionDetail } from "../competition-model.js";
@@ -203,7 +203,7 @@ export function registerSignupRoutes(app: FastifyInstance, database: Kysely<Back
   });
 
   app.post("/api/v1/competitions/:id/invite", async (request): Promise<NewInvite> => {
-    const user = await requireAdminUser(request, database);
+    const user = await requireUser(request, database);
     const competitionId = requirePathParam(request, "id");
     await requireCompetition(database, competitionId);
     await requireCompetitionAdmin(database, user, competitionId);
@@ -215,7 +215,7 @@ export function registerSignupRoutes(app: FastifyInstance, database: Kysely<Back
   });
 
   app.post("/api/v1/competitions/:id/participants/:participantId/decision", async (request): Promise<SignupDecisionResult> => {
-    const user = await requireAdminUser(request, database);
+    const user = await requireUser(request, database);
     const competitionId = requirePathParam(request, "id");
     const participantId = requirePathParam(request, "participantId");
     const competition = await requireCompetition(database, competitionId);

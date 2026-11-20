@@ -8,6 +8,7 @@ import {
 import type { FastifyInstance } from "fastify";
 import type { Kysely } from "kysely";
 import { requireAdminUser, requirePathParam, type AccessUser } from "../access-user.js";
+import { requireUser } from "../bouts/bout-routes.js";
 import { hashEmail } from "../auth.js";
 import { listCompetitions, requireCompetition } from "../competition-model.js";
 import type { BackendDatabase } from "../db.js";
@@ -31,7 +32,7 @@ export function registerCompetitionAdminRoutes(app: FastifyInstance, database: K
   app.get("/api/v1/admin/needs-you", async (request) => needsYou(database, await requireAdminUser(request, database)));
 
   app.get("/api/v1/competitions/admin", async (request) => {
-    const user = await requireAdminUser(request, database);
+    const user = await requireUser(request, database);
     const competitions = await listCompetitions(database);
     const managed = await listManagedCompetitionIds(database, user);
     if (managed === "ALL") {
@@ -72,7 +73,7 @@ export function registerCompetitionAdminRoutes(app: FastifyInstance, database: K
   });
 
   app.patch("/api/v1/competitions/:id", async (request) => {
-    const user = await requireAdminUser(request, database);
+    const user = await requireUser(request, database);
     const competitionId = requirePathParam(request, "id");
     const existing = await requireCompetition(database, competitionId);
     await requireCompetitionAdmin(database, user, competitionId);
@@ -130,7 +131,7 @@ export function registerCompetitionAdminRoutes(app: FastifyInstance, database: K
   });
 
   app.post("/api/v1/competitions/:id/transitions", async (request) => {
-    const user = await requireAdminUser(request, database);
+    const user = await requireUser(request, database);
     const competitionId = requirePathParam(request, "id");
     const competition = await requireCompetition(database, competitionId);
     await requireCompetitionAdmin(database, user, competitionId);
@@ -166,7 +167,7 @@ export function registerCompetitionAdminRoutes(app: FastifyInstance, database: K
   });
 
   app.post("/api/v1/competitions/:id/participants", async (request) => {
-    const user = await requireAdminUser(request, database);
+    const user = await requireUser(request, database);
     const competitionId = requirePathParam(request, "id");
     await requireCompetition(database, competitionId);
     await requireCompetitionAdmin(database, user, competitionId);

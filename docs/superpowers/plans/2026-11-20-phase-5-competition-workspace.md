@@ -194,9 +194,8 @@ competition-admin, ui and event-admin.
 **Phase 5 status: implemented and auto-verified; browser acceptance by the user is open.**
 
 Open points for the user:
-1. Event admins with a `USER` account role cannot open the Competition screens
-   (`requireAdminUser` on the Competition admin routes, asserted by an existing test). Decide
-   whether those routes should accept any manager of the Competition instead.
+1. ~~Event admins with a `USER` account role cannot open the Competition screens.~~ Resolved
+   2026-11-20, see below.
 2. The two apps keep separate sign-ins; the "Part of <Event>" link may ask to sign in again.
 3. One extra `GET /competitions/:id` per hosted page load (Event check + screen).
 4. Phase 4 open items remain (stage/match create/delete, stage advancement, browser acceptance).
@@ -206,3 +205,27 @@ and `npm run competition-admin:dev -- --port 5181`; sign in as `admin`. In Event
 *Add competition* → create one, and attach an existing one; open it (participants, fighter, bout,
 Settings), detach it from Settings. In Competition-admin, an attached Competition shows
 "Part of <Event> ›".
+
+2026-11-20, after commit `36dc17b` — **decision (user): an Event admin manages every part of the
+Event they manage, whatever their account role.** Local `master` fast-forwarded to `36dc17b` again
+(not pushed). Changes (uncommitted):
+- The Competition-scoped admin routes (`PATCH /competitions/:id`, `/transitions`, `POST /participants`,
+  `/admins` GET/POST/DELETE, `/owner`, `/invite`, sign-up `/decision`) only require a signed-in user
+  plus `requireCompetitionAdmin` (owner/co-admin, parent Event admin, system admin); the
+  `COMPETITION_ADMIN` account-role gate (`requireAdminUser`) is gone there. `GET /competitions/admin`
+  likewise lists what the signed-in user manages (empty for someone who manages nothing).
+  Standalone-only pages keep the role gate: `GET /admin/needs-you` and `POST /competitions`.
+- `isAdminOfBout` (objection review, admin bout view) uses `competitionAdminRole`, so the parent
+  Event's admins also manage bouts of their Event's Competitions.
+- Within an attached Competition an Event admin acts like a co-admin: adding co-admins and
+  transferring ownership stay owner/system-admin only (unchanged `requireOwnerOrSystem`).
+- Tests: `competition-event-link.test.ts` — the old "USER role is blocked" test is replaced by "Event
+  admin with a USER account manages an attached Competition" (PATCH, admins, invite, enrol, managed
+  list) and "a USER account without Event or Competition rights is still refused" (plus needs-you and
+  create stay 403); `bout-resolution.test.ts` — an Event admin with a USER account resolves an
+  objection in their Event's Competition, and is refused for a bout outside it;
+  `competition-access.test.ts` — a plain user now gets an empty managed list instead of 403.
+- Verified: backend 365 passed, smoke 12 passed, backend typecheck clean. Browser (isolated backend,
+  scratch copy where `jeroen` was made a `USER` Event admin and competition-1's owner moved to
+  `admin`): `jeroen` opens the attached Competition's Settings in Event-admin and saving the details
+  returns 200.

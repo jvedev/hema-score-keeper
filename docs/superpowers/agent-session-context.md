@@ -45,9 +45,10 @@ Event-admin client calls a missing `GET /api/v1/events/:id`; stale tracked
 pushed). The user chose to continue with **Phase 5** (rating Competition inside Event-admin) while
 Phase 4's open items stay open. Phase 5 is implemented and auto-verified, uncommitted on
 `jetbrains-ai`; see [`plans/2026-11-20-phase-5-competition-workspace.md`](plans/2026-11-20-phase-5-competition-workspace.md)
-for what changed, verification, the user's browser-acceptance steps and four open points (notably:
-Event admins with a `USER` account role cannot open Competition screens). Decision 2026-11-20:
-attaching a Competition to an Event needs admin rights on both. After acceptance: Phase 7 of the
+for what changed, verification, the user's browser-acceptance steps and open points. Decisions
+2026-11-20: attaching a Competition to an Event needs admin rights on both; an Event admin manages
+every part of their Event whatever their account role (Phase 5 committed as `36dc17b`, master
+fast-forwarded to it; the account-role follow-up is uncommitted). After acceptance: Phase 7 of the
 unified Event-admin plan.
 
 **Earlier next (2026-11-19):** Phase 4 is **not complete** (see the 2026-11-19 handoff below): the participant-management plan is now implemented and auto-verified (browser acceptance still with the user), but the remaining tournament-workspace placeholders (officials, access, matches, live) do not preserve all existing management and live-scoring workflows. Resume Phase 4 against its approved plan before starting Phase 5. HTTPS, Web Push and phone tests stay deferred to the end; GitHub Codespaces (HTTPS forwarded ports) is the intended place for them; also re-test the Windows package and Alwaysdata with the new schema then.

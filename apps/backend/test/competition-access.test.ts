@@ -97,6 +97,9 @@ describe("competition access", () => {
         payload: { name: "x" },
       }),
     ]);
-    expect(responses.map((response) => response.statusCode)).toEqual([403, 403, 403, 403]);
+    // The managed list is per user since Event admins with any account role manage their Event's competitions:
+    // a plain user who manages nothing gets an empty list rather than a refusal.
+    expect(responses.map((response) => response.statusCode)).toEqual([200, 403, 403, 403]);
+    expect(responses[0]!.json()).toEqual([]);
   });
 });

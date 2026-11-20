@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Kysely } from "kysely";
-import { requireAdminUser, requirePathParam } from "../access-user.js";
+import { requirePathParam } from "../access-user.js";
+import { requireUser } from "../bouts/bout-routes.js";
 import { requireCompetition } from "../competition-model.js";
 import type { BackendDatabase } from "../db.js";
 import { ensureObject, HttpError, requireString } from "../http.js";
@@ -15,7 +16,7 @@ export interface CompetitionAdminEntry {
 
 export function registerCoAdminRoutes(app: FastifyInstance, database: Kysely<BackendDatabase>): void {
   app.get("/api/v1/competitions/:id/admins", async (request) => {
-    const user = await requireAdminUser(request, database);
+    const user = await requireUser(request, database);
     const competitionId = requirePathParam(request, "id");
     await requireCompetition(database, competitionId);
     await requireCompetitionAdmin(database, user, competitionId);
@@ -23,7 +24,7 @@ export function registerCoAdminRoutes(app: FastifyInstance, database: Kysely<Bac
   });
 
   app.post("/api/v1/competitions/:id/admins", async (request) => {
-    const user = await requireAdminUser(request, database);
+    const user = await requireUser(request, database);
     const competitionId = requirePathParam(request, "id");
     await requireCompetition(database, competitionId);
     requireOwnerOrSystem(await requireCompetitionAdmin(database, user, competitionId), "add co-admins");
@@ -46,7 +47,7 @@ export function registerCoAdminRoutes(app: FastifyInstance, database: Kysely<Bac
   });
 
   app.delete("/api/v1/competitions/:id/admins/:userId", async (request) => {
-    const user = await requireAdminUser(request, database);
+    const user = await requireUser(request, database);
     const competitionId = requirePathParam(request, "id");
     const userId = requirePathParam(request, "userId");
     await requireCompetition(database, competitionId);
@@ -72,7 +73,7 @@ export function registerCoAdminRoutes(app: FastifyInstance, database: Kysely<Bac
   });
 
   app.post("/api/v1/competitions/:id/owner", async (request) => {
-    const user = await requireAdminUser(request, database);
+    const user = await requireUser(request, database);
     const competitionId = requirePathParam(request, "id");
     await requireCompetition(database, competitionId);
     requireOwnerOrSystem(await requireCompetitionAdmin(database, user, competitionId), "transfer ownership");

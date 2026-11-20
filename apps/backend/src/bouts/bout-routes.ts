@@ -23,6 +23,7 @@ import { generateId } from "../read-model.js";
 import { parseBoutInput, parseBoutResult, type BoutInput, type ExchangeInput } from "./bout-input.js";
 import { boutCompetitionIds, lifecycleColumns, loadBout, loadUnsettledBout, toLifecycle, type BoutRow } from "./bout-store.js";
 import { toBoutView, toOutsiderView } from "./bout-view.js";
+import { competitionAdminRole } from "../competitions/access.js";
 
 export function registerBoutRoutes(app: FastifyInstance, database: Kysely<BackendDatabase>): void {
   app.post("/api/v1/bouts", async (request) => {
@@ -354,13 +355,13 @@ export async function isAdminOfBout(executor: DbExecutor, user: AccessUser, bout
   if (competitionIds.length === 0) {
     return false;
   }
-  const admin = await executor
-    .selectFrom("CompetitionAdmin")
-    .select("competitionId")
-    .where("userId", "=", user.id)
-    .where("competitionId", "in", competitionIds)
-    .executeTakeFirst();
-  return admin !== undefined;
+  // Owners, co-admins and the admins of a parent Event all manage the competition's bouts.
+  for (const competitionId of competitionIds) {
+    if ((await competitionAdminRole(executor, user, competitionId)) !== null) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export async function requireUser(request: Parameters<typeof resolveAccessUser>[0], database: Kysely<BackendDatabase>): Promise<AccessUser> {
