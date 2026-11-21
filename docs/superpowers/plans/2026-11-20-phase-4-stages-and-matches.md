@@ -493,3 +493,14 @@ tournament creation making Pools + Elimination only.
    whose pools are finished (the reset seed may need pool results entered first), see the refusal while
    pools are open, refill, and the bracket matches on the stage page.
 4. Then record task 11 as done and continue with task 12 (advance winners automatically).
+
+2026-11-21, **task 11 done**: committed as `e1797b9`. Backend on :3001 (this repo's server, confirmed via
+its API) stopped; `npm run backend:db:reset` recreated `dev.db` at schema 3 (backup
+`dev.db.bak-2026-11-20T20-28-16-398Z`); backend restarted from `.claude/launch.json`. Browser on the dev
+stack: created an Elimination stage (4 fighters); "Fill bracket from the pools" refused with "The pools
+are not finished yet: 7 of 12 matches fought."; after completing the 5 open pool matches via the API, it
+filled Alex 'The Blade' Visser – Floris de Jong and Elena 'Shield' Smit – Beatrix de Ruiter, an empty
+final and bronze match; the button became "Fill bracket again". The user switched the session to Remote
+Control and asked to work autonomously and commit each finished part.
+
+Next: task 12 (advance winners automatically).
