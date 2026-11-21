@@ -736,6 +736,9 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.post("/api/v1/skills", async (request) => {
+    // Skills are person data shared across events: only system and competition admins change them here.
+    // Tournament admins edit skills through the scoped PATCH /api/v1/entries/:id/participant.
+    await requireAdminUser(request, database);
     const body = ensureObject(request.body, "Skill");
     const userId = requireString(body.userId, "User ID");
     await requireUserRow(database, userId);
@@ -750,6 +753,9 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.patch("/api/v1/skills/:id", async (request) => {
+    // Skills are person data shared across events: only system and competition admins change them here.
+    // Tournament admins edit skills through the scoped PATCH /api/v1/entries/:id/participant.
+    await requireAdminUser(request, database);
     const id = requirePathParam(request, "id");
     await requireSkillRow(database, id);
     const body = ensureObject(request.body, "Skill");
@@ -774,6 +780,9 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
   });
 
   app.delete("/api/v1/skills/:id", async (request, reply) => {
+    // Skills are person data shared across events: only system and competition admins change them here.
+    // Tournament admins edit skills through the scoped PATCH /api/v1/entries/:id/participant.
+    await requireAdminUser(request, database);
     const id = requirePathParam(request, "id");
     await requireSkillRow(database, id);
     await database.deleteFrom("Skill").where("id", "=", id).execute();
