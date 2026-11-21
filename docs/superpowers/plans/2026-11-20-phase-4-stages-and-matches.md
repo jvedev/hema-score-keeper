@@ -557,3 +557,24 @@ Known limits and follow-ups:
 3. One bracket per tournament (advancing looks bracket matches up per tournament).
 4. The planner still repeats its own header and Event selector and nests panels (from task 8).
 5. Browser acceptance of Parts A–C by the user.
+
+2026-11-21, **open issues fixed** (user: "fix all issues first, then proceed to 7"; one commit each):
+- `1718f55` skill routes (`POST/PATCH/DELETE /api/v1/skills`) require a system or competition admin (were
+  anonymous); `skills-access.test.ts`.
+- `42223d3` `google.md` no longer tracked (kept on disk, ignored) — **the user must rotate that password**, it
+  stays in the git history and on GitHub; stale `pages-stage/competition` build removed (Pages builds `./pages`).
+- `4e0e033` demo competitions are added by `backend:db:seed` / `backend:db:reset` only, not on every start;
+  tests opt in with `createTestContext({ demoCompetitions: true })`.
+- `e3345cd` `PUT /live-tournaments/:id/rules` refuses invalid values with a 400 naming them
+  (`ringRulesProblems` in `@hema/competition-domain`).
+- `eb0d500` a waiting live bout shows the fighter that bracket advancing puts in its match
+  (`refreshLiveBoutForMatch`: same identities and signature as a full projection).
+- `5608f33` Rulesets page in Event-admin (`/events/:id/rulesets`, button on the Event page) using
+  `ruleset-view`, with a Bracket section (seeding, pairing, bronze match, separate final stages); editor follows
+  the admin palette. `03f99fe` filling creates missing Final / Bronze final stages and refilling always clears
+  them (also after switching the setting off).
+- Planner inside the shell: no own link or Event selector, title "Planning", "Suggest a schedule" instead of ✦.
+Still open from the earlier list: the user's password rotation; a check on a real tablet/large monitor; the
+`ruleset-view` texts are English only. Verified at each step (backend 381, UI 436, domain 93, typecheck, builds).
+
+Next: Phase 7 of the unified Event-admin plan.

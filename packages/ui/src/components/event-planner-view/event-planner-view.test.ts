@@ -25,6 +25,29 @@ describe("event-planner-view", () => {
     )).toHaveLength(2);
   });
 
+  it("leaves out its own link and Event selector inside the Event-admin shell", async () => {
+    installPlannerFetchMock(true);
+    const element = document.createElement("event-planner-view");
+    element.setAttribute("event-id", "event-1");
+    document.body.appendChild(element);
+    await expect.poll(() => element.shadowRoot?.querySelector(".slot-label")?.textContent).toBe("Instructie");
+    expect(element.shadowRoot!.querySelector(".planner-header h1")!.textContent).toBe("Planning");
+    expect(element.shadowRoot!.querySelector('select[name="eventId"]')).toBeNull();
+    expect(element.shadowRoot!.querySelector(".planner-header a")).toBeNull();
+    expect(element.shadowRoot!.querySelector('[data-click-action="open-suggestions"]')!.textContent).toContain("Suggest a schedule");
+    element.remove();
+  });
+
+  it("keeps the Event selector when used on its own", async () => {
+    installPlannerFetchMock(true);
+    window.history.replaceState({}, "", "/planning?eventId=event-1");
+    const element = document.createElement("event-planner-view");
+    document.body.appendChild(element);
+    await expect.poll(() => element.shadowRoot?.querySelector(".slot-label")?.textContent).toBe("Instructie");
+    expect(element.shadowRoot!.querySelector('select[name="eventId"]')).not.toBeNull();
+    element.remove();
+  });
+
   it("shows volunteer skills and wishes on hover", async () => {
     const { eventsMock, scheduleMock } = installPlannerFetchMock();
 

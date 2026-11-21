@@ -1,14 +1,12 @@
 :host {
   display: block;
-  min-height: 100vh;
   background: var(--admin-page);
   color: var(--admin-text);
 }
 
 .planner {
   box-sizing: border-box;
-  min-height: 100vh;
-  padding: 1rem;
+  padding: 1.5rem;
 }
 
 .planner-header,

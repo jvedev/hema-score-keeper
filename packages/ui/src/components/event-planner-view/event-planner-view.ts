@@ -405,30 +405,36 @@ export class EventPlannerView extends BaseComponent {
       .join("");
     const schedule = data?.schedule;
     const event = data?.event;
+    // Inside the Event-admin shell (an event-id is given) the shell's breadcrumb and Event switcher already show
+    // where we are, so the planner leaves out its own link and Event selector.
+    const hosted = this.hasAttribute("event-id");
 
     this.render(css, `
       <section class="planner"${this.#dragging ? ' data-dragging="true"' : ""}>
         <header class="planner-header">
           <div>
-            <a data-route href="/">Event administration</a>
-            <h1>Event planner</h1>
+            ${hosted ? "" : `<a data-route href="/">Event administration</a>`}
+            <h1>${hosted ? "Planning" : "Event planner"}</h1>
           </div>
           <div class="planner-header-actions">
-            <label>
+            ${
+              hosted
+                ? ""
+                : `<label>
               Event
               <select name="eventId" ${this.#loading ? "disabled" : ""}>
                 <option value="">Choose an event</option>
                 ${eventOptions}
               </select>
-            </label>
+            </label>`
+            }
             <button
               type="button"
-              class="button secondary icon-button"
+              class="button secondary"
               data-click-action="open-suggestions"
-              title="Open suggestions"
-              aria-label="Open suggestions"
+              title="Suggest a schedule"
               ${event ? "" : "disabled"}
-            >✦</button>
+            >Suggest a schedule</button>
           </div>
         </header>
         ${this.#error ? `<p class="planner-error" role="alert">${escapeHtml(this.#error)}</p>` : ""}
