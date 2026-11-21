@@ -32,10 +32,12 @@ if (files.length > 0) {
   console.log(`Backed up the old database to ${backupPath}`);
 }
 
+const { seedDemoCompetitionsIfEmpty } = await importBackend("competition-bootstrap.js");
 const database = openNativeDatabase();
 try {
   console.log(`Created ${databasePath} from the baseline schema.`);
   seedDatabase(database, BACKEND_TABLES);
+  seedDemoCompetitionsIfEmpty(database);
 } finally {
   database.close();
 }

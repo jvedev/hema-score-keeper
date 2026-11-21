@@ -24,8 +24,8 @@ const defaultRuleset = {
 };
 
 /**
- * Adds the demo competitions (competition-1..3) when the database has no competitions yet. Runs on every start;
- * the tables themselves come from the baseline schema (`schema.ts`).
+ * Adds the demo competitions (competition-1..3) when the database has no competitions yet. Only the dev seed
+ * (`scripts/seed-database.mjs`) and tests call it; a real database starts without demo data.
  */
 export function seedDemoCompetitionsIfEmpty(database: NativeDatabase): void {
   const competitionCount = database.prepare("SELECT COUNT(*) as count FROM Competition").get() as { count: number };

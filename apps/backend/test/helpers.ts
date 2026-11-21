@@ -12,6 +12,7 @@ import {
 import type { AccountRole } from "../src/api-types.js";
 import { signAccessToken } from "../src/auth.js";
 import { initializeDatabase, type BackendDatabase } from "../src/db.js";
+import { seedDemoCompetitionsIfEmpty } from "../src/competition-bootstrap.js";
 import { createApp } from "../src/server.js";
 
 export interface TestContext {
@@ -56,10 +57,11 @@ export class YieldAfterEachQuery implements KyselyPlugin {
   }
 }
 
-export async function createTestContext(options: { now?: () => Date; plugins?: KyselyPlugin[] } = {}): Promise<TestContext> {
+export async function createTestContext(options: { now?: () => Date; plugins?: KyselyPlugin[]; demoCompetitions?: boolean } = {}): Promise<TestContext> {
   const native = new BetterSqlite3(":memory:");
   // The real baseline schema, exactly as the server creates it.
   let database = initializeDatabase(native);
+  if (options.demoCompetitions) seedDemoCompetitionsIfEmpty(native);
   for (const plugin of options.plugins ?? []) {
     database = database.withPlugin(plugin);
   }

@@ -4,7 +4,7 @@ import { bearer, createTestContext, insertClub, insertUser, type TestContext, ty
 let ctx: TestContext;
 
 beforeEach(async () => {
-  ctx = await createTestContext();
+  ctx = await createTestContext({ demoCompetitions: true });
 });
 
 describe("old bout routes", () => {

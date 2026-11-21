@@ -23,3 +23,6 @@ test-results/
 __screenshots__/
 /apps/backend/data/live/
 /artifacts/
+
+# Local notes with credentials; never commit (removed from the repo 2026-11-21, rotate the password)
+/google.md

@@ -2,7 +2,6 @@ import path from "node:path";
 import { mkdirSync } from "node:fs";
 import BetterSqlite3 from "better-sqlite3";
 import { appDataDir } from "./app-root.js";
-import { seedDemoCompetitionsIfEmpty } from "./competition-bootstrap.js";
 import { ensureBaselineSchema } from "./schema.js";
 
 // Side-effect free on import, so scripts (seed, reset, create-admin) can open the database the same way the server does.
@@ -32,7 +31,6 @@ export function resolveDatabasePath(
 export function prepareNativeDatabase(native: NativeDatabase): NativeDatabase {
   native.pragma("foreign_keys = ON");
   ensureBaselineSchema(native);
-  seedDemoCompetitionsIfEmpty(native);
   return native;
 }
 

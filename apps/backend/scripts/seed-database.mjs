@@ -425,8 +425,10 @@ async function runFromCommandLine() {
   const { BACKEND_TABLES } = await importBackend("schema.js");
   console.log(`Database: ${resolveDatabasePath()}`);
   const database = openNativeDatabase();
+  const { seedDemoCompetitionsIfEmpty } = await importBackend("competition-bootstrap.js");
   try {
     seedDatabase(database, BACKEND_TABLES);
+    seedDemoCompetitionsIfEmpty(database);
   } finally {
     database.close();
   }
