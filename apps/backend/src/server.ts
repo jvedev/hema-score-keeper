@@ -1333,30 +1333,6 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
           eliminationParticipantCount: null,
           timeBetweenMatchesMinutes: 2,
         },
-        {
-          id: generateId(),
-          tournamentId,
-          type: "SEMI_FINAL",
-          name: null,
-          rulesetId: null,
-          minPoolSize: null,
-          maxPoolSize: null,
-          preferredPoolSize: null,
-          eliminationParticipantCount: null,
-          timeBetweenMatchesMinutes: 2,
-        },
-        {
-          id: generateId(),
-          tournamentId,
-          type: "FINAL",
-          name: null,
-          rulesetId: null,
-          minPoolSize: null,
-          maxPoolSize: null,
-          preferredPoolSize: null,
-          eliminationParticipantCount: null,
-          timeBetweenMatchesMinutes: 2,
-        },
       ]).execute();
 
       await trx.updateTable("Tournament").set({ currentStageId: poolStageId }).where("id", "=", tournamentId).execute();

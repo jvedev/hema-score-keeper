@@ -41,7 +41,14 @@ plain-text password (user to rotate/delete); demo Competitions are auto-added on
 Event-admin client calls a missing `GET /api/v1/events/:id`; stale tracked
 `pages-stage/competition/**`.
 
-**Resume point (2026-11-20, later):** Phase 5 committed (`36dc17b`, `dba1c78`; master fast-forwarded,
+**Resume point (2026-11-21):** Phase 4 is complete and committed on `jetbrains-ai` (latest commits
+`e1797b9`, `2984dbe`, `b5f6c0b` and the docs commit after them; nothing pushed; local `master` is behind).
+See the end of [`plans/2026-11-20-phase-4-stages-and-matches.md`](plans/2026-11-20-phase-4-stages-and-matches.md)
+for verification and known limits. Dev database reset to schema 3 on 2026-11-20 (fresh seed). The user works via
+Remote Control and wants approved plans carried out autonomously, committing each finished part. Next: the
+user's browser acceptance of Phase 4, then Phase 7 of the unified Event-admin plan.
+
+**Earlier resume point (2026-11-20, later):** Phase 5 committed (`36dc17b`, `dba1c78`; master fast-forwarded,
 nothing pushed). Since then, uncommitted on `jetbrains-ai`: Phase 4 completion per
 [`plans/2026-11-20-phase-4-stages-and-matches.md`](plans/2026-11-20-phase-4-stages-and-matches.md) —
 Part A (stage and match screens) and Part B (shared admin look, stage path and stage page) done; Part C

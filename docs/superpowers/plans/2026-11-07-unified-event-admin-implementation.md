@@ -305,6 +305,12 @@ spreadsheet-tournament entry alongside the Event-admin component entry.
 
 ## Status / next
 
+2026-11-21: **Phase 4 completed** per `2026-11-20-phase-4-stages-and-matches.md`: stage and match screens,
+shared admin look with stage path and stage pages, and elimination brackets (fill from pools with pluggable
+seeding/pairing rules, automatic advancing, bracket view). Dev database at schema 3. Known limits are listed at
+the end of that plan. Phase 5 was completed earlier; next is Phase 7 (end-to-end verification and handoff)
+after the user's browser acceptance.
+
 2026-11-20: **Phase 5 implemented and auto-verified** per
 `2026-11-20-phase-5-competition-workspace.md` (user chose to continue with Phase 5 while Phase 4's
 open items remain). The Competition-admin screens run inside the Event-admin shell on the shared

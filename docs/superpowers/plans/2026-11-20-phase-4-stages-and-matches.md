@@ -535,3 +535,25 @@ Next: task 13 (bracket view on the stage page).
 - Dev stack screenshot: `docs/superpowers/bracket-view-2026-11-21.jpg`.
 
 Next: task 14 (full verification and docs).
+
+2026-11-21, **task 14 done — Phase 4 (this plan) complete**:
+- New tournaments get two stages, Pools and Elimination (was four: + Semi-final, Final), per the bracket
+  decisions in the spec, section 11. Add Bronze final / Final stages by hand when the ruleset's
+  `bracket.separateFinalStages` is on (the fill route says what is missing).
+- Full verification: `npm run typecheck` clean; `npm test` — backend 378, competition 104, competition-admin
+  90, score-keeper 120, api-session 30, competition-domain 91, match-engine 30, ranking 40, ui 432, all
+  passed; `npm run build` passed for all workspaces; `npm run test:database-mode:smoke` 12 passed. Dev stack:
+  bracket filled from finished pools, semi-final results advanced winners to the final and losers to the bronze
+  match, bracket tree drawn (screenshot in `docs/superpowers/bracket-view-2026-11-21.jpg`).
+
+Known limits and follow-ups:
+1. Live scoring: when advancing fills a fighter into a match that already has a live bout, that bout keeps
+   the old names until the live projection is refreshed (Live tab → activate again /
+   `POST /live-tournaments/:id/project`). Bracket matches also need a ring (Plan → time slot) before they
+   go live. Automatic re-projection after advancing is a follow-up (needs care: it runs inside the result
+   transaction of the bout being finished).
+2. Turning `separateFinalStages` on or off does not add or remove the Bronze final / Final stages; there is no
+   ruleset editor for the bracket settings yet (set them in the ruleset definition JSON).
+3. One bracket per tournament (advancing looks bracket matches up per tournament).
+4. The planner still repeats its own header and Event selector and nests panels (from task 8).
+5. Browser acceptance of Parts A–C by the user.
