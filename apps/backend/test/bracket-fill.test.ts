@@ -181,11 +181,25 @@ describe("filling an elimination bracket", () => {
     expect(matches.filter((m) => m.stageId === "bronze").map((m) => [m.roundNumber, m.bracketRound, m.bracketKind])).toEqual([[0, 2, "BRONZE"]]);
   });
 
-  it("explains what is missing when the ruleset wants separate final stages that do not exist", async () => {
+  it("creates the Final and Bronze final stages when the ruleset wants them separate and they are missing", async () => {
     await setup({ bracket: { separateFinalStages: true } });
-    const response = await fill();
-    expect(response.statusCode).toBe(409);
-    expect(response.json().error).toContain("no Final stage");
+    expect((await fill()).statusCode).toBe(200);
+    const stages = await ctx.database.selectFrom("Stage").select(["id", "type", "name"]).where("tournamentId", "=", "t").execute();
+    const final = stages.find((item) => item.type === "FINAL")!;
+    const bronze = stages.find((item) => item.type === "BRONZE_FINAL")!;
+    expect([final.name, bronze.name]).toEqual(["Final", "Bronze final"]);
+    const matches = await bracketMatches(["bracket", final.id, bronze.id]);
+    expect(matches.filter((m) => m.stageId === final.id).map((m) => m.bracketKind)).toEqual(["MAIN"]);
+    expect(matches.filter((m) => m.stageId === bronze.id).map((m) => m.bracketKind)).toEqual(["BRONZE"]);
+    // Filling again reuses them instead of adding more.
+    expect((await fill()).statusCode).toBe(200);
+    expect(await ctx.database.selectFrom("Stage").select("id").where("tournamentId", "=", "t").execute()).toHaveLength(4);
+
+    // Switched off again: the final and bronze move back into the bracket stage, nothing is left behind.
+    await ctx.database.updateTable("Ruleset").set({ definition: JSON.stringify({ bracket: { separateFinalStages: false } }) }).where("id", "=", "rs").execute();
+    expect((await fill()).statusCode).toBe(200);
+    expect(await bracketMatches([final.id, bronze.id])).toEqual([]);
+    expect((await bracketMatches()).filter((m) => m.bracketRound === 2).map((m) => m.bracketKind).sort()).toEqual(["BRONZE", "MAIN"]);
   });
 
   it("refuses an unknown rule name from the ruleset", async () => {

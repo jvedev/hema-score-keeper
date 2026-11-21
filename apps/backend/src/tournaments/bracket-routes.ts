@@ -66,15 +66,31 @@ async function fillBracket(executor: DbExecutor, stageId: string): Promise<void>
 
   const settings = await bracketSettingsFor(executor, stage.rulesetId ?? tournament.rulesetId ?? event.rulesetId);
   const later = stages.slice(position + 1);
-  const finalStage = settings.separateFinalStages ? later.find((item) => item.type === "FINAL") : undefined;
-  const bronzeStage = settings.separateFinalStages && settings.bronzeMatch ? later.find((item) => item.type === "BRONZE_FINAL") : undefined;
-  if (settings.separateFinalStages && !finalStage) {
-    throw new HttpError(409, "The ruleset puts the final in its own stage, but this tournament has no Final stage after the bracket.");
-  }
-  if (settings.separateFinalStages && settings.bronzeMatch && !bronzeStage) {
-    throw new HttpError(409, "The ruleset puts the bronze match in its own stage, but this tournament has no Bronze final stage after the bracket.");
-  }
-  const bracketStageIds = [stage.id, finalStage?.id, bronzeStage?.id].filter((id): id is string => id !== undefined);
+  // With separate final stages the ruleset wants a Final (and Bronze final) stage after the bracket: create what is missing.
+  const ensureStage = async (type: "FINAL" | "BRONZE_FINAL", name: string) => {
+    const existing = later.find((item) => item.type === type);
+    if (existing) return existing;
+    const created = {
+      id: generateId(),
+      tournamentId: tournament.id,
+      type,
+      name,
+      rulesetId: null,
+      minPoolSize: null,
+      maxPoolSize: null,
+      preferredPoolSize: null,
+      eliminationParticipantCount: null,
+      timeBetweenMatchesMinutes: stage.timeBetweenMatchesMinutes,
+    };
+    await executor.insertInto("Stage").values(created).execute();
+    return created;
+  };
+  const finalStage = settings.separateFinalStages ? await ensureStage("FINAL", "Final") : undefined;
+  const bronzeStage = settings.separateFinalStages && settings.bronzeMatch ? await ensureStage("BRONZE_FINAL", "Bronze final") : undefined;
+  // Final and Bronze final stages after the bracket only ever hold this bracket's matches, so refilling replaces
+  // theirs too (also when the ruleset no longer puts the final in its own stage).
+  const ownStageIds = later.filter((item) => item.type === "FINAL" || item.type === "BRONZE_FINAL").map((item) => item.id);
+  const bracketStageIds = [...new Set([stage.id, finalStage?.id, bronzeStage?.id, ...ownStageIds].filter((id): id is string => id !== undefined))];
   await requireBracketUntouched(executor, bracketStageIds);
 
   // Seeds: standings per pool (pools in arena order), then the ruleset's seeding and pairing rules.
