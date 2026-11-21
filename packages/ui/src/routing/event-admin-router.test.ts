@@ -135,6 +135,11 @@ describe("event-admin-router", () => {
       }
     });
 
+    it("round-trips the event rulesets page", () => {
+      expect(parseEventAdminRoute("/event-admin/events/e%201/rulesets", "/event-admin/")).toEqual({ kind: "event-rulesets", eventId: "e 1" });
+      expect(formatEventAdminRoute({ kind: "event-rulesets", eventId: "e 1" }, "/event-admin/")).toBe("/event-admin/events/e%201/rulesets");
+    });
+
     it("formats event-planning", () => {
       expect(
         formatEventAdminRoute({ kind: "event-planning", eventId: "evt-1" }),

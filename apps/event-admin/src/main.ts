@@ -3,6 +3,7 @@ import "@hema/ui/event-view";
 import "@hema/ui/events-index-view";
 import "@hema/ui/event-overview-view";
 import "@hema/ui/tournament-workspace-view";
+import "@hema/ui/ruleset-view";
 import {
   parseEventAdminRoute,
   formatEventAdminRoute,
@@ -81,6 +82,9 @@ function renderRoute(): void {
       break;
     case "event-planning":
       renderEventPlanning(contentArea, route.eventId);
+      break;
+    case "event-rulesets":
+      renderEventRulesets(contentArea, route.eventId);
       break;
     case "not-found":
       renderNotFound(contentArea, route.path);
@@ -199,6 +203,16 @@ function renderBreadcrumbs(bar: HTMLElement, route: EventAdminRoute, isDutch: bo
       <span>/</span>
       <span>${escapeHtml(competitionName)}</span>
     `;
+  } else if (route.kind === "event-rulesets") {
+    const eventName = activeEvent?.id === route.eventId ? activeEvent.eventName : (isDutch ? "Evenement" : "Event");
+    const eventUrl = withAppBase(`/events/${encodeURIComponent(route.eventId)}`, baseUrl);
+    bar.innerHTML = `
+      <a href="${eventsUrl}" data-route>${eventsLabel}</a>
+      <span>/</span>
+      <a href="${eventUrl}" data-route>${escapeHtml(eventName)}</a>
+      <span>/</span>
+      <span>${isDutch ? "Regels" : "Rulesets"}</span>
+    `;
   } else if (route.kind === "event-planning") {
     const eventName = activeEvent?.id === route.eventId ? activeEvent.eventName : (isDutch ? "Evenement" : "Event");
     const eventUrl = withAppBase(`/events/${encodeURIComponent(route.eventId)}`, baseUrl);
@@ -278,6 +292,10 @@ function renderEventOverview(container: HTMLElement, eventId: string): void {
 
     view.addEventListener("planning-requested", () => {
       navigateTo({ kind: "event-planning", eventId });
+    });
+
+    view.addEventListener("rulesets-requested", () => {
+      navigateTo({ kind: "event-rulesets", eventId });
     });
 
     view.addEventListener("tournament-create-requested", async (e: any) => {
@@ -427,6 +445,23 @@ function renderTournamentWorkspace(
       activeView.error = err instanceof Error ? err.message : "Failed to load tournament";
       activeView.loading = false;
     });
+}
+
+function renderEventRulesets(container: HTMLElement, eventId: string): void {
+  const view = document.createElement("ruleset-view");
+  view.setAttribute("event-id", eventId);
+  container.replaceChildren(view);
+  // The breadcrumb shows the Event's name, which a direct link has not loaded yet.
+  if (activeEvent?.id !== eventId) {
+    void api
+      .getEvent(eventId)
+      .then((event) => {
+        activeEvent = event;
+        const session = api.currentSession();
+        if (session) renderShell(session, { kind: "event-rulesets", eventId });
+      })
+      .catch(() => undefined);
+  }
 }
 
 function renderEventPlanning(container: HTMLElement, eventId: string): void {

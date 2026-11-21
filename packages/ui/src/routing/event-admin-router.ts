@@ -11,6 +11,7 @@ export type EventAdminRoute =
   | { kind: "tournament-workspace"; eventId: string; tournamentId: string }
   | { kind: "competition-workspace"; eventId: string; competitionId: string; view?: CompetitionWorkspaceView }
   | { kind: "event-planning"; eventId: string }
+  | { kind: "event-rulesets"; eventId: string }
   | { kind: "not-found"; path: string };
 
 export function parseEventAdminRoute(pathname: string, baseUrl?: string): EventAdminRoute {
@@ -29,6 +30,10 @@ export function parseEventAdminRoute(pathname: string, baseUrl?: string): EventA
 
   if (parts.length === 2 && parts[0] === "events" && parts[1]) {
     return { kind: "event-overview", eventId: parts[1] };
+  }
+
+  if (parts.length === 3 && parts[0] === "events" && parts[1] && parts[2] === "rulesets") {
+    return { kind: "event-rulesets", eventId: parts[1] };
   }
 
   if (parts.length === 3 && parts[0] === "events" && parts[1] && parts[2] === "planning") {
@@ -79,6 +84,9 @@ export function formatEventAdminRoute(route: EventAdminRoute, baseUrl?: string):
       break;
     case "event-planning":
       relativePath = route.eventId ? `/events/${encodeURIComponent(route.eventId)}/planning` : "/planning";
+      break;
+    case "event-rulesets":
+      relativePath = `/events/${encodeURIComponent(route.eventId)}/rulesets`;
       break;
     case "not-found":
       relativePath = route.path;

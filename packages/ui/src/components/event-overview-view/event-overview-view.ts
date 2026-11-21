@@ -100,6 +100,9 @@ export class EventOverviewView extends BaseComponent {
             </div>
           </div>
           <div class="header-actions">
+            <button type="button" class="btn-secondary-action rulesets-link-btn">
+              ${t("events.rulesetsLink")}
+            </button>
             <button type="button" class="planning-link-btn">
               ${t("events.planningLink")}
             </button>
@@ -271,6 +274,10 @@ export class EventOverviewView extends BaseComponent {
   }
 
   private attachEventListeners(): void {
+    this.root.querySelector<HTMLButtonElement>(".rulesets-link-btn")?.addEventListener("click", () => {
+      if (!this.#event) return;
+      this.dispatchEvent(new CustomEvent("rulesets-requested", { detail: { eventId: this.#event.id }, bubbles: true, composed: true }));
+    });
     const planningBtn = this.root.querySelector<HTMLButtonElement>(".planning-link-btn");
     planningBtn?.addEventListener("click", () => {
       if (!this.#event) return;

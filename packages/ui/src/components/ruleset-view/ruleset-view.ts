@@ -15,7 +15,22 @@ interface RulesetDraft {
 interface RulesetDefinitionDraft {
   weaponClass: string;
   matchParameters: MatchParametersDraft;
+  bracket: BracketDraft;
 }
+
+/** Elimination bracket rules (see `bracketSettings` in @hema/ranking for the names and defaults). */
+interface BracketDraft {
+  seeding: string;
+  pairing: string;
+  bronzeMatch: boolean;
+  separateFinalStages: boolean;
+}
+
+const SEEDING_OPTIONS: ReadonlyArray<[string, string]> = [["by-pool-place", "By pool place (all pool winners first, then all seconds, …)"]];
+const PAIRING_OPTIONS: ReadonlyArray<[string, string]> = [
+  ["standard-pools-apart", "Standard, fighters from the same pool apart in the first round"],
+  ["standard", "Standard (1 v 8, 4 v 5, 2 v 7, 3 v 6, …)"],
+];
 
 interface MatchParametersDraft {
   maxDurationSeconds: string;
@@ -493,6 +508,8 @@ export class RulesetView extends BaseComponent {
                 </div>
               </section>
 
+              ${this.renderBracketSection(locked)}
+
               <div class="modal-actions">
                 <button type="submit" class="button" ${locked ? "disabled" : ""}>
                   ${this.#editor.mode === "create" ? "Create ruleset" : "Save changes"}
@@ -514,6 +531,40 @@ export class RulesetView extends BaseComponent {
         </section>
       </event-editor-view>
     `;
+  }
+
+  private renderBracketSection(locked: boolean): string {
+    const bracket = this.#draft.definition.bracket;
+    const options = (list: ReadonlyArray<[string, string]>, selected: string) =>
+      list.map(([value, label]) => `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+    const disabled = locked ? "disabled" : "";
+    return `
+              <section class="field-group bracket-settings">
+                <div class="field-group-header">
+                  <div>
+                    <h3>Elimination bracket</h3>
+                    <p>How fighters go from the pools into the bracket.</p>
+                  </div>
+                </div>
+                <div class="field-grid">
+                  <label class="field">
+                    <span>Seeding</span>
+                    <select class="text-input" name="bracketSeeding" ${disabled}>${options(SEEDING_OPTIONS, bracket.seeding)}</select>
+                  </label>
+                  <label class="field">
+                    <span>First-round pairing</span>
+                    <select class="text-input" name="bracketPairing" ${disabled}>${options(PAIRING_OPTIONS, bracket.pairing)}</select>
+                  </label>
+                  <label class="field checkbox-field">
+                    <span>Bronze match for the two semi-final losers</span>
+                    <input type="checkbox" name="bracketBronzeMatch" ${bracket.bronzeMatch ? "checked" : ""} ${disabled} />
+                  </label>
+                  <label class="field checkbox-field">
+                    <span>Bronze match and final in their own stages (to plan them in their own time slots)</span>
+                    <input type="checkbox" name="bracketSeparateFinalStages" ${bracket.separateFinalStages ? "checked" : ""} ${disabled} />
+                  </label>
+                </div>
+              </section>`;
   }
 
   private renderPenaltyRow(penalty: PenaltyDraft, index: number, locked: boolean): string {
@@ -564,6 +615,12 @@ function draftFromRuleset(ruleset: ApiRulesetDetail): RulesetDraft {
 function draftFromDefinition(definition: ApiRulesetDefinition): RulesetDefinitionDraft {
   return {
     weaponClass: definition.weaponClass,
+    bracket: {
+      seeding: definition.bracket?.seeding ?? "by-pool-place",
+      pairing: definition.bracket?.pairing ?? "standard-pools-apart",
+      bronzeMatch: definition.bracket?.bronzeMatch ?? true,
+      separateFinalStages: definition.bracket?.separateFinalStages ?? false,
+    },
     matchParameters: {
       maxDurationSeconds: String(definition.matchParameters.maxDurationSeconds),
       stopOnTimeOut: definition.matchParameters.stopOnTimeOut,
@@ -586,6 +643,7 @@ function draftFromDefinition(definition: ApiRulesetDefinition): RulesetDefinitio
 function definitionFromDraft(draft: RulesetDefinitionDraft): ApiRulesetDefinition {
   return {
     weaponClass: readRequiredTextFromValue(draft.weaponClass, "Weapon class"),
+    bracket: { ...draft.bracket },
     matchParameters: {
       maxDurationSeconds: readRequiredIntegerFromValue(draft.matchParameters.maxDurationSeconds, "Maximum duration"),
       stopOnTimeOut: draft.matchParameters.stopOnTimeOut,
@@ -610,6 +668,12 @@ function readDraftFromForm(formData: FormData, penaltyCount: number): RulesetDra
     name: readFormText(formData, "name"),
     definition: {
       weaponClass: readFormText(formData, "weaponClass"),
+      bracket: {
+        seeding: readFormText(formData, "bracketSeeding") || "by-pool-place",
+        pairing: readFormText(formData, "bracketPairing") || "standard-pools-apart",
+        bronzeMatch: readFormBoolean(formData, "bracketBronzeMatch"),
+        separateFinalStages: readFormBoolean(formData, "bracketSeparateFinalStages"),
+      },
       matchParameters: {
         maxDurationSeconds: readFormText(formData, "maxDurationSeconds"),
         stopOnTimeOut: readFormBoolean(formData, "stopOnTimeOut"),

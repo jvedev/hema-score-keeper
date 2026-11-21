@@ -149,6 +149,13 @@ describe("event-overview-view", () => {
     expect(planningEventId).toBe("evt-1");
   });
 
+  it("fires rulesets-requested from the rulesets button", () => {
+    let eventId = "";
+    view.addEventListener("rulesets-requested", (e: Event) => (eventId = (e as CustomEvent<{ eventId: string }>).detail.eventId));
+    $(".rulesets-link-btn")!.click();
+    expect(eventId).toBe("evt-1");
+  });
+
   it("renders zero-components state properly", () => {
     view.event = {
       ...mockEvent,

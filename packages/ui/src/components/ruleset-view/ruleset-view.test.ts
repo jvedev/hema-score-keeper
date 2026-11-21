@@ -43,6 +43,13 @@ describe("ruleset-view", () => {
     const penaltyCheckbox = await waitForElement<HTMLInputElement>(element.shadowRoot as ShadowRoot, 'input[name="penalty-disqualify-0"]');
     penaltyCheckbox.checked = true;
 
+    // Bracket settings: defaults are filled in; change pairing and switch on separate final stages.
+    const pairing = await waitForElement<HTMLSelectElement>(element.shadowRoot as ShadowRoot, 'select[name="bracketPairing"]');
+    expect(pairing.value).toBe("standard-pools-apart");
+    pairing.value = "standard";
+    const separate = await waitForElement<HTMLInputElement>(element.shadowRoot as ShadowRoot, 'input[name="bracketSeparateFinalStages"]');
+    separate.checked = true;
+
     const form = await waitForElement<HTMLFormElement>(element.shadowRoot as ShadowRoot, 'form[data-action="ruleset-editor"]');
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await flush();
@@ -54,6 +61,7 @@ describe("ruleset-view", () => {
       name: "Offhand",
       definition: {
         weaponClass: "Longsword",
+        bracket: { seeding: "by-pool-place", pairing: "standard", bronzeMatch: true, separateFinalStages: true },
         matchParameters: {
           maxDurationSeconds: 240,
           scores: [1, 2, 3],

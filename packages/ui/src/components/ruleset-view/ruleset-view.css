@@ -25,7 +25,7 @@
 .ruleset-card-subtitle,
 .error-banner,
 .empty-state {
-  color: rgba(255, 255, 255, 0.68);
+  color: var(--admin-muted);
 }
 
 .ruleset-header p,
@@ -49,8 +49,8 @@
 }
 
 .ruleset-card {
-  background: #101621;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--admin-page);
+  border: 1px solid var(--admin-line);
   border-radius: 14px;
   color: inherit;
   display: grid;
@@ -60,8 +60,8 @@
 }
 
 .ruleset-card.is-active {
-  border-color: #2d66ff;
-  background: rgba(45, 102, 255, 0.12);
+  border-color: var(--admin-accent);
+  background: color-mix(in srgb, var(--admin-accent) 12%, transparent);
 }
 
 .ruleset-card-header {
@@ -89,7 +89,7 @@
 
 .badge {
   align-items: center;
-  background: #20283a;
+  background: var(--admin-surface);
   border-radius: 999px;
   color: white;
   display: inline-flex;
@@ -99,15 +99,15 @@
 }
 
 .badge.badge-muted {
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--admin-muted);
 }
 
 .button {
   align-items: center;
-  background: linear-gradient(180deg, #2d66ff, #1b4ad8);
+  background: linear-gradient(180deg, var(--admin-primary-bg), var(--admin-primary-bg));
   border: 0;
   border-radius: 10px;
-  color: white;
+  color: var(--admin-primary-text);
   display: inline-flex;
   justify-content: center;
   min-height: 36px;
@@ -115,11 +115,13 @@
 }
 
 .button.secondary {
-  background: #20283a;
+  border: 1px solid var(--admin-line);
+  background: var(--admin-surface);
+  color: var(--admin-text);
 }
 
 .button.secondary:hover {
-  background: #28324a;
+  background: var(--admin-raised);
 }
 
 .icon-button {
@@ -130,8 +132,8 @@
 }
 
 .text-input {
-  background: #0f1623;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--admin-page);
+  border: 1px solid var(--admin-line);
   border-radius: 10px;
   color: inherit;
   min-height: 36px;
@@ -139,7 +141,7 @@
 }
 
 .text-input::placeholder {
-  color: rgba(255, 255, 255, 0.38);
+  color: var(--admin-muted);
 }
 
 .ruleset-form {
@@ -153,7 +155,7 @@
 }
 
 .field span {
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--admin-muted);
   font-size: 12px;
 }
 
@@ -164,8 +166,8 @@
 }
 
 .field-group {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--admin-raised);
+  border: 1px solid var(--admin-line);
   border-radius: 14px;
   display: grid;
   gap: 12px;
@@ -178,20 +180,22 @@
 }
 
 .field-group-header p {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--admin-muted);
   font-size: 12px;
   margin: 4px 0 0;
 }
 
+/* The box sits right before its label. */
 .checkbox-field {
   align-items: center;
   display: flex;
-  gap: 12px;
-  justify-content: space-between;
+  flex-direction: row-reverse;
+  gap: 10px;
+  justify-content: flex-end;
 }
 
 .checkbox-field input {
-  accent-color: #2d66ff;
+  accent-color: var(--admin-accent);
 }
 
 .penalty-list {
@@ -217,15 +221,15 @@
 
 .empty-state,
 .error-banner {
-  background: #101621;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--admin-page);
+  border: 1px solid var(--admin-line);
   border-radius: 14px;
   padding: 12px;
 }
 
 .error-banner {
-  border-color: rgba(229, 72, 77, 0.5);
-  color: #ffb6b9;
+  border-color: color-mix(in srgb, var(--admin-danger) 50%, transparent);
+  color: var(--admin-danger);
 }
 
 .modal-backdrop {
@@ -240,8 +244,8 @@
 }
 
 .modal-card {
-  background: #111723;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--admin-page);
+  border: 1px solid var(--admin-line);
   border-radius: 18px;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
   display: grid;
