@@ -277,6 +277,12 @@ describe("live ring keeper", () => {
     const saved = await put(creator, { maxDurationSeconds: 120, maxDoubles: 2, rounds: 3, breakSeconds: 30, lastExchangeSeconds: 10, extensions: 1, extensionSeconds: 30 });
     expect(saved.statusCode).toBe(200);
     expect(saved.json().rules.format).toMatchObject({ rounds: 3, breakSeconds: 30, extensions: 1 });
+    // Invalid values are refused with a reason; the saved rules stay as they were.
+    const refused = await put(creator, { maxDurationSeconds: 0, rounds: 12 });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json().error).toContain("Bout length");
+    expect(refused.json().error).toContain("Rounds");
+    expect((await get(`/api/v1/live-tournaments/${tournamentId}`, alice)).json().rules.maxDurationSeconds).toBe(120);
     const view = await get(`/api/v1/live-rings/by-token/${TOKEN}`, alice);
     expect(view.json().rules).toMatchObject({ maxDurationSeconds: 120, maxDoubles: 2, format: { rounds: 3 } });
     expect((await get(`/api/v1/live-tournaments/${tournamentId}`, alice)).json().rules.format.rounds).toBe(3);

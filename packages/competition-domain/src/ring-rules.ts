@@ -244,3 +244,51 @@ export function boutDisplay(rules: RingRules, input: BoutDisplayInput): BoutDisp
     tone: clockTone(rules, phase.period, remaining),
   };
 }
+
+/**
+ * Strict check for rules sent by an admin: every value that is present must be valid (the same ranges
+ * `parseRingRules` accepts). Returns what is wrong, empty when the rules are fine. Missing values are allowed:
+ * they keep their defaults.
+ */
+export function ringRulesProblems(raw: unknown): string[] {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return ["The rules must be an object."];
+  const data = raw as Record<string, unknown>;
+  const problems: string[] = [];
+  const number = (source: Record<string, unknown>, key: string, min: number, max: number, label: string) => {
+    if (source[key] !== undefined && wholeNumber(source[key], min, max) === undefined) problems.push(`${label} must be a whole number from ${min} to ${max}.`);
+  };
+  number(data, "maxDurationSeconds", 1, 3600, "Bout length (seconds)");
+  number(data, "maxDoubles", 0, 99, "Doubles before both lose");
+  number(data, "maxPointsCap", 0, 999, "Points to win");
+  if (data.scores !== undefined) {
+    if (!Array.isArray(data.scores) || data.scores.length === 0 || data.scores.some((score) => wholeNumber(score, 1, 10) === undefined)) {
+      problems.push("Point values must be a non-empty list of whole numbers from 1 to 10.");
+    }
+  }
+  if (data.penalties !== undefined) {
+    const valid =
+      Array.isArray(data.penalties) &&
+      data.penalties.every(
+        (penalty) =>
+          typeof penalty === "object" &&
+          penalty !== null &&
+          typeof (penalty as RingPenalty).description === "string" &&
+          (penalty as RingPenalty).description.trim() !== "" &&
+          Array.isArray((penalty as RingPenalty).penalties) &&
+          (penalty as RingPenalty).penalties.every((points) => wholeNumber(points, 0, 10) !== undefined) &&
+          ((penalty as RingPenalty).disqualify === undefined || typeof (penalty as RingPenalty).disqualify === "boolean"),
+      );
+    if (!valid) problems.push("Each penalty needs a description and point steps from 0 to 10.");
+  }
+  const source = typeof data.format === "object" && data.format !== null ? (data.format as Record<string, unknown>) : data;
+  number(source, "rounds", 1, 9, "Rounds");
+  number(source, "breakSeconds", 0, 3600, "Break (seconds)");
+  number(source, "lastExchangeSeconds", 0, 3600, "Last-exchange warning (seconds)");
+  number(source, "extensions", 0, 9, "Extensions");
+  number(source, "extensionSeconds", 1, 3600, "Extension length (seconds)");
+  if (source.overtimeAfter !== undefined && source.overtimeAfter !== "EVERY_ROUND" && source.overtimeAfter !== "LAST_ROUND") {
+    problems.push("Overtime must be EVERY_ROUND or LAST_ROUND.");
+  }
+  if (source.suddenDeath !== undefined && typeof source.suddenDeath !== "boolean") problems.push("Sudden death must be true or false.");
+  return problems;
+}

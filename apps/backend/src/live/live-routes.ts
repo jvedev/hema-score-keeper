@@ -1,3 +1,4 @@
+import { ringRulesProblems } from "@hema/competition-domain";
 import type { FastifyInstance } from "fastify";
 import type { Kysely } from "kysely";
 import { requirePathParam, type AccessUser } from "../access-user.js";
@@ -190,6 +191,9 @@ export function registerLiveRoutes(app: FastifyInstance, database: Kysely<Backen
     const tournamentId = requirePathParam(request, "id");
     await requireTournamentAdmin(database, tournamentId, user);
     const body = ensureObject(request.body, "Rules");
+    // Refuse invalid values instead of silently storing defaults for them.
+    const problems = ringRulesProblems(body);
+    if (problems.length > 0) throw new HttpError(400, problems.join(" "));
     const rules = rulesOf(JSON.stringify(body));
     await database.updateTable("LiveTournament").set({ ruleset: JSON.stringify(rules) }).where("id", "=", tournamentId).execute();
     return { rules };

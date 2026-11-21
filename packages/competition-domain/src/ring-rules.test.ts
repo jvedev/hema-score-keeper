@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boutDisplay, clockTone, defaultRingRules, nextSteps, parseRingRules, roundsWon, type BoutDisplayInput, type RingRules } from "./ring-rules";
+import { boutDisplay, clockTone, defaultRingRules, nextSteps, parseRingRules, ringRulesProblems, roundsWon, type BoutDisplayInput, type RingRules } from "./ring-rules";
 
 function rules(format: Partial<RingRules["format"]> = {}, rest: Partial<Omit<RingRules, "format">> = {}): RingRules {
   const base = defaultRingRules();
@@ -22,6 +22,21 @@ describe("parseRingRules", () => {
     expect(parsed.maxDoubles).toBe(3);
     expect(parsed.format).toEqual({ rounds: 3, breakSeconds: 30, lastExchangeSeconds: 10, overtimeAfter: "EVERY_ROUND", extensions: 2, extensionSeconds: 30, suddenDeath: true });
     expect(parseRingRules(parsed)).toEqual(parsed);
+  });
+});
+
+describe("ringRulesProblems", () => {
+  it("accepts valid rules and missing values", () => {
+    expect(ringRulesProblems({})).toEqual([]);
+    expect(ringRulesProblems({ maxDurationSeconds: 120, scores: [1, 2], format: { rounds: 3, overtimeAfter: "EVERY_ROUND", suddenDeath: true } })).toEqual([]);
+  });
+
+  it("names every invalid value instead of falling back to a default", () => {
+    const problems = ringRulesProblems({ maxDurationSeconds: 0, scores: [0], maxDoubles: 1.5, format: { rounds: 12, overtimeAfter: "NEVER", suddenDeath: "yes" } });
+    expect(problems).toHaveLength(6);
+    expect(problems[0]).toContain("Bout length");
+    expect(ringRulesProblems([])).toEqual(["The rules must be an object."]);
+    expect(ringRulesProblems({ penalties: [{ description: "", penalties: [1] }] })).toHaveLength(1);
   });
 });
 
