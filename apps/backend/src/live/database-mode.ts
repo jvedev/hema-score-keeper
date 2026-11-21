@@ -140,28 +140,7 @@ export async function projectDatabaseTournament(
     if (!scheduled) {
       throw new HttpError(409, `Pool match "${match.matchId}" has no generated ring order.`);
     }
-    const phase = phaseById.get(scheduled.scheduledPhaseId);
-    if (!phase || phase.stageId !== match.stageId) {
-      throw new HttpError(409, `Match "${match.matchId}" references a scheduled phase from another stage.`);
-    }
-    if (match.stageType === "POOL" && match.arenaId !== phase.arenaId) {
-      throw new HttpError(409, `Pool match "${match.matchId}" is scheduled on a different ring than its generated arena.`);
-    }
-    validateMatchEntries(match, sourceTournamentId);
-    desired.push({
-      ...match,
-      scheduledPhaseId: phase.id,
-      arenaId: phase.arenaId,
-      timeSlotId: phase.timeSlotId,
-      timeSlotOrder: phase.timeSlotOrder,
-      arenaName: phase.arenaName,
-      arenaOrder: phase.arenaOrder,
-      leftColor: phase.leftColor,
-      rightColor: phase.rightColor,
-      order: scheduled.order,
-      fighterLeftId: null,
-      fighterRightId: null,
-    });
+    desired.push(toProjectedBout(match, scheduled, phaseById.get(scheduled.scheduledPhaseId), sourceTournamentId));
   }
 
   await populateFighterIdentities(executor, liveTournamentId, desired, now);
@@ -173,6 +152,65 @@ export async function projectDatabaseTournament(
     bouts: desired.length,
     removedBouts,
   };
+}
+
+function toProjectedBout(
+  match: MatchSource,
+  scheduled: { scheduledPhaseId: string; order: number },
+  phase: ScheduledPhaseSource | undefined,
+  sourceTournamentId: string,
+): ProjectedBout {
+  if (!phase || phase.stageId !== match.stageId) {
+    throw new HttpError(409, `Match "${match.matchId}" references a scheduled phase from another stage.`);
+  }
+  if (match.stageType === "POOL" && match.arenaId !== phase.arenaId) {
+    throw new HttpError(409, `Pool match "${match.matchId}" is scheduled on a different ring than its generated arena.`);
+  }
+  validateMatchEntries(match, sourceTournamentId);
+  return {
+    ...match,
+    scheduledPhaseId: phase.id,
+    arenaId: phase.arenaId,
+    timeSlotId: phase.timeSlotId,
+    timeSlotOrder: phase.timeSlotOrder,
+    arenaName: phase.arenaName,
+    arenaOrder: phase.arenaOrder,
+    leftColor: phase.leftColor,
+    rightColor: phase.rightColor,
+    order: scheduled.order,
+    fighterLeftId: null,
+    fighterRightId: null,
+  };
+}
+
+/**
+ * Brings one live bout up to date with its source match after the match's fighters changed (bracket advancing),
+ * exactly as a full projection would for that bout: fighter names, identities and the schedule signature. Only a
+ * bout that has not started (PENDING, no exchanges) is touched; a match without a live bout is left alone.
+ */
+export async function refreshLiveBoutForMatch(executor: DbExecutor, matchId: string, now: string): Promise<void> {
+  const bout = await executor.selectFrom("LiveBout").select(["id", "tournamentId", "status"]).where("sourceMatchId", "=", matchId).executeTakeFirst();
+  if (!bout || bout.status !== "PENDING") return;
+  if (await executor.selectFrom("LiveExchange").select("id").where("boutId", "=", bout.id).executeTakeFirst()) return;
+  const liveTournament = await executor.selectFrom("LiveTournament").select("sourceTournamentId").where("id", "=", bout.tournamentId).executeTakeFirst();
+  if (!liveTournament) return;
+  const match = (await loadSourceMatches(executor, liveTournament.sourceTournamentId)).find((item) => item.matchId === matchId);
+  const scheduled = await executor.selectFrom("ScheduledMatch").selectAll().where("matchId", "=", matchId).executeTakeFirst();
+  if (!match || !scheduled) return;
+  const phase = (await loadScheduledPhases(executor, liveTournament.sourceTournamentId)).find((item) => item.id === scheduled.scheduledPhaseId);
+  const projected = toProjectedBout(match, scheduled, phase, liveTournament.sourceTournamentId);
+  await populateFighterIdentities(executor, bout.tournamentId, [projected], now);
+  await executor
+    .updateTable("LiveBout")
+    .set({
+      fighterLeft: projected.entryAName ?? "",
+      fighterRight: projected.entryBName ?? "",
+      fighterLeftId: projected.fighterLeftId,
+      fighterRightId: projected.fighterRightId,
+      sourceScheduleSignature: sourceSignature(projected),
+    })
+    .where("id", "=", bout.id)
+    .execute();
 }
 
 async function loadScheduledPhases(executor: DbExecutor, tournamentId: string): Promise<ScheduledPhaseSource[]> {

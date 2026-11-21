@@ -247,6 +247,36 @@ describe("filling an elimination bracket", () => {
       expect(quarter.winnerEntryId).toBeNull();
     });
 
+    it("shows the advanced fighter on a waiting live bout of the next match", async () => {
+      await setup({ bracketCount: 4 });
+      await fill();
+      const db = ctx.database;
+      // Pools are done; keep them out of live scoring so only the bracket's final is projected.
+      await db.updateTable("Match").set({ arenaId: null }).where("roundId", "=", "pool-round").execute();
+      await db.insertInto("EventSchedule").values({ id: "sch", eventId: "ev", startTimeMinutes: 540, currentTimeSlotId: null } as never).execute();
+      await db.insertInto("ScheduleTimeSlot").values({ id: "slot", scheduleId: "sch", order: 0, durationMinutes: 60, label: "Finals", color: null, isBreak: 0 } as never).execute();
+      await db.insertInto("ScheduledPhase").values({ id: "phase", stageId: "bracket", arenaId: "a1", timeSlotId: "slot" }).execute();
+      const final = await at(1, 0);
+      const scheduled = await ctx.app.inject({ method: "PUT", url: `/api/v1/matches/${final.id}/schedule`, headers: bearer(admin), payload: { scheduledPhaseId: "phase", order: 1 } });
+      expect(scheduled.statusCode).toBe(200);
+      expect((await ctx.app.inject({ method: "POST", url: "/api/v1/tournaments/t/live", headers: bearer(admin) })).statusCode).toBe(200);
+      const liveBefore = await db.selectFrom("LiveBout").select(["fighterLeft", "fighterRight", "sourceScheduleSignature"]).where("sourceMatchId", "=", final.id).executeTakeFirstOrThrow();
+      expect(liveBefore).toMatchObject({ fighterLeft: "", fighterRight: "" });
+
+      // Semi-final 1 is seed 1 against seed 4 (f1 - f6); its winner goes to the final's side A.
+      const semi = await at(0, 0);
+      expect((await complete(semi.id, semi.entryAId!)).statusCode).toBe(200);
+      const liveAfter = await db.selectFrom("LiveBout").select(["fighterLeft", "fighterLeftId", "sourceScheduleSignature"]).where("sourceMatchId", "=", final.id).executeTakeFirstOrThrow();
+      expect(liveAfter.fighterLeft).toBe("Fighter 1");
+      expect(liveAfter.fighterLeftId).not.toBeNull();
+      expect(liveAfter.sourceScheduleSignature).not.toBe(liveBefore.sourceScheduleSignature);
+      // A later full projection sees nothing to change.
+      const live = await db.selectFrom("LiveTournament").select("id").executeTakeFirstOrThrow();
+      expect((await ctx.app.inject({ method: "POST", url: `/api/v1/live-tournaments/${live.id}/project`, headers: bearer(admin) })).statusCode).toBe(200);
+      const liveProjected = await db.selectFrom("LiveBout").select(["sourceScheduleSignature"]).where("sourceMatchId", "=", final.id).executeTakeFirstOrThrow();
+      expect(liveProjected.sourceScheduleSignature).toBe(liveAfter.sourceScheduleSignature);
+    });
+
     it("leaves pool matches alone", async () => {
       await setup({ poolsFinished: false });
       expect((await complete("pm1", "f1")).statusCode).toBe(200);

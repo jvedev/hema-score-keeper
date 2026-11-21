@@ -1,6 +1,7 @@
 import { nextBracketSlot } from "@hema/ranking";
 import type { DbExecutor } from "../db.js";
 import { HttpError } from "../http.js";
+import { refreshLiveBoutForMatch } from "../live/database-mode.js";
 
 /**
  * Moves the result of a bracket match on: its winner into the next round, and for a semi-final its loser into
@@ -69,6 +70,8 @@ async function placeInSlot(
     .set(side === "A" ? { entryAId: entryId } : { entryBId: entryId })
     .where("id", "=", target.id)
     .execute();
+  // A waiting live bout for that match shows the new fighter right away.
+  await refreshLiveBoutForMatch(executor, target.id, new Date().toISOString());
 }
 
 async function matchStarted(executor: DbExecutor, matchId: string): Promise<boolean> {
