@@ -305,6 +305,25 @@ spreadsheet-tournament entry alongside the Event-admin component entry.
 
 ## Status / next
 
+2026-11-21: **Phase 7 done — the unified Event-admin plan is complete** (Phase 6 was cancelled with spreadsheet
+mode on 2026-11-17).
+- End-to-end API journey `apps/backend/test/event-admin-journey.test.ts` (real HTTP routes only): Event and
+  arenas (outsider refused), tournament with Pools and Elimination stages, 8 entries (outsider refused), pool
+  phases on two rings with fighters assigned as the planner does → the planner generates two pools of four (12
+  matches); bracket refused while pools are open; all pool results; tournament moved to the bracket; bracket
+  filled 1 v 4 and 2 v 3 with pools apart; semi-finals planned and played → winners in the final, losers in the
+  bronze match; refill refused once started; final played; pool results kept; a rating Competition created for
+  the Event survives the Event's deletion detached (tournament removed). Together with the Phase 5 journey
+  (`competition-event-journey.test.ts`, Competition attach/detach and shared management), `event-admin.test.ts`
+  (Event vs tournament admin rights) and `database-mode-journey.test.ts` (live scoring and correction) this covers
+  the plan's journey scope; the legacy sheet-tournament part no longer applies.
+- Verification: `npm run typecheck` clean; `npm test` — backend 382, competition 104, competition-admin 90,
+  score-keeper 120, api-session 30, competition-domain 93, match-engine 30, ranking 40, ui 436, all passed;
+  `npm run build` passed for all workspaces; `npm run test:database-mode:smoke` 12 passed; `git diff --check` clean.
+- Unresolved: the user's browser acceptance of Phases 4–5; rotating the password from the former `google.md`
+  (still in git history); a check on a real tablet / large monitor; `ruleset-view` texts are English only;
+  end-of-project HTTPS / Web Push / phone tests and re-testing the Windows package and Alwaysdata with schema 3.
+
 2026-11-21: **Phase 4 completed** per `2026-11-20-phase-4-stages-and-matches.md`: stage and match screens,
 shared admin look with stage path and stage pages, and elimination brackets (fill from pools with pluggable
 seeding/pairing rules, automatic advancing, bracket view). Dev database at schema 3. Known limits are listed at

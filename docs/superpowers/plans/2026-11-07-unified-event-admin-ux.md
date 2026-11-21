@@ -239,3 +239,12 @@ phase boundary.
   Tournament stages only. The existing Competition-admin spreadsheet-tournament entry also
   remains permanently alongside Event-admin. Other UX details such as officials terminology
   and localization behavior remain part of implementation design.
+
+## Status (2026-11-21)
+
+Implemented as planned in `2026-11-07-unified-event-admin-implementation.md` (Phases 1–5 and 7; Phase 6 cancelled
+with spreadsheet mode). Changes to this UX during implementation: one shared admin look (`--admin-*` tokens),
+stage path and one page per stage in the tournament workspace, a "next step" on the tournament overview,
+elimination brackets with a bracket view, and a Rulesets page per Event. See
+`2026-11-20-phase-4-stages-and-matches.md` for details.
+

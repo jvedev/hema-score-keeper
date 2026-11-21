@@ -41,7 +41,15 @@ plain-text password (user to rotate/delete); demo Competitions are auto-added on
 Event-admin client calls a missing `GET /api/v1/events/:id`; stale tracked
 `pages-stage/competition/**`.
 
-**Resume point (2026-11-21):** Phase 4 is complete and committed on `jetbrains-ai` (latest commits
+**Resume point (2026-11-21, end of day):** the unified Event-admin plan is complete (Phases 1–5 and 7; Phase 6
+cancelled). After Phase 4 the open issues were fixed (skill routes protected, `google.md` untracked, demo
+competitions only via the seed, ring rules validated, live bouts follow bracket advancing, Rulesets page with
+bracket settings, planner header) and Phase 7's end-to-end journey added; all on `jetbrains-ai`, see the
+implementation plan's Status / next. **User actions:** rotate the password from the former `google.md`; browser
+acceptance of Phases 4–5. Next: choose the next app/area to work on; end-of-project HTTPS / Web Push / phone tests
+and Windows/Alwaysdata re-tests remain deferred.
+
+**Resume point (2026-11-21, earlier):** Phase 4 is complete and committed on `jetbrains-ai` (latest commits
 `e1797b9`, `2984dbe`, `b5f6c0b` and the docs commit after them; nothing pushed; local `master` is behind).
 See the end of [`plans/2026-11-20-phase-4-stages-and-matches.md`](plans/2026-11-20-phase-4-stages-and-matches.md)
 for verification and known limits. Dev database reset to schema 3 on 2026-11-20 (fresh seed). The user works via
