@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { advanceBracket } from "../tournaments/bracket-advance.js";
 import type { DbExecutor } from "../db.js";
 import { HttpError, type JsonValue, stringifyJsonValue } from "../http.js";
 import { requireMatchRow } from "../read-model.js";
@@ -164,6 +165,7 @@ async function writeMatchResult(
     scoreB: score.right,
     winnerEntryId: winner,
   }).where("id", "=", match.id).execute();
+  await advanceBracket(executor, match.id);
   await executor.updateTable("LiveBout")
     .set({ sourceResultSignature: signature })
     .where("id", "=", bout.id)

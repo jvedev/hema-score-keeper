@@ -504,3 +504,21 @@ final and bronze match; the button became "Fill bracket again". The user switche
 Control and asked to work autonomously and commit each finished part.
 
 Next: task 12 (advance winners automatically).
+
+2026-11-21, **task 12 done** (advance winners automatically):
+- New `apps/backend/src/tournaments/bracket-advance.ts`: `advanceBracket(executor, matchId)` places a bracket
+  match's winner in the next round (`nextBracketSlot`) and, for a semi-final, the loser in the bronze match
+  (side by position). It runs in the same transaction as both result writers: `POST /matches/:id/complete`
+  (`server.ts`) and the live projection/correction `writeMatchResult` (`live/database-results.ts`), so a live
+  correction re-places fighters too. Changing a slot in a match that has started (result, exchanges, or a live
+  bout that is not PENDING) is refused with 409 and rolls the result back. Pool matches are untouched. Limit:
+  one bracket per tournament (bracket matches are looked up per tournament).
+- Not handled yet: a live bout already projected for the next match does not get its fighter names updated by
+  this step (live projection picks up schedule changes by signature; check during task 14).
+- Tests: 4 new in `bracket-fill.test.ts` (full run quarter → semi → final + bronze, bye fighter joined by the
+  winner, refusal when the next match started with the result rolled back, pool matches ignored). Backend 378,
+  smoke 12 passed; backend typecheck clean.
+- Dev stack: completing the two semi-finals of the 4-fighter bracket put Alex and Elena in the final and Floris
+  and Beatrix in the bronze match.
+
+Next: task 13 (bracket view on the stage page).

@@ -194,4 +194,64 @@ describe("filling an elimination bracket", () => {
     expect(response.statusCode).toBe(409);
     expect(response.json().error).toContain('Unknown pairing rule "random"');
   });
+
+  describe("advancing winners", () => {
+    const complete = (matchId: string, winner: string, scoreA = 3, scoreB = 1) =>
+      ctx.app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${matchId}/complete`,
+        headers: bearer(admin),
+        payload: { winnerEntryId: winner, scoreA, scoreB, exchanges: [{ scoreA, scoreB, details: null }] },
+      });
+    const at = async (round: number, position: number, kind = "MAIN") =>
+      (await bracketMatches()).find((m) => m.bracketRound === round && m.bracketPosition === position && m.bracketKind === kind)!;
+
+    it("moves winners to the next round and semi-final losers to the bronze match", async () => {
+      await setup();
+      await fill();
+      // Quarter-finals: f1-f8, f6-f3, f5-f4, f2-f7.
+      for (const [position, winner] of [[0, "f1"], [1, "f3"], [2, "f5"], [3, "f2"]] as const) {
+        expect((await complete((await at(0, position)).id, winner)).statusCode).toBe(200);
+      }
+      expect(await at(1, 0)).toMatchObject({ entryAId: "f1", entryBId: "f3" });
+      expect(await at(1, 1)).toMatchObject({ entryAId: "f5", entryBId: "f2" });
+
+      await complete((await at(1, 0)).id, "f3");
+      await complete((await at(1, 1)).id, "f5");
+      expect(await at(2, 0)).toMatchObject({ entryAId: "f3", entryBId: "f5" });
+      expect(await at(2, 0, "BRONZE")).toMatchObject({ entryAId: "f1", entryBId: "f2" });
+    });
+
+    it("moves a fighter with a bye on when the second-round opponent is decided", async () => {
+      await setup({ bracketCount: 6 });
+      await fill();
+      // Round 1 position 1 was f6-f3; its winner joins f1 (bye) in round 2 position 0, side B.
+      await complete((await at(0, 1)).id, "f3");
+      expect(await at(1, 0)).toMatchObject({ entryAId: "f1", entryBId: "f3" });
+    });
+
+    it("refuses a result that would change who plays in a match that has already started", async () => {
+      await setup();
+      await fill();
+      for (const [position, winner] of [[0, "f1"], [1, "f3"]] as const) await complete((await at(0, position)).id, winner);
+      const semi = await at(1, 0);
+      await complete(semi.id, "f1");
+      // Correcting the quarter-final to f6 would change the semi-final that is already fought: refused, nothing changes.
+      await ctx.database.updateTable("Match").set({ scoreA: null, scoreB: null, winnerEntryId: null }).where("id", "=", (await at(0, 1)).id).execute();
+      await ctx.database.deleteFrom("Exchange").where("matchId", "=", (await at(0, 1)).id).execute();
+      const refused = await complete((await at(0, 1)).id, "f6");
+      expect(refused.statusCode).toBe(409);
+      expect(refused.json().error).toContain("already started");
+      expect((await at(1, 0)).entryBId).toBe("f3");
+      const quarter = await ctx.database.selectFrom("Match").select("winnerEntryId").where("id", "=", (await at(0, 1)).id).executeTakeFirstOrThrow();
+      expect(quarter.winnerEntryId).toBeNull();
+    });
+
+    it("leaves pool matches alone", async () => {
+      await setup({ poolsFinished: false });
+      expect((await complete("pm1", "f1")).statusCode).toBe(200);
+      expect(await bracketMatches()).toEqual([]);
+    });
+  });
 });
+

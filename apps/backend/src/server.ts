@@ -28,6 +28,7 @@ import { competitionAccessFilter, competitionAdminRole, requireCompetitionAccess
 import { registerCompetitionAdminRoutes } from "./competitions/admin-routes.js";
 import { registerEventLinkRoutes } from "./competitions/event-link-routes.js";
 import { registerBracketRoutes } from "./tournaments/bracket-routes.js";
+import { advanceBracket } from "./tournaments/bracket-advance.js";
 import { registerParticipantRoutes } from "./competitions/participant-routes.js";
 import { withInviteCodeForAdmins } from "./competitions/signup-routes.js";
 import { requireEventTournamentAdmin } from "./tournaments/access.js";
@@ -2045,6 +2046,7 @@ export function createApp(database: Kysely<BackendDatabase> = db, options: AppOp
         scoreB,
         winnerEntryId,
       }).where("id", "=", matchId).execute();
+      await advanceBracket(trx, matchId);
     });
 
     return requireMatchApi(database, matchId);
