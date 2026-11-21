@@ -522,3 +522,16 @@ Next: task 12 (advance winners automatically).
   and Beatrix in the bronze match.
 
 Next: task 13 (bracket view on the stage page).
+
+2026-11-21, **task 13 done** (bracket view):
+- New pure helper `bracket-view.ts` (`bracketLayout(tournament)`): columns from the first round to the final,
+  every position present (first-round byes as empty cells), names, winner flags, scores, plus the bronze match;
+  collects bracket matches from all stages so separate Final / Bronze final stages are included.
+- Elimination stage page shows the tree (`.stage-bracket-pane`): round names (Last N, Quarter-finals,
+  Semi-finals, Final), winners in brass, scores in mono, dashed "Bye" cells, connectors between rounds, bronze
+  match below; scrolls sideways inside its section on narrow screens; "The bracket is not filled yet." when
+  empty. en/nl texts.
+- Tests: 3 helper tests, 2 component tests. UI 432 passed, UI typecheck clean.
+- Dev stack screenshot: `docs/superpowers/bracket-view-2026-11-21.jpg`.
+
+Next: task 14 (full verification and docs).

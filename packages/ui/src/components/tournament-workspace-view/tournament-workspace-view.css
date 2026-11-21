@@ -925,3 +925,105 @@ form[data-form].plan-form .form-error {
 .stage-pool-results-pane {
   overflow-x: auto;
 }
+
+/* ---------- Bracket tree ---------- */
+.stage-bracket-pane {
+  overflow-x: auto;
+}
+
+.bracket {
+  display: flex;
+  gap: 2rem;
+  min-width: max-content;
+  padding-bottom: 0.5rem;
+}
+
+.bracket-column {
+  display: flex;
+  flex-direction: column;
+  width: 13rem;
+}
+
+.bracket-column h5,
+.bracket-bronze h5 {
+  margin: 0.75rem 0;
+  color: var(--admin-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Each column spreads its cells over the same height, so a match sits between the two it follows. */
+.bracket-cells {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: space-around;
+  gap: 0.75rem;
+}
+
+.bracket-cell {
+  position: relative;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius);
+  background: var(--admin-surface);
+}
+
+/* Connector to the next round. */
+.bracket-column:not(:last-child) .bracket-cell::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: -1rem;
+  width: 1rem;
+  border-top: 1px solid var(--admin-line-strong);
+}
+
+.bracket-cell ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bracket-slot {
+  padding: 0.4rem 0.6rem;
+}
+
+.bracket-slot + .bracket-slot {
+  border-top: 1px solid var(--admin-line);
+}
+
+.bracket-slot.is-winner {
+  color: var(--admin-accent);
+  font-weight: 700;
+}
+
+.bracket-slot.is-open {
+  color: var(--admin-muted);
+  font-style: italic;
+}
+
+.bracket-score {
+  position: absolute;
+  top: 50%;
+  right: 0.5rem;
+  transform: translateY(-50%);
+  color: var(--admin-muted);
+  font-family: var(--admin-font-mono);
+  font-size: 0.8125rem;
+}
+
+.bracket-cell.is-bye {
+  padding: 0.6rem;
+  border-style: dashed;
+  background: transparent;
+  color: var(--admin-muted);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+.bracket-bronze {
+  width: 13rem;
+  margin-top: 1rem;
+}

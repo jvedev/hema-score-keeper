@@ -1653,3 +1653,44 @@ describe("fill bracket", () => {
   });
 });
 
+describe("bracket view", () => {
+  function bracketEvent(): ApiEvent {
+    const event = structuredClone(mockEvent);
+    const tournament = event.tournaments[0]!;
+    const base = tournament.stages[0]!;
+    const m = (id: string, round: number, position: number, kind: "MAIN" | "BRONZE", a: string | null, b: string | null, won: string | null = null) => ({
+      id, roundId: "r", arenaId: null, entryAId: a, entryBId: b, winnerEntryId: won, scoreA: won ? 5 : null, scoreB: won ? 2 : null,
+      ruleset: null, scheduledMatch: null, bracketRound: round, bracketPosition: position, bracketKind: kind,
+    });
+    tournament.stages.push({
+      ...base, id: "stg-elim", type: "ELIMINATION", name: "Elimination", minPoolSize: null, maxPoolSize: null, preferredPoolSize: null,
+      rounds: [
+        { id: "r0", stageId: "stg-elim", roundNumber: 0, matches: [m("q0", 0, 0, "MAIN", "e1", "e2", "e1"), m("q1", 0, 1, "MAIN", "e2", "e1")] },
+        { id: "r1", stageId: "stg-elim", roundNumber: 1, matches: [m("f", 1, 0, "MAIN", "e1", null), m("b", 1, 0, "BRONZE", "e2", null)] },
+      ],
+    });
+    return event;
+  }
+
+  it("draws the bracket on an elimination stage with round names, winners and the bronze match", () => {
+    view.event = bracketEvent();
+    view.activeTab = "stages";
+    view.selectedStageId = "stg-elim";
+    expect($$(".bracket-column h5").map((h) => h.textContent!.trim())).toEqual(["Semi-finals", "Final"]);
+    expect($(".bracket-cell .is-winner")?.textContent).toContain("Fighter 1");
+    expect($(".bracket-score")?.textContent).toBe("5–2");
+    expect($(".bracket-bronze")?.textContent).toContain("Fighter 2");
+  });
+
+  it("says the bracket is not filled yet, and shows no bracket on a pool stage", () => {
+    const event = bracketEvent();
+    event.tournaments[0]!.stages[1]!.rounds = [];
+    view.event = event;
+    view.activeTab = "stages";
+    view.selectedStageId = "stg-elim";
+    expect($(".stage-bracket-pane .empty-state")?.textContent).toContain("not filled yet");
+    view.selectedStageId = "stg-1";
+    expect($(".stage-bracket-pane")).toBeNull();
+  });
+});
+

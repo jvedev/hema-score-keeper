@@ -3,6 +3,7 @@ import { BaseComponent } from "../base-component/base-component.js";
 import { LOCALE_CHANGE_EVENT, t } from "../../i18n/i18n.js";
 import { escapeHtml } from "../../utils/escape-html.js";
 import { nextStage, orderStages } from "./stage-order.js";
+import { bracketLayout, type BracketCell } from "./bracket-view.js";
 import "../pool-results/pool-results.js";
 import type { PoolResults } from "../pool-results/pool-results.js";
 import { matchPlayed, nextFreeOrder, poolPhaseFor, roundStatus, stageMatchRows, stagePhaseOptions } from "./stage-matches.js";
@@ -1770,9 +1771,46 @@ export class TournamentWorkspaceView extends BaseComponent {
         ${this.renderStageSection("arenas", stage, tournament)}
         ${this.renderStageSection("officials", stage, tournament)}
         ${stage.type === "POOL" ? this.renderStageSection("pool-results", stage, tournament) : ""}
+        ${stage.type === "ELIMINATION" ? this.renderBracket(tournament) : ""}
         ${this.renderStageRounds(stage, tournament)}
         ${this.renderStageMatches(stage, tournament)}
       </section>`;
+  }
+
+  /** The whole bracket as a tree: one column per round, the bronze match under the final. */
+  private renderBracket(tournament: ApiTournament): string {
+    const layout = bracketLayout(tournament);
+    const roundName = (fighters: number) =>
+      fighters === 2 ? t("tournament.bracketFinal") : fighters === 4 ? t("tournament.bracketSemiFinals") : fighters === 8 ? t("tournament.bracketQuarterFinals") : t("tournament.bracketRoundOf", { count: fighters });
+    const slot = (side: BracketCell["a"]) =>
+      `<li class="bracket-slot ${side.winner ? "is-winner" : ""} ${side.name ? "" : "is-open"}">${escapeHtml(side.name ?? t("tournament.toBeDecided"))}</li>`;
+    const cell = (item: BracketCell) =>
+      item.matchId === null
+        ? `<div class="bracket-cell is-bye"><span>${t("tournament.bracketBye")}</span></div>`
+        : `<div class="bracket-cell ${item.played ? "is-played" : ""}">
+            <ol>${slot(item.a)}${slot(item.b)}</ol>
+            ${item.score ? `<span class="bracket-score">${escapeHtml(item.score)}</span>` : ""}
+          </div>`;
+    return `
+      <div class="stage-bracket-pane stage-section">
+        <div class="table-header-actions"><h4>${t("tournament.bracket")}</h4></div>
+        ${
+          layout
+            ? `<div class="bracket" role="group" aria-label="${escapeHtml(t("tournament.bracket"))}">
+                ${layout.columns
+                  .map(
+                    (column) => `
+                  <section class="bracket-column" style="--cells: ${column.cells.length}">
+                    <h5>${roundName(column.fighters)}</h5>
+                    <div class="bracket-cells">${column.cells.map(cell).join("")}</div>
+                  </section>`,
+                  )
+                  .join("")}
+              </div>
+              ${layout.bronze ? `<div class="bracket-bronze"><h5>${t("tournament.bracketBronze")}</h5>${cell(layout.bronze)}</div>` : ""}`
+            : `<p class="empty-state">${t("tournament.bracketEmpty")}</p>`
+        }
+      </div>`;
   }
 
   private renderStageSummary(stage: ApiStage, tournament: ApiTournament): string {
